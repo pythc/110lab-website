@@ -1,0 +1,66 @@
+/* Blue, purple, mint, and peach on white frost. Hero, header, and nav stay untouched. */
+
+.lab-intro { background: radial-gradient(ellipse at 90% 15%, #ffe3d68c, transparent 55%), linear-gradient(180deg, #fff 0%, #f3f0ff 55%, #e7efff 100%); }
+.lab-label { color: #5b537c; }
+.lab-heading h2 { color: #1b2f64; }
+.lab-description>p { color: #4f5e78; }
+.lab-intro .lab-facts strong { color: #1e4eb8; animation: none; }
+.lab-directions span:nth-child(1) { color: #1d4e9c; }
+.lab-directions span:nth-child(2) { color: #6b3d88; }
+.lab-directions span:nth-child(3) { color: #0d6b60; }
+.lab-intro .lab-method {
+  color: #243056; border-color: #ddd6f4; animation: none;
+  background: linear-gradient(128deg, #fffcfe 0%, #eef3ff 54%, #fff0e4 100%);
+  box-shadow: inset 0 1px 0 #fff, 0 10px 28px #5a6eb414;
+}
+.lab-method>p:last-child { color: #675c7b; }
+.product-section { background: linear-gradient(180deg, #e7efff 0%, #eefaf6 52%, #fff 100%); }
+.product-identity h2 { color: #1a3d8f; }
+.product-summary>p { color: #536581; }
+.product-actions .product-link {
+  color: #fff; animation: none; box-shadow: 0 8px 18px #1a46b52e;
+  background: linear-gradient(180deg, #2f62dc 0%, #1a46b5 100%);
+}
+.product-actions .product-download {
+  border-color: transparent; color: #fff;
+  background: linear-gradient(180deg, #127a70 0%, #0a645c 100%);
+  box-shadow: 0 8px 18px #0a645c29;
+}
+.product-section .product-video-frame {
+  border-color: #f4f1fb; animation: none;
+  background: linear-gradient(180deg, #ffffffd9, #f3f6ffcc);
+  box-shadow: 0 14px 55px #3d4f9a14, inset 0 1px 0 #fff;
+}
+.recruit-section { background: linear-gradient(180deg, #fff 0%, #f4f0ff 60%, #f9f9fb 100%); }
+.recruit-section .recruit-panel {
+  border-color: #e2dcf4; animation: none; box-shadow: 0 6px 35px #6a5a9a12;
+  background: linear-gradient(128deg, #fffcff 0%, #f1edff 48%, #ffe8da 100%);
+}
+.recruit-qq { color: #1e4eb8; }
+.recruit-small-label { color: #8a4e3a; }
+.recruit-intro>p:not(.lab-label) { color: #635970; }
+.recruit-mail dl { color: #605768; font-size: 11px; }
+.recruit-mail dt { color: #746677; }
+
+.lab-intro .lab-fact:hover strong { color: #173f98; }
+.product-actions .product-link:hover,
+.product-actions .product-link:focus-visible { background: #163e9c; color: #fff; box-shadow: 0 8px 18px #163e9c38; }
+.product-actions .product-download:hover,
+.product-actions .product-download:focus-visible { background: #08564f; color: #fff; box-shadow: 0 8px 18px #08564f33; }
+.recruit-panel .recruit-qq:hover,
+.recruit-panel .recruit-qq:focus-visible { color: #173e94; }
+
+@media (hover: hover) {
+  .lab-intro .lab-method:hover { border-color: #d3cbeb; box-shadow: inset 0 1px 0 #fff, 0 10px 28px #5a6eb422; }
+  .product-section .product-video-frame:hover { border-color: #ebe6f8; box-shadow: 0 14px 55px #3d4f9a1f, inset 0 1px 0 #fff; }
+  .recruit-section .recruit-panel:hover { border-color: #d8d0ee; box-shadow: 0 6px 35px #6a5a9a1c; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-intro .lab-method,
+  .lab-intro .lab-facts strong,
+  .product-actions .product-link,
+  .product-actions .product-download,
+  .product-section .product-video-frame,
+  .recruit-section .recruit-panel { animation: none; transition: none; }
+}

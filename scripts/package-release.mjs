@@ -14,13 +14,13 @@ for(const entry of await readdir(resolve(root,'node_modules'),{withFileTypes:tru
  for(const name of packages){for(const license of ['LICENSE','LICENSE.md','LICENSE.txt','LICENCE']){try{const text=await readFile(resolve(root,'node_modules',name,license),'utf8');notices.push('Package: '+name+'\n'+text);break;}catch(error){if(error.code!=='ENOENT'&&error.code!=='ENOTDIR')throw error;}}}
 }
 await writeFile(resolve(root,'vendor/RUNTIME-LICENSES.txt'),notices.join('\n\n'));
-const paths=['dist/index.html','dist/workbench.html','dist/mcp-app.html','server/runtime.mjs','src/projects.json','src/assets/glass-loop-v2.png','src/assets/zhiping-logo.png','src/assets/recruitment-qq-2026.png','src/assets/zhiping-poster.jpg','src/assets/zhiping-promo.mp4','vendor/RUNTIME-LICENSES.txt','vendor/GLINUI-LICENSE','vendor/KOKONUT-LICENSE','vendor/MAGICUI-LICENSE'];
+const paths=['dist/index.html','dist/workbench.html','dist/mcp-app.html','server/runtime.mjs','src/projects.json','src/assets/glass-loop-v2.png','src/assets/zhiping-logo.png','src/assets/recruitment-qq-2026.png','src/assets/zhiping-poster.jpg','src/assets/zhiping-promo.mp4','src/assets/zhiping-public-0.2.2.apk','vendor/RUNTIME-LICENSES.txt','vendor/GLINUI-LICENSE','vendor/KOKONUT-LICENSE','vendor/MAGICUI-LICENSE'];
 const files={};
 for(const path of paths){const bytes=await readFile(resolve(root,path));files[path]={sha256:createHash('sha256').update(bytes).digest('hex'),size:bytes.length};}
 const contentHash=createHash('sha256').update(JSON.stringify(files)).digest('hex');
 const releaseId=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z/,'Z')+'-'+contentHash.slice(0,10);
 let sourceCommit=null;try{sourceCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();}catch{}
-const release={sourceCommit,service:'110lab-homepage',version:'0.5.1',contentManagement:false,releaseId,contentHash,files};
+const release={sourceCommit,service:'110lab-homepage',version:'0.5.2',contentManagement:false,releaseId,contentHash,files};
 await writeFile(resolve(root,'release.json'),JSON.stringify(release,null,2)+'\n');
 await mkdir(resolve(root,'artifacts/deployment'),{recursive:true});
 console.log(JSON.stringify({releaseId,contentHash,bytes:Object.values(files).reduce((s,x)=>s+x.size,0)}));

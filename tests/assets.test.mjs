@@ -2,6 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {open,stat} from 'node:fs/promises';
 import {createHttpServer} from '../server/http.mjs';
+import {createHash} from 'node:crypto';
+
+test('Android download returns the verified public APK as an attachment',async()=>{
+  const server=await createHttpServer();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const url=`http://127.0.0.1:${server.address().port}/assets/zhiping-public-0.2.2.apk`;
+  try{
+    const head=await fetch(url,{method:'HEAD'});
+    assert.equal(head.status,200);
+    assert.equal(head.headers.get('content-type'),'application/vnd.android.package-archive');
+    assert.equal(Number(head.headers.get('content-length')),7737057);
+    assert.match(head.headers.get('content-disposition'),/^attachment; filename="zhiping-android-public-0\.2\.2\.apk"/);
+    assert.equal(decodeURIComponent(head.headers.get('content-disposition').split("filename*=UTF-8''")[1]),'智评学堂-安卓版-0.2.2.apk');
+    assert.equal((await head.arrayBuffer()).byteLength,0);
+    const response=await fetch(url);assert.equal(response.status,200);
+    assert.equal(createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex'),'4c553d94f356047f09af41dab0db425b88a499cf78da6462cbd60eef8eed3c56');
+  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
 
 test('video streams support playback seeking and reject invalid ranges',async()=>{
   const server=await createHttpServer();

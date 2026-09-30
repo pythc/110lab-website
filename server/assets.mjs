@@ -8,7 +8,8 @@ const types={
   'zhiping-logo.png':'image/png',
   'recruitment-qq-2026.png':'image/png',
   'zhiping-poster.jpg':'image/jpeg',
-  'zhiping-promo.mp4':'video/mp4'
+  'zhiping-promo.mp4':'video/mp4',
+  'zhiping-public-0.2.2.apk':'application/vnd.android.package-archive'
 };
 
 function byteRange(value,size){
@@ -31,6 +32,7 @@ export async function serveAsset(req,res,name){
   const info=await stat(path);
   const etag='"'+info.size.toString(16)+'-'+Math.trunc(info.mtimeMs).toString(16)+'"';
   const headers={'Content-Type':type,'Cache-Control':'public, max-age=3600','Content-Length':info.size,ETag:etag,'Last-Modified':info.mtime.toUTCString(),'Accept-Ranges':'bytes'};
+  if(name==='zhiping-public-0.2.2.apk')headers['Content-Disposition']="attachment; filename=\"zhiping-android-public-0.2.2.apk\"; filename*=UTF-8''"+encodeURIComponent('智评学堂-安卓版-0.2.2.apk');
   const conditional=req.headers['if-range'];
   const conditionalDate=Date.parse(conditional||'');
   const rangeAllowed=!conditional||conditional===etag||(!conditional.startsWith('W/')&&Number.isFinite(conditionalDate)&&info.mtimeMs<conditionalDate+1000);

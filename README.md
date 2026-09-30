@@ -21,11 +21,13 @@ npm run preview
 
 ## 更新内容
 
-修改 `src/index.html` 中的介绍、项目和招新内容，新增项目时参照 `section.product-section` 的标题、简述、链接和媒体结构。`src/homepage-v6.css` 控制展示布局，`src/homepage-polish.css` 控制细节动效，`src/motion.js` 与 `src/motion.css` 控制首屏滚动叙事。图片放在 `src/assets/`，同时补充 `server/assets.mjs` 的资源列表及 `scripts/package-release.mjs` 的发布清单。
+修改 `src/index.html` 中的介绍、项目和招新内容，新增项目时参照 `section.product-section` 的标题、简述、链接和媒体结构。`src/homepage-v6.css` 控制展示布局，`src/homepage-polish.css` 控制细节动效，`src/homepage-colors.css` 控制首屏之后的配色，`src/motion.js` 与 `src/motion.css` 控制首屏滚动叙事。图片放在 `src/assets/`，同时补充 `server/assets.mjs` 的资源列表及 `scripts/package-release.mjs` 的发布清单。
 
 `src/projects.json` 为工作台应用与 MCP 搜索目录。官网项目文案和目录需要一起维护。二维码为用户提供图片的无缩放裁切；智评学堂标志来自该项目原始品牌素材，请保留。
 
 `src/assets/zhiping-promo.mp4` 为提供的一分钟宣传片，保留原有 H.264 画面与 AAC 配乐，仅将播放索引移到文件开头。视频使用原生播放器，点击播放时加载，服务支持分段请求与拖动进度。封面为视频截帧。
+
+官网安卓版入口直接下载 `src/assets/zhiping-public-0.2.2.apk`，包名 `com.aihomework.public`，连接 `https://ai-grading.110-lab.cn/api/v1`。文件 SHA-256 为 `4c553d94f356047f09af41dab0db425b88a499cf78da6462cbd60eef8eed3c56`；签名与已有外网版一致。更新 APK 时须同时更新官网链接、服务端资源清单、发布清单与下载验证。官网不展示需求平台，工作台仍保留其应用入口。
 
 通过分支与 Pull Request 提交修改。CI 会构建、测试并产出发布包；合并代码不会自动修改生产环境。
 
