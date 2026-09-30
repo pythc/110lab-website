@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {InMemoryTransport} from '@modelcontextprotocol/sdk/inMemory.js';
-import {createPortalServer,UI_URI} from '../server/portal.mjs';
+import {createPortalServer,UI_URI,LEGACY_UI_URI} from '../server/portal.mjs';
 
 test('MCP client discovers the global workbench and reads its bundled resource',async()=>{
   const server=await createPortalServer(),client=new Client({name:'portal-verification',version:'1.0.0'});
@@ -23,6 +23,8 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     assert.match(resource.contents[0].text,/批改系统内网版/);
     assert.match(resource.contents[0].text,/<title>110lab 工作台<\/title>/);
     assert.doesNotMatch(resource.contents[0].text,/首页管理|hero-story/);
+    const legacy=await client.readResource({uri:LEGACY_UI_URI});
+    assert.equal(legacy.contents[0].text,resource.contents[0].text);
     assert.doesNotMatch(resource.contents[0].text,/src="https:/);
     const search=await client.callTool({name:'search_110lab_projects',arguments:{query:'需求'}});
     assert.equal(search.structuredContent.projects.length,1);
