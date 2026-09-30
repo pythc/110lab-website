@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f3f5f8">
+  <meta name="description" content="110 实验室工作台：打开日常应用。">
+  <title>110lab 工作台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23f3f5f8'/%3E%3Ctext x='8' y='42' font-family='sans-serif' font-size='22' font-weight='700' fill='%231a1d23'%3E110%3C/text%3E%3C/svg%3E">
+  <style>/* WORKBENCH_CSS */</style>
+</head>
+<body>
+  <a class="skip-link" href="#apps">跳到应用</a>
+  <header class="masthead">
+    <div class="shell masthead-inner">
+      <h1 class="brand">110<span class="brand-lab">lab</span> <span class="brand-product">工作台</span></h1>
+      <nav class="mast-nav" aria-label="外部入口">
+        <a href="https://110-lab.cn" target="_blank" rel="noopener noreferrer">实验室首页<span class="visually-hidden">（在新窗口打开）</span></a>
+      </nav>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="region" id="apps" aria-labelledby="apps-title">
+      <div class="region-head">
+        <div>
+          <h2 id="apps-title">应用</h2>
+          <p class="region-lead">打开实验室日常使用的系统。</p>
+        </div>
+        <p class="app-count" id="app-count" role="status" aria-live="polite" aria-atomic="true"></p>
+      </div>
+      <p class="vpn-notice">内网应用需要校园网络 / VPN</p>
+      <form class="search" id="app-search-form" role="search" action="#">
+        <label class="search-label" for="app-search">搜索应用</label>
+        <div class="search-control">
+          <input id="app-search" type="search" name="q" placeholder="名称或说明" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" aria-controls="app-grid" aria-describedby="app-count">
+          <button class="search-clear" id="app-search-clear" type="button" hidden>清除</button>
+        </div>
+      </form>
+      <ul class="app-grid" id="app-grid" aria-label="应用列表"></ul>
+      <p class="empty-state" id="app-empty" hidden>没有匹配的应用。</p>
+      <noscript><p class="noscript">需要启用 JavaScript 才能显示工作台应用。</p></noscript>
+    </section>
+  </main>
+  <footer class="wb-footer">
+    <div class="shell"><p>110 实验室内部工作台</p></div>
+  </footer>
+  <div class="link-message" id="link-message" role="status" aria-live="assertive" aria-atomic="true" hidden></div>
+  <script type="module">/* WORKBENCH_SCRIPT */</script>
+</body>
+</html>

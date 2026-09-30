@@ -1,0 +1,17 @@
+node_modules/
+dist/
+artifacts/
+*.log
+server/runtime.mjs
+release.json
+.DS_Store
+.env
+.env.*
+private/
+design/
+deploy/
+scripts/cursor-*.py
+scripts/verify-live-*.mjs
+src/portal.js
+vendor/RUNTIME-LICENSES.txt
+scripts/verify-live.mjs

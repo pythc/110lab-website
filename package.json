@@ -1,0 +1,26 @@
+{
+  "name": "110lab-portal",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "preview": "node scripts/preview.mjs",
+    "mcp": "node server/stdio.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "serve": "node server/http.mjs",
+    "release": "node scripts/package-release.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@openai/mcp-extensions": "0.1.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}

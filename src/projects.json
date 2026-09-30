@@ -1,0 +1,79 @@
+{
+  "systems": {
+    "assessment": "https://47.109.176.127",
+    "requirements": "https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x"
+  },
+  "projects": [
+    {
+      "id": "assessment",
+      "category": "systems",
+      "label": "RECRUITMENT",
+      "title": "110 实验室考核系统",
+      "description": "从真实项目实践出发，连接报名、作答、提交与评审。",
+      "tags": "产品方向 / 开发与测试",
+      "art": "assessment",
+      "url": "https://47.109.176.127",
+      "span": 2
+    },
+    {
+      "id": "requirements",
+      "category": "systems",
+      "label": "COLLABORATION",
+      "title": "110 需求协作平台",
+      "description": "让每一个想法，都有清晰的负责人、进展与交付记录。",
+      "tags": "需求流转 / 迭代协作",
+      "art": "requirements",
+      "url": "https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x",
+      "span": 1
+    },
+    {
+      "id": "teaching",
+      "category": "ai",
+      "label": "项目介绍",
+      "title": "智评学堂",
+      "description": "围绕真实教学场景，探索人工智能与图像识别如何帮助作业批改与学习反馈。",
+      "tags": "教育应用 / AI 实践",
+      "art": "teaching",
+      "url": "https://aigrading.110-lab.cn/login",
+      "span": 1
+    }
+  ],
+  "apps": [
+    {
+      "id": "grading-internal",
+      "title": "批改系统内网版",
+      "description": "校园教学与作业批改，使用已有内网账号登录。",
+      "url": "https://aigrading.110-lab.cn/login",
+      "status": "intranet",
+      "icon": "grading",
+      "edition": "内网版"
+    },
+    {
+      "id": "grading-public",
+      "title": "批改系统",
+      "description": "外网版前端保留，业务服务尚未启用。",
+      "url": "https://ai-grading.110-lab.cn/login",
+      "status": "disabled",
+      "icon": "grading",
+      "edition": "外网版"
+    },
+    {
+      "id": "assessment",
+      "title": "考核系统",
+      "description": "招新报名、项目作答、提交与评审。",
+      "url": "https://47.109.176.127",
+      "status": "available",
+      "icon": "assessment",
+      "edition": "招新考核"
+    },
+    {
+      "id": "requirements",
+      "title": "需求平台",
+      "description": "集中提交需求，协作推进项目与迭代。",
+      "url": "https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x",
+      "status": "available",
+      "icon": "requirements",
+      "edition": "团队协作"
+    }
+  ]
+}

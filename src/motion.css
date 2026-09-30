@@ -1,0 +1,401 @@
+/* Scroll-story enhancement. Applies only while the document root is
+   .motion-enabled and not .motion-paused. Sticky heights live here so a
+   paused, reduced-motion, or script-less page stays in normal flow.
+   Load after portal.css. JS writes the custom properties (with units)
+   on .hero-story and .manifesto-story; this file does not retime them. */
+
+html.motion-enabled:not(.motion-paused) {
+  .hero-story {
+    --hero-copy-opacity: 1;
+    --hero-copy-y: 0px;
+    --hero-art-x: 0px;
+    --hero-art-y: 0px;
+    --hero-art-scale: 1;
+    --hero-art-rotate: 0deg;
+    --hero-caption-opacity: 1;
+    --hero-caption-y: 0px;
+    position: relative;
+    height: 240vh;
+    height: 240svh;
+    padding: 0;
+    max-width: none;
+  }
+
+  .manifesto-story {
+    --line-0-opacity: 0.18;
+    --line-1-opacity: 0.18;
+    --line-2-opacity: 0.18;
+    position: relative;
+    height: 170vh;
+    height: 170svh;
+    padding: 0;
+    max-width: none;
+  }
+
+  .hero-sticky,
+  .manifesto-sticky {
+    position: sticky;
+    top: 0;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100vh;
+    height: 100svh;
+    min-height: 100vh;
+    min-height: 100svh;
+    max-height: 100vh;
+    max-height: 100svh;
+  }
+
+  .hero-sticky {
+    overflow: clip;
+  }
+
+  .hero-copy {
+    position: relative;
+    z-index: 2;
+    width: min(980px, calc(100% - 64px));
+    margin-inline: auto;
+    padding-top: clamp(112px, 13svh, 145px);
+    text-align: center;
+    opacity: var(--hero-copy-opacity, 1);
+    transform: translate3d(0, var(--hero-copy-y, 0px), 0);
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(40px, 5.4vw, 72px);
+    line-height: 1.08;
+    letter-spacing: -0.045em;
+  }
+
+  .hero-copy p {
+    max-width: 38rem;
+    margin-inline: auto;
+  }
+
+  .hero-art-wrap {
+    position: absolute;
+    z-index: 1;
+    left: 50%;
+    top: auto;
+    bottom: clamp(12px, 3svh, 40px);
+    width: min(760px, 46vw, max(350px, calc(100svh - 520px)));
+    margin: 0;
+    pointer-events: none;
+    transform-origin: center center;
+    transform:
+      translate3d(calc(-50% + var(--hero-art-x, 0px)), var(--hero-art-y, 0px), 0)
+      scale(var(--hero-art-scale, 1))
+      rotate(var(--hero-art-rotate, 0deg));
+  }
+
+  .hero-sculpture {
+    width: 100%;
+    height: auto;
+  }
+
+  .hero-caption {
+    display: block;
+    position: absolute;
+    z-index: 2;
+    left: max(48px, 7vw);
+    top: 50%;
+    width: min(460px, 34vw);
+    margin: 0;
+    box-sizing: border-box;
+    color: var(--ink, #292733);
+    font-size: clamp(40px, 4.2vw, 68px);
+    font-weight: 500;
+    line-height: 1.14;
+    letter-spacing: -0.04em;
+    text-align: left;
+    white-space: normal;
+    opacity: var(--hero-caption-opacity, 1);
+    transform: translate3d(0, calc(-50% + var(--hero-caption-y, 0px)), 0);
+  }
+
+  .hero-scroll {
+    position: absolute;
+    z-index: 3;
+    left: 50%;
+    bottom: clamp(16px, 2.5svh, 28px);
+    margin: 0;
+    color: var(--muted, #514b63);
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: var(--hero-copy-opacity, 1);
+    transform: translate3d(-50%, 0, 0);
+  }
+
+  .manifesto-sticky {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(112px, 14svh, 148px) 24px clamp(32px, 6svh, 72px);
+    text-align: center;
+  }
+
+  .manifesto-lines {
+    max-width: calc(100% - 40px);
+    margin: 0;
+    color: var(--ink, #292733);
+    font-size: clamp(34px, 5vw, 76px);
+    font-weight: 500;
+    letter-spacing: -0.045em;
+    line-height: 1.28;
+  }
+
+  .manifesto-lines span[data-line] {
+    display: block;
+  }
+
+  .manifesto-lines span[data-line="0"] { opacity: var(--line-0-opacity, 0.18); }
+  .manifesto-lines span[data-line="1"] { opacity: var(--line-1-opacity, 0.18); }
+  .manifesto-lines span[data-line="2"] { opacity: var(--line-2-opacity, 0.18); }
+
+  .manifesto-sticky .manifesto-caption {
+    max-width: min(34rem, calc(100% - 32px));
+    margin: clamp(16px, 2.2vh, 28px) 0 0;
+    color: var(--muted, #514b63);
+    font-size: clamp(16px, 1.5vw, 18px);
+    line-height: 1.6;
+  }
+
+  .story-meter {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: clamp(18px, 3vh, 32px);
+  }
+
+  .story-meter span[data-chapter] {
+    display: block;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #9784d4;
+    opacity: 0.28;
+  }
+
+  .story-meter span[data-chapter="0"] { opacity: max(0.28, var(--line-0-opacity, 1)); }
+  .story-meter span[data-chapter="1"] { opacity: max(0.28, var(--line-1-opacity, 1)); }
+  .story-meter span[data-chapter="2"] { opacity: max(0.28, var(--line-2-opacity, 1)); }
+
+  /* Entrance only after JS marks the root ready. Absent flag keeps text shown. */
+  &[data-reveal-ready="true"] {
+    .reveal {
+      transition: opacity 0.65s ease, transform 0.65s ease;
+    }
+
+    .reveal:not(.is-visible) {
+      opacity: 0;
+      transform: translate3d(0, 22px, 0);
+    }
+
+    .reveal:focus-within { opacity: 1; transform: none; }
+
+    .reveal.is-visible {
+      opacity: 1;
+      transform: none;
+    }
+
+    .system-feature[data-feature="assessment"].reveal:not(.is-visible) {
+      transform: translate3d(-32px, 18px, 0);
+    }
+
+    .system-feature[data-feature="requirements"].reveal:not(.is-visible) {
+      transform: translate3d(32px, 18px, 0);
+    }
+
+    #project-grid .project-card.reveal:nth-child(2) { transition-delay: 60ms; }
+    #project-grid .project-card.reveal:nth-child(3) { transition-delay: 120ms; }
+    #project-grid .project-card.reveal:nth-child(4) { transition-delay: 180ms; }
+    #project-grid .project-card.reveal:nth-child(5) { transition-delay: 240ms; }
+    #project-grid .project-card.reveal:nth-child(n + 6) { transition-delay: 300ms; }
+  }
+
+  @media (hover: hover) {
+    .project-card:hover {
+      box-shadow:
+        0 0 0 1px rgba(41, 39, 51, 0.08),
+        0 14px 32px rgba(41, 39, 51, 0.07);
+    }
+
+    .system-feature:hover .feature-panel {
+      box-shadow:
+        0 0 0 1px rgba(151, 132, 212, 0.32),
+        0 16px 36px rgba(41, 39, 51, 0.06);
+    }
+
+    .filters button:hover {
+      box-shadow: inset 0 0 0 1px rgba(41, 39, 51, 0.14);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .hero-copy h1 { font-size: clamp(56px, 5.2vw, 72px); }
+  }
+
+  @media (min-width: 1440px) and (min-height: 860px) {
+    .hero-copy h1 { font-size: 84px; }
+  }
+
+  @media (max-width: 1023px), (orientation: portrait) and (max-width: 1180px) {
+    .hero-copy {
+      width: calc(100% - 40px);
+      padding-top: clamp(104px, 12svh, 128px);
+    }
+
+    .hero-copy h1 { font-size: clamp(36px, 7.6vw, 56px); }
+
+    .hero-art-wrap {
+      bottom: clamp(16px, 5svh, 48px);
+      width: min(460px, 80vw, max(280px, calc(100svh - 435px)));
+      transform:
+        translate3d(-50%, var(--hero-art-y, 0px), 0)
+        scale(var(--hero-art-scale, 1))
+        rotate(var(--hero-art-rotate, 0deg));
+    }
+
+    .hero-caption {
+      left: 24px;
+      right: 24px;
+      top: clamp(104px, 13svh, 136px);
+      width: auto;
+      max-width: none;
+      font-size: clamp(32px, 7vw, 48px);
+      text-align: center;
+      transform: translate3d(0, var(--hero-caption-y, 0px), 0);
+    }
+
+    &[data-reveal-ready="true"] .system-feature[data-feature].reveal:not(.is-visible) {
+      transform: translate3d(0, 18px, 0);
+    }
+  }
+
+  @media (max-width: 768px) {
+    .hero-copy h1 { font-size: clamp(45px, 13vw, 60px); }
+    .manifesto-lines { font-size: clamp(32px, 8vw, 48px); }
+    .hero-caption { font-size: clamp(30px, 7.4vw, 42px); }
+  }
+
+  @media (max-height: 760px) {
+    .hero-copy { padding-top: 104px; }
+    .hero-copy h1 { font-size: clamp(30px, 7vh, 48px); }
+
+    .hero-art-wrap {
+      width: min(420px, 78vw, max(245px, calc(100svh - 370px)));
+    }
+
+    .hero-caption { font-size: clamp(26px, 5.4vh, 40px); }
+    .manifesto-lines { font-size: clamp(28px, 6.2vh, 48px); }
+    .manifesto-sticky { padding-top: 104px; }
+  }
+
+  @media (max-width: 390px) {
+    .hero-copy {
+      width: calc(100% - 32px);
+      padding-top: 120px;
+    }
+
+    .hero-copy h1 { font-size: 52px; }
+
+    .hero-caption {
+      left: 16px;
+      right: 16px;
+      top: 120px;
+      font-size: 30px;
+    }
+
+    .manifesto-lines { font-size: 32px; }
+    .manifesto-sticky { padding-inline: 16px; }
+  }
+}
+
+.reveal {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.motion-enabled:not(.motion-paused) .hero-story,
+  html.motion-enabled:not(.motion-paused) .manifesto-story {
+    height: auto;
+    padding: 0;
+  }
+
+  html.motion-enabled:not(.motion-paused) .hero-sticky,
+  html.motion-enabled:not(.motion-paused) .manifesto-sticky {
+    position: relative;
+    top: auto;
+    display: block;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding: 112px 24px 48px;
+    text-align: center;
+  }
+
+  html.motion-enabled:not(.motion-paused) .hero-copy,
+  html.motion-enabled:not(.motion-paused) .hero-caption,
+  html.motion-enabled:not(.motion-paused) .hero-scroll,
+  html.motion-enabled:not(.motion-paused) .manifesto-lines span[data-line="0"],
+  html.motion-enabled:not(.motion-paused) .manifesto-lines span[data-line="1"],
+  html.motion-enabled:not(.motion-paused) .manifesto-lines span[data-line="2"],
+  html.motion-enabled:not(.motion-paused) .story-meter span[data-chapter="0"],
+  html.motion-enabled:not(.motion-paused) .story-meter span[data-chapter="1"],
+  html.motion-enabled:not(.motion-paused) .story-meter span[data-chapter="2"] {
+    opacity: 1;
+    transform: none;
+  }
+
+  html.motion-enabled:not(.motion-paused) .hero-art-wrap,
+  html.motion-enabled:not(.motion-paused) .hero-caption,
+  html.motion-enabled:not(.motion-paused) .hero-scroll {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: min(480px, calc(100% - 32px));
+    max-width: 100%;
+    margin: 28px auto 0;
+    transform: none;
+  }
+
+  html.motion-enabled:not(.motion-paused) .hero-caption {
+    display: block;
+    font-size: clamp(28px, 6vw, 40px);
+    text-align: center;
+  }
+
+  html.motion-enabled:not(.motion-paused)[data-reveal-ready="true"] .reveal,
+  html.motion-enabled:not(.motion-paused)[data-reveal-ready="true"] .reveal:not(.is-visible),
+  html.motion-enabled:not(.motion-paused)[data-reveal-ready="true"] .system-feature[data-feature].reveal:not(.is-visible) {
+    opacity: 1;
+    transform: none;
+    transition: none;
+    transition-delay: 0s;
+  }
+}
+
+@media (forced-colors: active) {
+  html.motion-enabled:not(.motion-paused) .hero-copy,
+  html.motion-enabled:not(.motion-paused) .hero-caption,
+  html.motion-enabled:not(.motion-paused) .manifesto-lines span[data-line="0"],
+  html.motion-enabled:not(.motion-paused) .manifesto-lines span[data-line="1"],
+  html.motion-enabled:not(.motion-paused) .manifesto-lines span[data-line="2"],
+  html.motion-enabled:not(.motion-paused)[data-reveal-ready="true"] .reveal:not(.is-visible) {
+    opacity: 1;
+  }
+}
+
+/* Normal-flow version contains the same story when animation is disabled. */
+html:not(.motion-enabled) .hero-sticky{min-height:0;padding-bottom:85px}
+html:not(.motion-enabled) .hero-art-wrap{position:relative;left:auto;top:auto;bottom:auto;transform:none;width:min(650px,95vw);margin:0 auto}
+html:not(.motion-enabled) .hero-caption{display:block;position:relative;left:auto;right:auto;top:auto;max-width:640px;width:calc(100% - 48px);text-align:center;margin:20px auto 0}
+html:not(.motion-enabled) .hero-scroll{display:none}
+html:not(.motion-enabled) .hero-caption h2{font-size:clamp(36px,4.5vw,56px)}
+html:not(.motion-enabled) .manifesto-sticky{min-height:0;padding-block:110px}

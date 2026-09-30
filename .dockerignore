@@ -1,0 +1,14 @@
+*
+!package.json
+!package-lock.json
+!src/
+!src/**
+!server/
+!server/http.mjs
+!server/portal.mjs
+!server/render.mjs
+!scripts/
+!scripts/build.mjs
+!scripts/package-release.mjs
+!vendor/
+!vendor/**
