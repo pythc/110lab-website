@@ -4,7 +4,8 @@ import {OpenAIExtensions} from '@openai/mcp-extensions/server';
 import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 
-export const UI_URI='ui://110lab/workbench/v0.5.0';
+export const UI_URI='ui://110lab/workbench/v0.5.1';
+export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.5.0';
 export const LEGACY_UI_URI='ui://110lab/home';
 export async function createPortalServer(){
   const [html,config]=await Promise.all([
@@ -12,13 +13,14 @@ export async function createPortalServer(){
     readFile(new URL('../src/projects.json',import.meta.url),'utf8').then(JSON.parse)
   ]);
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
-  const server=new McpServer({name:'110lab',version:'0.5.0'});
+  const server=new McpServer({name:'110lab',version:'0.5.1'});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
     uri,mimeType:RESOURCE_MIME_TYPE,text:html,
     _meta:{ui:{csp:{connectDomains:[],resourceDomains:[]}},'openai/ui':{preferredDisplayMode:'fullscreen',availableDisplayModes:['fullscreen']}}
   }]});
   registerAppResource(server,'110lab-workbench-v5',UI_URI,{description:'110 实验室工作台'},async()=>workbenchResource(UI_URI));
+  registerAppResource(server,'110lab-workbench-v5-previous',PREVIOUS_UI_URI,{description:'110 实验室工作台兼容入口'},async()=>workbenchResource(PREVIOUS_UI_URI));
   // Older installed clients may retain the original resource URI in tool discovery.
   // Both addresses serve the workbench; only the versioned address is advertised by the opener.
   registerAppResource(server,'110lab-workbench-legacy',LEGACY_UI_URI,{description:'110 实验室工作台兼容入口'},async()=>workbenchResource(LEGACY_UI_URI));

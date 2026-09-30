@@ -5,6 +5,7 @@
 !src/**
 !server/
 !server/http.mjs
+!server/assets.mjs
 !server/portal.mjs
 !server/render.mjs
 !scripts/

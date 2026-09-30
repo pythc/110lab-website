@@ -31,7 +31,7 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
     assert.equal(wrongHostStatus,421);
     const invalidTarget=await new Promise((resolve,reject)=>{const r=request(base,{path:'http://[',headers:{Host:'localhost'}},res=>{res.resume();resolve(res.statusCode);});r.on('error',reject);r.end();});
     assert.equal(invalidTarget,400);assert.equal((await fetch(base+'/healthz')).status,200);
-    await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp/workbench-v5')));
+    await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp/workbench-v5-1')));
     const list=await client.listTools();assert.deepEqual(list.tools.map(t=>t.name).sort(),['open_110lab','search_110lab_projects']);
     for(let i=0;i<3;i++){
       const result=await client.callTool({name:'search_110lab_projects',arguments:{query:'需求'}});
@@ -39,6 +39,8 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
     }
     const result=await client.callTool({name:'open_110lab',arguments:{}});assert.equal(result.isError,undefined);
     const resource=await client.readResource({uri:UI_URI});assert.match(resource.contents[0].text,/110lab/);
+    const previousResource=await client.readResource({uri:'ui://110lab/workbench/v0.5.0'});
+    assert.equal(previousResource.contents[0].text,resource.contents[0].text);
     const sendChunks=async(chunks)=>await new Promise((resolve,reject)=>{
       const r=request(base+'/mcp/workbench-v5',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25'}},res=>{
         const parts=[];res.on('data',x=>parts.push(x));res.on('end',()=>resolve({status:res.statusCode,body:Buffer.concat(parts).toString('utf8')}));res.on('error',reject);

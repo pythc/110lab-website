@@ -1,0 +1,110 @@
+/* Compact editorial introduction. The approved first-screen styles are unchanged. */
+#about,#projects,#join {scroll-margin-top:10px}
+.lab-label {color:#84818e;font-size:11px;font-weight:550;letter-spacing:.15em;line-height:1.6}
+.lab-intro {padding:108px 0 100px;background:#fff}
+.lab-intro-grid {display:grid;grid-template-columns:1fr 1.18fr;gap:90px;align-items:start}
+.lab-heading h2 {margin:18px 0 36px;font-size:clamp(32px,3.1vw,44px);line-height:1.23;letter-spacing:-.05em;font-weight:580}
+.lab-facts {display:flex;gap:36px;align-items:baseline}
+.lab-fact {display:flex;flex-direction:column;gap:9px;min-width:0}
+.lab-fact strong {font-size:24px;letter-spacing:-.05em;font-weight:500;font-variant-numeric:tabular-nums}
+.lab-fact span {font-size:11px;color:#8a8792}
+.lab-description>p {max-width:540px;color:#5d5b65;font-size:17px;line-height:1.9;letter-spacing:.005em}
+.lab-directions {display:flex;flex-wrap:wrap;gap:8px 22px;margin:21px 0 27px;font-size:12px;color:#807887}
+.lab-method {padding:24px 26px;border:1px solid #ebe8f2;border-radius:20px;background:linear-gradient(120deg,#f9f8fc,#fbfbfd);box-shadow:inset 0 1px 0 #fff}
+.lab-method-label {font-size:11px;color:#797182;letter-spacing:.035em}
+.lab-method ol {display:flex;gap:25px;list-style:none;padding:0;margin:15px 0;font-size:16px;font-weight:520;letter-spacing:-.025em}
+.lab-method li {position:relative}
+.lab-method li+li:before {content:"";width:3px;height:3px;border-radius:50%;background:#b3a8c1;position:absolute;left:-14px;top:10px}
+.lab-method>p:last-child {font-size:12px;line-height:1.9;color:#827b8b}
+.product-section {padding:85px 0 75px;background:linear-gradient(180deg,#f6f6f9 0%,#fafafd 65%,#fff 100%)}
+.product-heading {display:flex;gap:44px;justify-content:space-between;align-items:center;margin-bottom:36px}
+.product-identity {display:flex;align-items:center;gap:22px;flex-shrink:0}
+.product-logo {width:76px;height:76px;object-fit:contain;filter:drop-shadow(0 5px 12px #8babe31c)}
+.product-identity h2 {font-size:clamp(36px,3.6vw,50px);font-weight:590;line-height:1.15;letter-spacing:-.055em;margin-top:9px}
+.product-summary {max-width:525px}
+.product-summary>p {font-size:14px;color:#797582;line-height:1.85}
+.product-actions {display:flex;align-items:center;gap:23px;margin-top:18px}
+.product-link {display:inline-flex;align-items:center;min-height:42px;padding:11px 21px;border-radius:24px;background:#28282d;color:#fff;font-size:12px;font-weight:500;line-height:1.4}
+.product-campus {font-size:12px;color:#797182;line-height:1.5;padding-block:10px}
+.product-campus:hover {color:#514363}
+.product-film {margin:0}
+.product-video-frame {padding:7px;background:#ffffffa6;border:1px solid #fff;border-radius:27px;box-shadow:0 14px 55px #25223c08,inset 0 1px 0 #fff}
+.product-film video {display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;background:#f8f8fa;border-radius:20px;outline-offset:5px}
+.product-film figcaption {display:flex;justify-content:space-between;gap:15px;margin-top:16px;font-size:11px;color:#928d98;letter-spacing:.025em;line-height:1.7}
+.product-film figcaption>span:first-child {color:#706a7a}
+.product-tools {display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;gap:35px;border-top:1px solid #e8e6ed;margin-top:35px;padding-top:25px}
+.product-tools>p {font-size:11px;color:#928a9c}
+.product-tools a {display:flex;align-items:center;gap:16px;min-height:44px}
+.product-tools strong {font-size:14px;font-weight:550;letter-spacing:-.025em}
+.product-tools a>span:not(.visually-hidden) {font-size:11px;color:#95909b}
+.recruit-section {padding:56px 0 70px;background:#fff}
+.recruit-panel {display:grid;grid-template-columns:.85fr 1.15fr 240px;gap:42px;align-items:start;padding:38px 40px;border:1px solid #e9e7ee;border-radius:26px;background:linear-gradient(120deg,#fbfaff,#fff 62%);box-shadow:0 6px 35px #39334703}
+.recruit-intro h2 {font-size:36px;font-weight:580;letter-spacing:-.06em;line-height:1.2;margin:18px 0}
+.recruit-intro>p:not(.lab-label) {font-size:13px;color:#8b8395;line-height:1.85}
+.recruit-intro .recruit-groups {margin-top:26px;font-size:11px!important;color:#a298ae!important}
+.recruit-small-label {display:block;font-size:10px;font-weight:500;color:#9a919f;letter-spacing:.06em;margin-bottom:7px}
+.recruit-qq {font-size:24px;font-weight:500;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.recruit-contact>p {font-size:10px;color:#9a919f;line-height:1.8;margin-top:7px}
+.recruit-mail {margin-top:22px}
+.recruit-mail>a {font-size:14px;font-weight:500;line-height:1.7;overflow-wrap:anywhere}
+.recruit-mail dl {display:grid;grid-template-columns:54px 1fr;gap:10px 13px;margin:16px 0 0;font-size:10px;line-height:1.85;color:#908699}
+.recruit-mail dt {color:#a99daf}
+.recruit-mail dd {margin:0;overflow-wrap:anywhere}
+.recruit-mail a:hover,.recruit-qq:hover {color:#76629a}
+.recruit-qr {margin:0;text-align:center;align-self:center}
+.recruit-qr img {width:240px;height:240px;object-fit:contain;background:#fff;border-radius:13px}
+.recruit-qr figcaption {margin-top:8px;font-size:10px;color:#9a919f;line-height:1.7}
+@media (max-width:1100px) {
+ .lab-intro-grid {gap:50px}
+ .recruit-panel {gap:26px;padding:32px;grid-template-columns:.8fr 1.1fr 210px}
+ .recruit-qr img {width:210px;height:210px}
+ .product-tools {gap:22px}
+ .product-tools a {flex-direction:column;align-items:flex-start;gap:5px;justify-content:center}
+}
+@media (max-width:760px) {
+ .lab-intro {padding:62px 0}
+ .lab-intro-grid {grid-template-columns:1fr;gap:34px}
+ .lab-heading h2 {font-size:34px;margin:14px 0 26px}
+ .lab-heading h2 br {display:none}
+ .lab-facts {gap:38px}
+ .lab-description>p {font-size:15px;line-height:1.9}
+ .lab-directions {font-size:11px;gap:10px 20px;margin-block:18px 22px}
+ .lab-method {padding:21px 23px}
+ .lab-method ol {gap:25px;font-size:15px}
+ .product-section {padding:54px 0}
+ .product-heading {flex-direction:column;align-items:flex-start;gap:25px;margin-bottom:26px}
+ .product-logo {width:64px;height:64px}
+ .product-identity {gap:17px}
+ .product-identity h2 {font-size:38px;margin-top:6px}
+ .product-summary>p {font-size:13px}
+ .desktop-break {display:none}
+ .product-actions {margin-top:14px}
+ .product-video-frame {border-radius:18px;padding:4px}
+ .product-film video {border-radius:14px}
+ .product-film figcaption {flex-direction:column;gap:3px;font-size:10px;margin-top:13px}
+ .product-tools {grid-template-columns:1fr 1fr;gap:9px 20px;margin-top:27px;padding-top:18px}
+ .product-tools>p {grid-column:1/-1;font-size:10px}
+ .product-tools a {gap:4px;min-height:49px}
+ .product-tools strong {font-size:13px}
+ .product-tools a>span:not(.visually-hidden) {font-size:10px}
+ .recruit-section {padding:10px 0 44px}
+ .recruit-panel {grid-template-columns:1fr;gap:29px;border-radius:22px;padding:27px}
+ .recruit-intro h2 {font-size:32px;margin-block:12px}
+ .recruit-intro>p:not(.lab-label) br {display:none}
+ .recruit-intro .recruit-groups {margin-top:12px}
+ .recruit-qr {justify-self:center}
+ .recruit-qr img {width:240px;height:240px;max-width:100%}
+ .recruit-mail dl {font-size:11px;grid-template-columns:54px 1fr;gap:10px}
+ .recruit-mail>a {font-size:15px}
+ .recruit-contact>p,.recruit-small-label {font-size:11px}
+}
+@media (max-width:360px) {
+ .lab-heading h2 {font-size:30px}
+ .lab-method {padding:20px}
+ .lab-method ol {font-size:14px;gap:21px}
+ .lab-method li+li:before {left:-12px;top:9px}
+ .recruit-panel {padding:20px}
+ .recruit-mail dl {grid-template-columns:1fr;gap:3px}
+ .recruit-mail dd {margin-bottom:7px}
+ .recruit-qr img {width:220px;height:220px}
+}

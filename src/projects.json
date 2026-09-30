@@ -31,10 +31,10 @@
       "category": "ai",
       "label": "项目介绍",
       "title": "智评学堂",
-      "description": "围绕真实教学场景，探索人工智能与图像识别如何帮助作业批改与学习反馈。",
+      "description": "连接作业布置、学生提交、AI 辅助批改与学情分析的教学平台。",
       "tags": "教育应用 / AI 实践",
       "art": "teaching",
-      "url": "https://aigrading.110-lab.cn/login",
+      "url": "https://ai-grading.110-lab.cn/login",
       "span": 1
     }
   ],
@@ -51,9 +51,9 @@
     {
       "id": "grading-public",
       "title": "批改系统",
-      "description": "外网版前端保留，业务服务尚未启用。",
+      "description": "外网版已启用，连接作业布置、智能批改与学情分析。",
       "url": "https://ai-grading.110-lab.cn/login",
-      "status": "disabled",
+      "status": "available",
       "icon": "grading",
       "edition": "外网版"
     },

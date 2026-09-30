@@ -6,7 +6,7 @@ import config from './projects.json';
 const portal=initWorkbench(config);
 // The same compiled resource can be previewed outside an MCP host.
 if(window.parent!==window){
-  const app=new App({name:'110lab',version:'0.5.0'},{},{autoResize:false});
+  const app=new App({name:'110lab',version:'0.5.1'},{},{autoResize:false});
   new OpenAIExtensions(app);
   app.ontoolresult=()=>{}; // The catalog is already in this resource; never re-call its opener.
   try{

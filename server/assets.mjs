@@ -1,0 +1,48 @@
+import {createReadStream} from 'node:fs';
+import {stat} from 'node:fs/promises';
+import {pipeline} from 'node:stream/promises';
+
+// Explicit filenames keep request paths away from the filesystem namespace.
+const types={
+  'glass-loop-v2.png':'image/png',
+  'zhiping-logo.png':'image/png',
+  'recruitment-qq-2026.png':'image/png',
+  'zhiping-poster.jpg':'image/jpeg',
+  'zhiping-promo.mp4':'video/mp4'
+};
+
+function byteRange(value,size){
+  const match=/^bytes=(\d*)-(\d*)$/.exec(value);
+  if(!match||(!match[1]&&!match[2])||size===0)return null;
+  if(!match[1]){
+    const suffix=Number(match[2]);
+    if(!Number.isSafeInteger(suffix)||suffix<=0)return null;
+    return {start:Math.max(0,size-suffix),end:size-1};
+  }
+  const start=Number(match[1]),end=match[2]?Number(match[2]):size-1;
+  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start>=size||end<start)return null;
+  return {start,end:Math.min(end,size-1)};
+}
+
+export async function serveAsset(req,res,name){
+  if(!Object.hasOwn(types,name))return false;
+  const type=types[name];
+  const path=new URL('../src/assets/'+name,import.meta.url);
+  const info=await stat(path);
+  const etag='"'+info.size.toString(16)+'-'+Math.trunc(info.mtimeMs).toString(16)+'"';
+  const headers={'Content-Type':type,'Cache-Control':'public, max-age=3600','Content-Length':info.size,ETag:etag,'Last-Modified':info.mtime.toUTCString(),'Accept-Ranges':'bytes'};
+  const conditional=req.headers['if-range'];
+  const conditionalDate=Date.parse(conditional||'');
+  const rangeAllowed=!conditional||conditional===etag||(!conditional.startsWith('W/')&&Number.isFinite(conditionalDate)&&info.mtimeMs<conditionalDate+1000);
+  let range;
+  if(req.method==='GET'&&req.headers.range&&rangeAllowed){
+    range=byteRange(req.headers.range,info.size);
+    if(!range){res.writeHead(416,{...headers,'Content-Length':0,'Content-Range':'bytes */'+info.size});res.end();return true;}
+    headers['Content-Range']=`bytes ${range.start}-${range.end}/${info.size}`;
+    headers['Content-Length']=range.end-range.start+1;
+  }
+  res.writeHead(range?206:200,headers);
+  if(req.method==='HEAD'){res.end();return true;}
+  await pipeline(createReadStream(path,range||{}),res);
+  return true;
+}

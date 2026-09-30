@@ -1,0 +1,99 @@
+@media (prefers-reduced-motion: no-preference) {
+  .lab-method,
+  .product-video-frame,
+  .recruit-panel {
+    transition: border-color .5s ease, box-shadow .5s ease;
+  }
+
+  .lab-fact strong,
+  .product-link,
+  .product-tools a {
+    transition: color .4s ease, background-color .4s ease, box-shadow .4s ease, transform .4s ease;
+  }
+
+  .lab-method { animation: polish-method .85s ease backwards; }
+  .recruit-panel { animation: polish-recruit .9s ease backwards; }
+  .product-video-frame { animation: polish-frame .9s ease backwards; }
+  .product-link { animation: polish-cta .7s ease backwards; }
+  .lab-fact strong,
+  .product-tools a { animation: polish-ink .75s ease backwards; }
+  .lab-fact:nth-child(2) strong,
+  .product-tools a + a { animation-delay: .1s; }
+}
+
+@media (hover: hover) {
+  .lab-method:hover {
+    border-color: #e0d9ec;
+    box-shadow: inset 0 1px 0 #fff, 0 10px 28px #39334708;
+  }
+
+  .lab-fact:hover strong { color: #403952; }
+
+  .product-link:hover,
+  .product-link:focus-visible {
+    background-color: #34303a;
+    box-shadow: 0 8px 18px #28282d14;
+  }
+
+  .product-video-frame:hover {
+    border-color: #f4f0f8;
+    box-shadow: 0 14px 55px #25223c10, inset 0 1px 0 #fff;
+  }
+
+  .product-tools a:hover,
+  .product-tools a:focus-visible { color: #3c364c; }
+
+  .product-tools a:hover strong,
+  .product-tools a:focus-visible strong { color: #2c2836; }
+
+  .product-tools a:hover > span:not(.visually-hidden),
+  .product-tools a:focus-visible > span:not(.visually-hidden) { color: #71697c; }
+
+  .recruit-panel:hover {
+    border-color: #e1dbe8;
+    box-shadow: 0 6px 35px #3933470a;
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .product-link:hover,
+  .product-tools a:hover { transform: translateY(-1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-method,
+  .lab-fact strong,
+  .product-link,
+  .product-video-frame,
+  .product-tools a,
+  .recruit-panel {
+    animation: none;
+    transition: none;
+    transform: none;
+  }
+}
+
+@keyframes polish-method {
+  from { border-color: #f5f3f8; box-shadow: inset 0 1px 0 #fff; }
+  to { border-color: #ebe8f2; box-shadow: inset 0 1px 0 #fff; }
+}
+
+@keyframes polish-recruit {
+  from { border-color: #f4f2f6; box-shadow: 0 6px 35px #39334700; }
+  to { border-color: #e9e7ee; box-shadow: 0 6px 35px #39334703; }
+}
+
+@keyframes polish-frame {
+  from { border-color: #fbfbfe; box-shadow: 0 14px 55px #25223c03, inset 0 1px 0 #fff; }
+  to { border-color: #fff; box-shadow: 0 14px 55px #25223c08, inset 0 1px 0 #fff; }
+}
+
+@keyframes polish-cta {
+  from { background-color: #3c3844; }
+  to { background-color: #28282d; }
+}
+
+@keyframes polish-ink {
+  from { color: #9d98a8; }
+  to { color: inherit; }
+}

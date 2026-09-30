@@ -3,9 +3,10 @@ import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
 import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {createPortalServer} from './portal.mjs';
+import {serveAsset} from './assets.mjs';
 class HttpError extends Error {constructor(status,message){super(message);this.status=status;}}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
-const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
+const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
 function readBody(req,limit){
   return new Promise((resolve,reject)=>{
     if(Number(req.headers['content-length']||0)>limit){req.resume();reject(new HttpError(413,'Request too large'));return;}
@@ -21,7 +22,6 @@ async function jsonBody(req,limit=1024*1024){
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
 export async function createHttpServer(options={}){
   const [homepage,workbench]=await Promise.all(['index','workbench'].map(p=>readFile(new URL('../dist/'+p+'.html',import.meta.url),'utf8')));
-  const assets=new Map(await Promise.all(['glass-loop-v2.png','zhiping-logo.png','recruitment-qq-2026.png'].map(async name=>[name,await readFile(new URL('../src/assets/'+name,import.meta.url))])));
   const allowedHosts=new Set(['110-lab.cn','internal.110-lab.cn','110lab-homepage','localhost','127.0.0.1','[::1]']);
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
@@ -32,7 +32,7 @@ export async function createHttpServer(options={}){
     const internalHost=host!=='110-lab.cn';
     try{
       if(path.startsWith('/admin')||path.startsWith('/api/')||path.startsWith('/media/'))throw new HttpError(404,'Not found');
-      if(path==='/mcp'||path==='/mcp/workbench-v5'){
+      if(path==='/mcp'||path==='/mcp/workbench-v5'||path==='/mcp/workbench-v5-1'){
         if(!internalHost)throw new HttpError(404,'Not found');
         res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id');res.setHeader('Cache-Control','no-store');
@@ -45,10 +45,10 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.5.0',contentManagement:false});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.5.1',contentManagement:false});return;}
       if(path.startsWith('/assets/')){
-        const name=path.slice(8),bytes=assets.get(name);if(!bytes)throw new HttpError(404,'Not found');
-        res.writeHead(200,{'Content-Type':name.endsWith('.svg')?'image/svg+xml':'image/png','Cache-Control':'public, max-age=3600'});res.end(head?undefined:bytes);return;
+        if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
+        return;
       }
       let html;
       if((path==='/workbench'||path==='/workbench/')&&internalHost)html=workbench;
