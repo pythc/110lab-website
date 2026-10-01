@@ -1,9 +1,11 @@
 import {initMotion} from './motion.js';
 import {initPublicUpdates} from './updates.js';
 import {initRecruitment} from './recruitment.js';
+import {initNaidan} from './naidan.js';
 initMotion();
 initPublicUpdates();
 initRecruitment();
+initNaidan();
 const nav=document.querySelector('.glass-nav');
 const update=()=>{if(nav)nav.dataset.elevation=window.scrollY>20?'scrolled':'base';};
 window.addEventListener('scroll',update,{passive:true});update();

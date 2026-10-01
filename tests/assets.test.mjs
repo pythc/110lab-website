@@ -1,8 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {open,stat} from 'node:fs/promises';
+import {open,stat,readFile} from 'node:fs/promises';
 import {createHttpServer} from '../server/http.mjs';
 import {createHash} from 'node:crypto';
+
+test('Naidan uses one small local transparent frame in static and server builds',async()=>{
+  const server=await createHttpServer();
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try{
+    const source=await readFile(new URL('../src/assets/naidan-peek.png',import.meta.url));
+    assert.ok(source.length<30000);
+    assert.equal(source.readUInt32BE(16),192);assert.equal(source.readUInt32BE(20),208);
+    assert.equal(source[25],6,'PNG should retain RGBA transparency');
+    const response=await fetch(`http://127.0.0.1:${server.address().port}/assets/naidan-peek.png`);
+    assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/png');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()),source);
+    assert.deepEqual(await readFile(new URL('../dist/assets/naidan-peek.png',import.meta.url)),source);
+    const releaseScript=await readFile(new URL('../scripts/package-release.mjs',import.meta.url),'utf8');
+    assert.match(releaseScript,/'src\/assets\/naidan-peek\.png'/);
+    for(const filename of ['workbench.html','mcp-app.html','admin.html']){
+      assert.doesNotMatch(await readFile(new URL('../dist/'+filename,import.meta.url),'utf8'),/data-naidan|naidan-peek/);
+    }
+  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
 
 test('Android download returns the verified public APK as an attachment',async()=>{
   const server=await createHttpServer();
