@@ -5,8 +5,8 @@ import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 import {ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
 
-export const UI_URI='ui://110lab/workbench/v0.6.1';
-export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.6.0';
+export const UI_URI='ui://110lab/workbench/v0.6.0';
+export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.6.1';
 export const LEGACY_UI_URI='ui://110lab/home';
 export async function createPortalServer(){
   const [html,config,icon]=await Promise.all([

@@ -3,7 +3,7 @@
     "110lab": {
       "type": "streamable-http",
       "headers": {},
-      "url": "https://internal.110-lab.cn/mcp/workbench-v6-1"
+      "url": "https://internal.110-lab.cn/mcp/workbench-v6"
     }
   }
 }
