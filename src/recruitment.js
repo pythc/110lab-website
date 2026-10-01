@@ -20,10 +20,10 @@ export async function initRecruitment(){
     RECEIVED:'提交已接收 · 邮件正在排队 请保留回执编号',
     SENDING:'提交已接收 · 邮件正在发送',
     RETRYING:'提交已接收 · 邮件尚未发送 服务会自动重试',
-    SENT:'邮件已发送 · 发信服务已确认接收 最终收件情况以邮箱为准',
+    SENT:'邮件已发送 · 收件情况以邮箱为准',
     FAILED:'提交已接收 · 邮件发送失败 可使用原资料重试',
-    UNKNOWN:'提交已接收 · 发信结果待核实 为避免重复邮件请勿重新投递 可通过下方邮箱联系实验室并提供回执编号',
-    EXPIRED:'回执资料已清理 未能确认邮件发送结果 请通过下方邮箱联系实验室并提供回执编号',
+    UNKNOWN:'提交已接收 · 发信结果待核实 为避免重复邮件请勿重新投递 可通过邮箱联系实验室并提供回执编号',
+    EXPIRED:'回执资料已清理 未能确认邮件发送结果 请通过邮箱联系实验室并提供回执编号',
   };
   const pending=()=>receipt&&['RECEIVED','SENDING','RETRYING'].includes(receipt.status);
   function render(){
@@ -46,18 +46,18 @@ export async function initRecruitment(){
     finally{polling=false;}
   }
   document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(timer);else if(pending())poll();});
-  try{config=await request('config',null,false);}catch{say('在线投递暂时不可用 可使用下方邮箱投递');return;}
+  try{config=await request('config',null,false);}catch{say('在线投递暂时不可用 可使用邮箱投递');return;}
   try{
     const saved=JSON.parse(sessionStorage.getItem('110lab-resume-receipt')||'null');
     if(saved&&(typeof saved.id==='string'||saved.id===null)&&/^Bearer [A-Za-z0-9_-]{43}$/.test(saved.authorization)){authorization=saved.authorization;receipt={id:saved.id,status:'RECEIVED'};render();await poll();}
   }catch{clearSaved();}
-  if(!config.enabled){if(!receipt)say('在线投递暂未开放 可使用下方邮箱投递');return;}
+  if(!config.enabled){if(!receipt)say('在线投递暂未开放 可使用邮箱投递');return;}
   if(!receipt){form.querySelector('#resume-upload').hidden=false;if(config.available){fieldset.disabled=false;submit.disabled=false;}}
   const locale={...zh_CN,strings:{...zh_CN.strings,complete:'提交已接收',uploadComplete:'提交已接收',done:'完成上传',dropPasteFiles:'将简历拖到这里 或 %{browseFiles}',browseFiles:'选择文件'}};
   const uppy=new Uppy({id:'110lab-resume',autoProceed:false,allowMultipleUploadBatches:false,restrictions:{maxNumberOfFiles:1,minNumberOfFiles:1,maxFileSize:config.maxFileBytes,allowedFileTypes:['.pdf','.docx']},locale});
   uppy.use(Dashboard,{target:'#resume-upload',inline:true,width:'100%',height:220,hideUploadButton:true,hideRetryButton:true,hideCancelButton:true,showProgressDetails:true,disableThumbnailGenerator:true,note:'一份 PDF 或 DOCX 简历 · 最大 10MB',proudlyDisplayPoweredByUppy:false});
   uppy.use(XHRUpload,{endpoint:'/api/recruitment/submissions',fieldName:'resume',formData:true,allowedMetaFields:['applicantName','group','email','consent','website'],limit:1,timeout:90000,headers:()=>({Authorization:authorization}),shouldRetry:xhr=>xhr.status===0||[408,502,503,504].includes(xhr.status),getResponseData:xhr=>xhr.responseType==='json'?xhr.response:JSON.parse(xhr.responseText)});
-  if(!receipt)say(config.available?'填写资料并上传简历 提交后可查看邮件发送状态':'发信服务暂时不可用 可稍后刷新页面或使用下方邮箱投递');
+  if(!receipt)say(config.available?'':'发信服务暂时不可用 可稍后刷新页面或使用邮箱投递');
   form.addEventListener('input',()=>{if(!busy&&!receipt)authorization=null;});
   uppy.on('file-added',()=>{if(!busy&&!receipt)authorization=null;});
   uppy.on('file-removed',()=>{if(!busy&&!receipt)authorization=null;});

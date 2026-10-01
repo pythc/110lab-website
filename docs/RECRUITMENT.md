@@ -30,19 +30,19 @@ Uppy Core / Dashboard / XHRUpload 在站内上传一份 PDF 或 DOCX，最多 **
 
 ## 已核实的发信服务
 
-2026-10-01 只读核实 `lab110-assessment` 已配置 `smtpdm.aliyun.com:465` 隐式 TLS，From 为 `110lab <noreply@notify.110-lab.cn>`，生产测试收件模式关闭，发信域 SPF 包含阿里云。未读取或获取 SMTP 密钥，未外发邮件。
+2026-10-01 只读核实 `lab110-assessment` 已配置 `smtpdm.aliyun.com:465` 隐式 TLS，From 为 `110lab <noreply@notify.110-lab.cn>`，生产测试收件模式关闭，发信域 SPF 包含阿里云。既有配置只在服务器内复用，不输出或下载凭据，不外发测试邮件。
 
-飞书已有 `noreply@110-lab.cn` 可发信公共邮箱，但官网没有持续运行所需的飞书发信配置。候选优先复用现有 SMTP；不会将本机飞书用户登录令牌复制到官网。现有考核服务不是附件 relay，不修改其业务或增加 relay 接口。现有 SMTP 的附件到达 Gmail 的真实链路仍待授权外发测试。
+飞书已有 `noreply@110-lab.cn` 可发信公共邮箱，但官网没有持续运行所需的飞书发信配置。候选优先复用现有 SMTP；不会将本机飞书用户登录令牌复制到官网。现有考核服务不是附件 relay，不修改其业务或增加 relay 接口。2026-10-01 已验证现有 SMTP 的 TLS 连接与账号认证。用户明确取消真实外发测试，因此不验证 Gmail 收件和真实附件到达。
 
-## 新部署配置范围（尚未实施）
+## 已授权部署配置范围
 
 1. 发布官网 0.6.0 候选；只开放四个招新 API：config、submissions、status、retry。管理页面和其他写入接口继续关闭，工作台入口不变。
 2. 创建 `/opt/110lab-homepage/private/recruitment`（0700、UID 1000）作为唯一共享队列及文件目录，发布/回滚包不包含资料。默认接收上限 512 MiB。官网 HTTP 与一个独立发信 worker 仅挂载该目录。
-3. 创建 `/opt/110lab-homepage/private/recruitment-smtp.json`（0600、UID 1000），**由账号维护者配置已有 SMTP 账号或指定可复用的既有配置路径，不需要在聊天中提供密钥**。该文件只读挂载到 worker `/run/110lab/smtp.json`，HTTP 不挂载，不放进环境变量、Git、镜像或发布包。
+3. 创建 `/opt/110lab-homepage/private/recruitment-smtp.json`（0600、UID 1000），**仅在服务器内复用考核系统既有 SMTP 配置，不申请新密钥，不在聊天或开发机保存凭据**。该文件只读挂载到 worker `/run/110lab/smtp.json`，HTTP 不挂载，不放进环境变量、Git、镜像或发布包。
 4. HTTP 和 worker 设置 `PORTAL_RECRUITMENT_ENABLED=true`、`PORTAL_RECRUITMENT_DATA=/data/recruitment`；worker 另设 `PORTAL_RECRUITMENT_SMTP_CONFIG=/run/110lab/smtp.json`。HTTP 配置 `PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS=172.29.0.10`，发布前须再次核对网关实际地址与 XFF 覆写行为。保持无 CORS、固定官网 Origin，不信任其他代理。
 5. worker 运行 `node server/recruitment-worker-runtime.mjs`，根文件系统只读、UID 1000、drop ALL capabilities、no-new-privileges，单独资源限制（内存 192 MiB）并持续运行。不对公网暴露 worker 端口。另运行独立清理容器（同一发布包，内存 96 MiB，network none），只挂载队列、不挂 SMTP 配置，执行 `node server/recruitment-ops-runtime.mjs cleanup-loop`；即使官网回滚或发信暂停，也每 15 分钟清理到期资料。
-6. 仅在 `110-lab.cn` 的投递路由设置网关请求体上限 11 MiB 与上传超时 180 秒；其他站点路由不变。后台另行保留相同 180 秒上传超时及 10 MiB 文件限制。无 DNS 修改、无新增付费服务或密钥申请。
-7. 真实外发测试只发送 **一封**：收件人 `f74974332@gmail.com`，From 使用上述现有账号，主题 `[招新简历] 虚构上线测试-开发组`，姓名“虚构上线测试”、组别“开发组”、Reply-To `candidate@example.com`；正文明确标注虚构测试，附件为不含真实个人信息的约 625 字节 PDF。确认 SMTP 接受后，还需收件人确认 Gmail 到达及附件可打开。
+6. 仅在 `110-lab.cn` 的投递路由设置网关请求体上限 11 MiB ；该路由代理响应等待上限 190 秒，后台上传超时 180 秒；其他站点路由不变。后台另行保留相同 180 秒上传超时及 10 MiB 文件限制。无 DNS 修改、无新增付费服务或密钥申请。
+7. 用户已明确取消外发测试并授权上线。生产只做 TLS/认证和不会接收资料的请求验证；虚构资料全流程在本机隔离 SMTP 接收器中验证。
 
 SMTP JSON 字段仅为 `host`、`port`、`secure`、`user`、`pass`、`from`。生产要求隐式 TLS，不允许测试明文连接、跳过证书校验或远程测试收件模拟。已安装依赖均来自 npm，版本固定。
 
@@ -68,6 +68,6 @@ inspect 只显示状态、尝试次数、脱敏错误码和事件，不输出候
 
 `npm run build && npm run release && npm test` 构建前端、独立 HTTP/worker/ops 运行包并运行真实 loopback SMTP 测试。用虚构 PDF/DOCX 覆盖大小/类型/字段/同意校验、重复提交、权限凭证、附件 MIME 与邮件主题、暂时/永久 SMTP 错误、八次自动重试及手动上限、SMTP DATA 无确认、过期租约、跨连接队列协调、频率/空间上限、伪造 XFF 与 24 小时/七天/30 天清理。
 
-本机浏览器候选地址为 `http://127.0.0.1:4184/#join`，测试接收器只监听 loopback，不向外转发。生产官网仍为 0.5.3，线上招新投递尚未启用。只有完成新增配置范围授权、维护者提供现有 SMTP 配置、真实外发及公网验证后，才能宣称线上完整流程已可用。
+本机隔离 SMTP 使用虚构资料验证提交、队列、邮件附件、状态查询和重试。生产发布必须核对 Git 提交、发布清单、公网字节哈希、worker 心跳、私有目录权限、管理接口关闭及回滚保护。生产邮箱真实收件验证由用户取消；不要将 SMTP 认证或本机完整流程测试描述为 Gmail 实际收件验证。
 
 参考：[Uppy 文档](https://uppy.io/docs/uppy/)、[XHRUpload](https://uppy.io/docs/xhr-upload/)、[阿里云 SMTP 附件及限制](https://help.aliyun.com/zh/direct-mail/how-can-i-send-emails-with-attachments-using-smtp)。
