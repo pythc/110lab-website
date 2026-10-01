@@ -1,0 +1,51 @@
+/* Visible motion for the public homepage; layout and input hit targets stay stable. */
+@media (prefers-reduced-motion: no-preference) {
+  html.motion-enabled:not(.motion-paused) .hero-sculpture {
+    animation: lab-glass-float 6s cubic-bezier(.45,0,.55,1) infinite;
+    transform-origin: 50% 50%;
+  }
+  html.motion-enabled:not(.motion-paused) .hero-copy h1 {
+    animation: lab-copy-enter .9s cubic-bezier(.16,1,.3,1) both;
+  }
+  html.motion-enabled:not(.motion-paused) .hero-copy .lede,
+  html.motion-enabled:not(.motion-paused) .hero-actions {
+    animation: lab-copy-enter 1s .12s cubic-bezier(.16,1,.3,1) both;
+  }
+  html.motion-enabled:not(.motion-paused)[data-reveal-ready="true"] .reveal {
+    transition: opacity .85s cubic-bezier(.16,1,.3,1), transform .85s cubic-bezier(.16,1,.3,1);
+  }
+  html.motion-enabled:not(.motion-paused)[data-reveal-ready="true"] .reveal:not(.is-visible) {
+    transform: translate3d(0,36px,0);
+  }
+  .lab-intro .lab-method,
+  .product-section .product-video-frame {
+    transition: transform .45s cubic-bezier(.2,.8,.2,1), box-shadow .45s ease, border-color .45s ease;
+  }
+  .product-actions a,
+  .recruit-assessment,
+  .resume-actions button {
+    transition: transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s ease, background-color .3s ease;
+  }
+  .resume-fields input,.resume-fields select {
+    transition: border-color .25s ease, box-shadow .25s ease, background-color .25s ease;
+  }
+  @media (hover: hover) {
+    .lab-intro .lab-method:hover,
+    .product-section .product-video-frame:hover { transform: translate3d(0,-4px,0); }
+    .product-actions a:hover,.recruit-assessment:hover,.resume-actions button:not(:disabled):hover {
+      transform: translate3d(0,-3px,0);
+    }
+    .product-actions a:active,.recruit-assessment:active,.resume-actions button:not(:disabled):active {
+      transform: translate3d(0,0,0) scale(.98);
+    }
+  }
+  html.motion-suspended .hero-sculpture { animation-play-state: paused !important; }
+}
+@keyframes lab-glass-float {
+  0%,100% { transform: translate3d(0,0,0) rotate(-1deg); }
+  50% { transform: translate3d(0,-12px,0) rotate(1.5deg); }
+}
+@keyframes lab-copy-enter {
+  from { opacity:0; transform:translate3d(0,20px,0); }
+  to { opacity:1; transform:translate3d(0,0,0); }
+}

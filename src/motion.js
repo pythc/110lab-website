@@ -175,9 +175,9 @@ export function initMotion() {
       '--hero-copy-opacity': '1',
       '--hero-copy-y': px(-8 * travel),
       '--hero-art-x': '0px',
-      '--hero-art-y': px((compact ? -10 : -16) * travel),
-      '--hero-art-scale': unitless(lerp(1, 1.06, travel)),
-      '--hero-art-rotate': deg(compact ? 0 : -1.5 * travel),
+      '--hero-art-y': px((compact ? -20 : -32) * travel),
+      '--hero-art-scale': unitless(lerp(1, compact ? 1.08 : 1.12, travel)),
+      '--hero-art-rotate': deg((compact ? -2 : -5) * travel),
       '--hero-caption-opacity': '0',
       '--hero-caption-y': '0px'
     };
@@ -289,6 +289,7 @@ export function initMotion() {
 
   function onVisibility() {
     if (destroyed) return;
+    root.classList.toggle('motion-suspended', document.visibilityState === 'hidden');
     if (document.visibilityState === 'hidden') {
       if (frame) {
         window.cancelAnimationFrame(frame);
@@ -318,6 +319,7 @@ export function initMotion() {
   if (document.readyState !== 'complete') window.addEventListener('load', schedule);
 
   applyMode();
+  onVisibility();
 
   return {
     setPaused(value) {
@@ -352,7 +354,7 @@ export function initMotion() {
       if (window.visualViewport) window.visualViewport.removeEventListener('resize', schedule, PASSIVE);
       observer?.disconnect();
       observer = null;
-      root.classList.remove('motion-enabled', 'motion-paused');
+      root.classList.remove('motion-enabled', 'motion-paused', 'motion-suspended');
       root.removeAttribute('data-reveal-ready');
       document.querySelectorAll('.reveal, .system-feature').forEach(node => node.classList.add('is-visible'));
       clearVars();
