@@ -50,7 +50,7 @@ export async function createHttpServer(options={}){
         res.writeHead(200,headers);res.end(req.method==='HEAD'?undefined:body);return;
       }
       if(path.startsWith('/admin')||path.startsWith('/api/')||path.startsWith('/media/'))throw new HttpError(404,'Not found');
-      if(path==='/mcp'||path==='/mcp/workbench-v5'||path==='/mcp/workbench-v5-1'||path==='/mcp/workbench-v6'){
+      if(path==='/mcp'||path==='/mcp/workbench-v5'||path==='/mcp/workbench-v5-1'||path==='/mcp/workbench-v6'||path==='/mcp/workbench-v6-1'){
         if(!internalHost)throw new HttpError(404,'Not found');
         res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id');res.setHeader('Cache-Control','no-store');
@@ -63,7 +63,7 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.7.0',contentManagement:false,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.7.1',contentManagement:false,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
