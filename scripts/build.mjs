@@ -21,7 +21,8 @@ const [workbenchHTML,workbenchCSS,workbenchJS,appJS]=await Promise.all([
 const workbenchTemplate=renderWorkbench(workbenchHTML,config).replace('/* WORKBENCH_CSS */',()=>workbenchCSS);
 await writeFile(resolve(root,'dist/workbench.html'),workbenchTemplate.replace('/* WORKBENCH_SCRIPT */',()=>workbenchJS));
 await writeFile(resolve(root,'dist/mcp-app.html'),workbenchTemplate.replace('/* WORKBENCH_SCRIPT */',()=>appJS));
-await rm(resolve(root,'dist/admin.html'),{force:true});
+const [adminHTML,adminCSS,adminJS]=await Promise.all([readFile(resolve(root,'src/admin.html'),'utf8'),readFile(resolve(root,'src/admin.css'),'utf8'),bundle('src/admin.js')]);
+await writeFile(resolve(root,'dist/admin.html'),adminHTML.replace('/* ADMIN_CSS */',()=>adminCSS).replace('/* ADMIN_SCRIPT */',()=>adminJS));
 await rm(resolve(root,'dist/assets'),{recursive:true,force:true});
 await cp(resolve(root,'src/assets'),resolve(root,'dist/assets'),{recursive:true});
 console.log('110lab built: static homepage + workbench + MCP App');

@@ -4,6 +4,7 @@ import {pipeline} from 'node:stream/promises';
 
 // Explicit filenames keep request paths away from the filesystem namespace.
 const types={
+  '110lab-icon.png':'image/png',
   'glass-loop-v2.png':'image/png',
   'zhiping-logo.png':'image/png',
   'recruitment-qq-2026.png':'image/png',

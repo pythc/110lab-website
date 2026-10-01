@@ -8,6 +8,7 @@ import {serveAsset} from './assets.mjs';
 import {createHash} from 'node:crypto';
 import {openUpdatesStore} from './updates.mjs';
 import {createRecruitmentHttp} from './recruitment-http.mjs';
+import {createAdminHttp} from './admin-http.mjs';
 class HttpError extends Error {constructor(status,message){super(message);this.status=status;}}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
@@ -29,6 +30,8 @@ export async function createHttpServer(options={}){
   const allowedHosts=new Set(['110-lab.cn','internal.110-lab.cn','110lab-homepage','localhost','127.0.0.1','[::1]']);
   const updates=options.updatesStore||openUpdatesStore(process.env.PORTAL_UPDATES_DATABASE||':memory:');
   const recruitment=createRecruitmentHttp(options.recruitment);
+  if(process.env.PORTAL_ADMIN_ENABLED==='true'&&!process.env.PORTAL_UPDATES_DATABASE&&!options.updatesStore)throw new Error('Admin updates require a persistent database');
+  const admin=await createAdminHttp({...options.admin,updates});
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
     const host=(req.headers.host||'').toLowerCase().replace(/:\d+$/,'');
@@ -37,6 +40,7 @@ export async function createHttpServer(options={}){
     try{path=new URL(req.url,'http://localhost').pathname;}catch{res.writeHead(400);res.end('Invalid request target');return;}
     const internalHost=host!=='110-lab.cn';
     try{
+      if(await admin.handle(req,res,path,host))return;
       if(await recruitment.handle(req,res,path,host))return;
       if(path==='/api/updates'){
         if(req.method!=='GET'&&req.method!=='HEAD'){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
@@ -46,7 +50,7 @@ export async function createHttpServer(options={}){
         res.writeHead(200,headers);res.end(req.method==='HEAD'?undefined:body);return;
       }
       if(path.startsWith('/admin')||path.startsWith('/api/')||path.startsWith('/media/'))throw new HttpError(404,'Not found');
-      if(path==='/mcp'||path==='/mcp/workbench-v5'||path==='/mcp/workbench-v5-1'){
+      if(path==='/mcp'||path==='/mcp/workbench-v5'||path==='/mcp/workbench-v5-1'||path==='/mcp/workbench-v6'){
         if(!internalHost)throw new HttpError(404,'Not found');
         res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id');res.setHeader('Cache-Control','no-store');
@@ -59,7 +63,7 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.6.0',contentManagement:false,recruitmentEnabled:recruitment.enabled});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.7.0',contentManagement:false,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
@@ -81,6 +85,7 @@ export async function createHttpServer(options={}){
   });
   if(!options.updatesStore)server.once('close',()=>updates.close());
   server.once('close',()=>recruitment.close());
+  server.once('close',()=>admin.close());
   server.requestTimeout=180000;server.headersTimeout=15000;
   return server;
 }
