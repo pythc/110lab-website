@@ -1,0 +1,12 @@
+{
+  "packageName": "com.aihomework.public",
+  "versionName": "0.2.2",
+  "versionCode": 3,
+  "edition": "public",
+  "apiOrigin": "https://ai-grading.110-lab.cn/api/v1",
+  "apk": {
+    "path": "/assets/zhiping-public-0.2.2.apk",
+    "bytes": 7737057,
+    "sha256": "4c553d94f356047f09af41dab0db425b88a499cf78da6462cbd60eef8eed3c56"
+  }
+}

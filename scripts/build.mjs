@@ -11,8 +11,8 @@ for(const value of [...Object.values(config.systems),...config.apps.map(p=>p.url
 }
 const bundle=async entry=>(await build({entryPoints:[resolve(root,entry)],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',minify:true})).outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
 await mkdir(resolve(root,'dist'),{recursive:true});
-const [template,baseCSS,motionCSS,homepageCSS,redesignCSS,polishCSS,colorCSS,js]=await Promise.all(['src/index.html','src/portal.css','src/motion.css','src/homepage-v5.css','src/homepage-v6.css','src/homepage-polish.css','src/homepage-colors.css'].map(p=>readFile(resolve(root,p),'utf8')).concat(bundle('src/standalone.js')));
-await writeFile(resolve(root,'dist/index.html'),template.replaceAll('/* HERO_ASSET */','/assets/glass-loop-v2.png').replace('/* PORTAL_CSS */',()=>baseCSS+'\n'+motionCSS+'\n'+homepageCSS+'\n'+redesignCSS+'\n'+polishCSS+'\n'+colorCSS).replace('/* PORTAL_SCRIPT */',()=>js));
+const [template,baseCSS,motionCSS,homepageCSS,redesignCSS,polishCSS,colorCSS,refinementCSS,js]=await Promise.all(['src/index.html','src/portal.css','src/motion.css','src/homepage-v5.css','src/homepage-v6.css','src/homepage-polish.css','src/homepage-colors.css','src/homepage-refinement.css'].map(p=>readFile(resolve(root,p),'utf8')).concat(bundle('src/standalone.js')));
+await writeFile(resolve(root,'dist/index.html'),template.replaceAll('/* HERO_ASSET */','/assets/glass-loop-v2.png').replace('/* PORTAL_CSS */',()=>baseCSS+'\n'+motionCSS+'\n'+homepageCSS+'\n'+redesignCSS+'\n'+polishCSS+'\n'+colorCSS+'\n'+refinementCSS).replace('/* PORTAL_SCRIPT */',()=>js));
 const [workbenchHTML,workbenchCSS,workbenchJS,appJS]=await Promise.all([
  readFile(resolve(root,'src/workbench.html'),'utf8'),readFile(resolve(root,'src/workbench.css'),'utf8'),bundle('src/workbench-standalone.js'),bundle('src/app.js')
 ]);

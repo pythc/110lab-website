@@ -55,27 +55,6 @@ function deg(value) {
   return withUnit(value, 'deg');
 }
 
-function desktopShift(viewW) {
-  if (viewW <= 768) return 0;
-  return clamp(80 + (viewW - 768) * 0.28, 80, 260);
-}
-
-function copyTravel(viewH) {
-  return -clamp(viewH * 0.1, 56, 104);
-}
-
-function artRise(viewH) {
-  return -clamp(viewH * 0.12, 72, 140);
-}
-
-function artRest(viewH) {
-  return -clamp(viewH * 0.02, 8, 28);
-}
-
-function artDrop(viewH) {
-  return clamp(viewH * 0.045, 16, 48);
-}
-
 function paint(node, name, value) {
   if (!node || !node.style) return;
   if (node.style.getPropertyValue(name) === value) return;
@@ -190,30 +169,23 @@ export function initMotion() {
     if (heroStamp.get(section) === stamp) return;
     heroStamp.set(section, stamp);
 
-    const fade = smooth(segment(progress, 0.04, 0.46));
-    const rise = smooth(segment(progress, 0, 0.58));
-    const settle = smooth(segment(progress, 0.66, 1));
-    const caption = smooth(segment(progress, 0.7, 0.94));
-    const peak = compact ? 1.24 : 1.4;
-    const endScale = compact ? 0.9 : 0.8;
+    const travel = smooth(progress);
     const values = {
       '--hero-progress': unitless(progress),
-      '--hero-copy-opacity': unitless(1 - fade),
-      '--hero-copy-y': px(copyTravel(viewH) * fade),
-      '--hero-art-x': px((compact ? 0 : desktopShift(viewW)) * settle),
-      '--hero-art-y': px(compact
-        ? artDrop(viewH) * Math.max(rise, settle)
-        : lerp(lerp(0, artRise(viewH), rise), artRest(viewH), settle)),
-      '--hero-art-scale': unitless(lerp(lerp(1, peak, rise), endScale, settle)),
-      '--hero-art-rotate': deg(compact ? 0 : lerp(lerp(0, -6, rise), 4, settle)),
-      '--hero-caption-opacity': unitless(caption),
-      '--hero-caption-y': px((compact ? 16 : 28) * (1 - caption))
+      '--hero-copy-opacity': '1',
+      '--hero-copy-y': px(-8 * travel),
+      '--hero-art-x': '0px',
+      '--hero-art-y': px((compact ? -10 : -16) * travel),
+      '--hero-art-scale': unitless(lerp(1, 1.06, travel)),
+      '--hero-art-rotate': deg(compact ? 0 : -1.5 * travel),
+      '--hero-caption-opacity': '0',
+      '--hero-caption-y': '0px'
     };
 
     const copy=section.querySelector('.hero-copy');
     const captionNode=section.querySelector('.hero-caption');
-    if(copy)copy.inert=(1-fade)<0.08;
-    if(captionNode)captionNode.inert=caption<0.08;
+    if(copy)copy.inert=false;
+    if(captionNode)captionNode.inert=true;
     for (const name of HERO_PROPS) paint(section,name,values[name]);
   }
 

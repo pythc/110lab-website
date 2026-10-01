@@ -4,6 +4,8 @@ import {pathToFileURL} from 'node:url';
 import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {createPortalServer} from './portal.mjs';
 import {serveAsset} from './assets.mjs';
+import {createHash} from 'node:crypto';
+import {openUpdatesStore} from './updates.mjs';
 class HttpError extends Error {constructor(status,message){super(message);this.status=status;}}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
@@ -23,6 +25,7 @@ const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application
 export async function createHttpServer(options={}){
   const [homepage,workbench]=await Promise.all(['index','workbench'].map(p=>readFile(new URL('../dist/'+p+'.html',import.meta.url),'utf8')));
   const allowedHosts=new Set(['110-lab.cn','internal.110-lab.cn','110lab-homepage','localhost','127.0.0.1','[::1]']);
+  const updates=options.updatesStore||openUpdatesStore(process.env.PORTAL_UPDATES_DATABASE||':memory:');
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
     const host=(req.headers.host||'').toLowerCase().replace(/:\d+$/,'');
@@ -31,6 +34,13 @@ export async function createHttpServer(options={}){
     try{path=new URL(req.url,'http://localhost').pathname;}catch{res.writeHead(400);res.end('Invalid request target');return;}
     const internalHost=host!=='110-lab.cn';
     try{
+      if(path==='/api/updates'){
+        if(req.method!=='GET'&&req.method!=='HEAD'){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
+        const body=JSON.stringify({updates:updates.listPublished()}),etag='"'+createHash('sha256').update(body).digest('hex')+'"';
+        const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'public, max-age=60, must-revalidate',ETag:etag};
+        if(String(req.headers['if-none-match']||'').split(',').map(x=>x.trim()).includes(etag)){res.writeHead(304,headers);res.end();return;}
+        res.writeHead(200,headers);res.end(req.method==='HEAD'?undefined:body);return;
+      }
       if(path.startsWith('/admin')||path.startsWith('/api/')||path.startsWith('/media/'))throw new HttpError(404,'Not found');
       if(path==='/mcp'||path==='/mcp/workbench-v5'||path==='/mcp/workbench-v5-1'){
         if(!internalHost)throw new HttpError(404,'Not found');
@@ -45,7 +55,7 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.5.2',contentManagement:false});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.5.3',contentManagement:false});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
@@ -65,6 +75,7 @@ export async function createHttpServer(options={}){
       else{res.writeHead(status,{'Content-Type':'text/plain; charset=utf-8'});res.end(status===500?'Internal error':error.message);}
     }
   });
+  if(!options.updatesStore)server.once('close',()=>updates.close());
   return server;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
