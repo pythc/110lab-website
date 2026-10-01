@@ -31,6 +31,8 @@ npm run preview
 
 通过分支与 Pull Request 提交修改。CI 会构建、测试并产出发布包；合并代码不会自动修改生产环境。
 
+0.6.0 候选新增 Uppy 站内简历投递、私有持久队列与独立 SMTP worker。默认关闭在线接收，邮件投递方式保留。完整流程、资料保留、待授权配置与回滚见 [RECRUITMENT.md](docs/RECRUITMENT.md)。静态站点部署只能使用邮件投递；在线投递需要启用受限后端和独立 worker。
+
 ## 部署
 
 `npm run build` 产出 `dist/index.html` 和 `dist/assets/`，官网可以作为静态站点部署。部署完整工作台与 MCP 服务时执行 `npm run release`，按 `release.json` 的 SHA-256 清单打包，或使用提供的 Dockerfile。

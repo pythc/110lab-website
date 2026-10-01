@@ -1,11 +1,13 @@
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
+import {realpathSync} from 'node:fs';
 import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {createPortalServer} from './portal.mjs';
 import {serveAsset} from './assets.mjs';
 import {createHash} from 'node:crypto';
 import {openUpdatesStore} from './updates.mjs';
+import {createRecruitmentHttp} from './recruitment-http.mjs';
 class HttpError extends Error {constructor(status,message){super(message);this.status=status;}}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
@@ -26,6 +28,7 @@ export async function createHttpServer(options={}){
   const [homepage,workbench]=await Promise.all(['index','workbench'].map(p=>readFile(new URL('../dist/'+p+'.html',import.meta.url),'utf8')));
   const allowedHosts=new Set(['110-lab.cn','internal.110-lab.cn','110lab-homepage','localhost','127.0.0.1','[::1]']);
   const updates=options.updatesStore||openUpdatesStore(process.env.PORTAL_UPDATES_DATABASE||':memory:');
+  const recruitment=createRecruitmentHttp(options.recruitment);
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
     const host=(req.headers.host||'').toLowerCase().replace(/:\d+$/,'');
@@ -34,6 +37,7 @@ export async function createHttpServer(options={}){
     try{path=new URL(req.url,'http://localhost').pathname;}catch{res.writeHead(400);res.end('Invalid request target');return;}
     const internalHost=host!=='110-lab.cn';
     try{
+      if(await recruitment.handle(req,res,path,host))return;
       if(path==='/api/updates'){
         if(req.method!=='GET'&&req.method!=='HEAD'){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
         const body=JSON.stringify({updates:updates.listPublished()}),etag='"'+createHash('sha256').update(body).digest('hex')+'"';
@@ -55,7 +59,7 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.5.3',contentManagement:false});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.6.0',contentManagement:false,recruitmentEnabled:recruitment.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
@@ -76,11 +80,14 @@ export async function createHttpServer(options={}){
     }
   });
   if(!options.updatesStore)server.once('close',()=>updates.close());
+  server.once('close',()=>recruitment.close());
+  server.requestTimeout=180000;server.headersTimeout=15000;
   return server;
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+function isMain(){try{return !!process.argv[1]&&fileURLToPath(import.meta.url)===realpathSync(process.argv[1]);}catch{return false;}}
+if(isMain()){
   const port=Number(process.env.PORTAL_HTTP_PORT||8080);if(!Number.isInteger(port)||port<1||port>65535)throw new Error('Invalid PORTAL_HTTP_PORT');
-  const server=await createHttpServer();server.requestTimeout=30000;server.headersTimeout=15000;
+  const server=await createHttpServer();
   server.listen(port,'0.0.0.0',()=>console.log(`110lab homepage, workbench and MCP listening on ${port}`));
   for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{server.close(()=>process.exit(0));setTimeout(()=>process.exit(1),10000).unref();});
 }

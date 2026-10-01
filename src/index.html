@@ -116,6 +116,24 @@
             </div>
           </div>
           <figure class="recruit-qr"><img src="/assets/recruitment-qq-2026.png" alt="110 实验室 2026 招新 QQ 交流群二维码" width="900" height="900" loading="lazy" decoding="async"></figure>
+          <form id="resume-form" class="resume-form">
+            <h3>在线投递简历</h3>
+            <fieldset disabled>
+              <div class="resume-fields">
+                <label>姓名<input name="name" autocomplete="name" maxlength="60" required></label>
+                <label>应聘组别<select name="group" required><option value="">选择组别</option><option>产品组</option><option>开发组</option><option>测试运维组</option></select></label>
+                <label>联系邮箱<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+              </div>
+              <p class="resume-file-note">PDF 或 DOCX · 一份文件 · 最大 10MB</p><div id="resume-upload"></div>
+              <label class="resume-honeypot" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+              <label class="resume-consent"><input type="checkbox" name="consent" required><span>我同意将姓名、应聘组别、联系邮箱及简历用于 110 实验室招新评估与联系，资料将发送至 <a href="mailto:f74974332@gmail.com">f74974332@gmail.com</a>。邮件主题为 [招新简历] 姓名-应聘组别。</span></label>
+            </fieldset>
+            <p class="resume-retention">网站临时简历在发信服务确认接收 24 小时后清理，待发或失败资料保留 7 天，回执记录保留 30 天。清理任务每 15 分钟执行。收件邮箱中的资料由实验室管理。文件没有公开访问地址，请勿提交与招新无关的敏感资料。</p>
+            <div class="resume-actions"><button type="submit">提交简历</button><button type="button" data-resume-retry hidden>重试发送邮件</button><button type="button" data-resume-reset hidden>提交新资料</button></div>
+            <p class="resume-status" data-resume-status role="status" aria-live="polite">正在检查投递服务</p>
+            <p class="resume-receipt" data-resume-receipt hidden>回执编号 <span data-resume-id></span> · 请保存编号；当前标签页保留状态查询凭证</p>
+            <noscript><p>请使用下方邮箱投递简历，邮件主题为 [招新简历] 姓名-应聘组别。</p></noscript>
+          </form>
         </div>
       </div>
     </section>

@@ -3,6 +3,8 @@ dist/
 artifacts/
 *.log
 server/runtime.mjs
+server/recruitment-worker-runtime.mjs
+server/recruitment-ops-runtime.mjs
 release.json
 .DS_Store
 .env
