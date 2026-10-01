@@ -13,6 +13,8 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build --chown=1000:1000 /app/dist/ dist/
 COPY --from=build --chown=1000:1000 /app/server/runtime.mjs server/runtime.mjs
+COPY --from=build --chown=1000:1000 /app/server/recruitment-worker-runtime.mjs server/recruitment-worker-runtime.mjs
+COPY --from=build --chown=1000:1000 /app/server/recruitment-ops-runtime.mjs server/recruitment-ops-runtime.mjs
 COPY --from=build --chown=1000:1000 /app/src/projects.json src/projects.json
 COPY --from=build --chown=1000:1000 /app/src/assets/ src/assets/
 COPY --from=build --chown=1000:1000 /app/vendor/RUNTIME-LICENSES.txt vendor/RUNTIME-LICENSES.txt
