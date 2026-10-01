@@ -21,7 +21,7 @@ npm run preview
 
 ## 更新内容
 
-修改 `src/index.html` 中的介绍、项目和招新内容，新增项目时参照 `section.product-section` 的标题、简述、链接和媒体结构。`src/homepage-v6.css` 控制展示布局，`src/homepage-polish.css` 控制细节动效，`src/homepage-colors.css` 控制首屏之后的配色，`src/motion.js` 与 `src/motion.css` 控制首屏滚动叙事。图片放在 `src/assets/`，同时补充 `server/assets.mjs` 的资源列表及 `scripts/package-release.mjs` 的发布清单。
+修改 `src/index.html` 中的介绍、项目和招新内容，新增项目时参照 `section.product-section` 的标题、简述、链接和媒体结构。`src/homepage-v6.css` 控制展示布局，`src/homepage-polish.css` 控制细节动效，`src/homepage-colors.css` 控制首屏之后的配色，`src/motion.js` 与 `src/motion.css` 控制首屏滚动叙事，`src/homepage-motion.css` 控制玻璃环悬浮、模块入场及按钮交互；尊重系统减少动态效果偏好，隐藏页面暂停持续动画。图片放在 `src/assets/`，同时补充 `server/assets.mjs` 的资源列表及 `scripts/package-release.mjs` 的发布清单。
 
 `src/projects.json` 为工作台应用与 MCP 搜索目录。官网项目文案和目录需要一起维护。二维码为用户提供图片的无缩放裁切；智评学堂标志来自该项目原始品牌素材，请保留。
 
@@ -31,7 +31,7 @@ npm run preview
 
 通过分支与 Pull Request 提交修改。CI 会构建、测试并产出发布包；合并代码不会自动修改生产环境。
 
-0.6.0 候选新增 Uppy 站内简历投递、私有持久队列与独立 SMTP worker。默认关闭在线接收，邮件投递方式保留。完整流程、资料保留、待授权配置与回滚见 [RECRUITMENT.md](docs/RECRUITMENT.md)。静态站点部署只能使用邮件投递；在线投递需要启用受限后端和独立 worker。
+0.6.0 新增 Uppy 站内简历投递、私有持久队列与独立 SMTP worker。默认关闭在线接收，邮件投递方式保留。完整流程、资料保留、部署配置与回滚见 [RECRUITMENT.md](docs/RECRUITMENT.md)。静态站点部署只能使用邮件投递；在线投递需要启用受限后端和独立 worker。
 
 ## 部署
 
