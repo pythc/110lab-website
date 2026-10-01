@@ -1,5 +1,5 @@
 import {DatabaseSync} from 'node:sqlite';
-import {mkdirSync,chmodSync} from 'node:fs';
+import {mkdirSync,chmodSync,lstatSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -21,7 +21,11 @@ export class UpdateError extends Error {constructor(code,message){super(message)
 
 /** Private drafts and public snapshots stay separate, including during edits. */
 export function openUpdatesStore(filename=':memory:'){
-  if(filename!==':memory:')mkdirSync(dirname(resolve(filename)),{recursive:true,mode:0o700});
+  if(filename!==':memory:'){
+    const parent=dirname(resolve(filename));mkdirSync(parent,{recursive:true,mode:0o700});
+    if(lstatSync(parent).isSymbolicLink())throw new Error('Unsafe updates directory');chmodSync(parent,0o700);
+    try{if(lstatSync(filename).isSymbolicLink())throw new Error('Unsafe updates database');}catch(e){if(e.code!=='ENOENT')throw e;}
+  }
   const db=new DatabaseSync(filename);
   if(filename!==':memory:')chmodSync(filename,0o600);
   db.exec('PRAGMA busy_timeout=2000; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS public_updates (id TEXT PRIMARY KEY, draft TEXT NOT NULL, published TEXT, revision INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, published_at TEXT);');

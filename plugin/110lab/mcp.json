@@ -3,7 +3,7 @@
   "mcpServers": {
     "110lab": {
       "type": "streamable-http",
-      "url": "https://internal.110-lab.cn/mcp/workbench-v5-1"
+      "url": "https://internal.110-lab.cn/mcp/workbench-v6"
     }
   }
 }

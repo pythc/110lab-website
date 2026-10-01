@@ -8,12 +8,12 @@
     "capabilities": [
       "Interactive"
     ],
-    "logo": "./assets/logo.svg",
-    "composerIcon": "./assets/logo.svg",
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/logo.png",
     "defaultPrompt": "打开 110lab 首页，看看实验室项目。"
   },
   "name": "110lab",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "110 实验室工作台：批改系统、考核系统与需求平台的快捷入口。",
   "author": {
     "name": "110 实验室"

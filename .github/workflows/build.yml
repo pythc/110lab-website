@@ -20,6 +20,7 @@ jobs:
       - run: npm test
       - run: npm run release
       - run: node scripts/verify-recruitment-release.mjs
+      - run: node scripts/verify-admin-release.mjs
       - run: node scripts/archive-release.mjs
       - uses: actions/upload-artifact@v4
         with:

@@ -5,6 +5,7 @@ artifacts/
 server/runtime.mjs
 server/recruitment-worker-runtime.mjs
 server/recruitment-ops-runtime.mjs
+server/admin-init-runtime.mjs
 release.json
 .DS_Store
 .env
