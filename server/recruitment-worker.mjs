@@ -43,6 +43,6 @@ if(isMain()){
   if(!info.isFile()||info.isSymbolicLink()||info.mode&0o077)throw new Error('SMTP config must be a private regular file with mode 0600');
   const config=JSON.parse(readFileSync(configPath,'utf8'));
   const store=openRecruitmentStore(directory),sender=createSmtpSender(config),worker=startRecruitmentWorker(store,sender);
-  console.log('Recruitment mail worker started');
   for(const signal of ['SIGTERM','SIGINT'])process.once(signal,async()=>{await worker.stop();store.close();process.exit(0);});
+  console.log('Recruitment mail worker started');
 }

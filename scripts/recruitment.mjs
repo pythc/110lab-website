@@ -9,9 +9,11 @@ try{
   else if(command==='cleanup')result=store.cleanup();
   else if(command==='cleanup-loop'){
     const clean=()=>{try{store.recoverInterrupted();console.log(JSON.stringify(store.cleanup()));}catch{console.error('Recruitment retention task failed');}};
-    clean();console.log('Recruitment retention task started');
+    clean();
     const interval=setInterval(clean,15*60000);
-    await new Promise(resolve=>{for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{clearInterval(interval);resolve();});});
+    const stopped=new Promise(resolve=>{for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{clearInterval(interval);resolve();});});
+    console.log('Recruitment retention task started');
+    await stopped;
     result={stopped:true};
   }else throw new Error('Usage: recruitment.mjs inspect ID | retry ID REVISION [--confirmed-not-sent] | cleanup | cleanup-loop');
   console.log(JSON.stringify(result,null,2));
