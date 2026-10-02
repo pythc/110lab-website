@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -15,7 +16,7 @@ async function completed(auth,{embedded=false,ip='192.0.2.4',expectedSubject=nul
 test('mail login uses PKCE, one-use callback, separate context cookies and bound handoff',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'110lab-mail-auth-'));let captured;const auth=openMailAuth({directory:dir,config:fixtureConfig,fetchIdentity:async(_,{code,verifier})=>{captured={code,verifier};return fixtureIdentity;}});
   try{
-    const f=await completed(auth,{embedded:true});const u=new URL(f.launch.url);assert.equal(u.origin,'https://accounts.feishu.cn');assert.equal(u.searchParams.get('redirect_uri'),MAIL_CALLBACK);assert.equal(u.searchParams.get('scope'),MAIL_SCOPE);assert.equal(u.searchParams.get('code_challenge_method'),'S256');assert.equal(captured.verifier.length,43);
+    const f=await completed(auth,{embedded:true});const u=new URL(f.launch.url);assert.equal(u.origin,'https://accounts.feishu.cn');assert.equal(u.searchParams.get('redirect_uri'),MAIL_CALLBACK);assert.equal(u.searchParams.get('scope'),MAIL_SCOPE);assert.equal(u.searchParams.get('code_challenge_method'),'S256');assert.equal(captured.verifier.length,43);assert.equal(u.searchParams.get('code_challenge'),createHash('sha256').update(captured.verifier).digest('base64url'));
     assert.match(f.launch.cookie,/SameSite=Lax;.*Secure$/);assert.match(f.start.cookie,/SameSite=None;.*Secure; Partitioned$/);
     // A phishing attacker who knows their flow and binding cookie still cannot
     // import the victim's login without the callback window's separate ticket.
@@ -45,7 +46,7 @@ test('identity provider rejects different tenants, contact email fallback and in
   const original=globalThis.fetch;let calls=[];let profile={tenant_key:fixtureConfig.tenantKey,union_id:fixtureConfig.bootstrapUnionId,enterprise_email:fixtureConfig.bootstrapEmail,name:fixtureConfig.bootstrapName};
   globalThis.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/token')?{access_token:'fictional-test-access-token'}:{code:0,data:profile}),{status:200});};
   try{
-    assert.deepEqual(await fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),fixtureIdentity);assert.equal(calls[0].url,'https://accounts.feishu.cn/oauth/v3/token');assert.equal(calls[0].options.body.get('scope'),MAIL_SCOPE);assert.equal(calls[0].options.body.has('offline_access'),false);
+    assert.deepEqual(await fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),fixtureIdentity);assert.equal(calls[0].url,'https://open.feishu.cn/open-apis/authen/v2/oauth/token');assert.equal(calls[0].options.headers['Content-Type'],'application/json; charset=utf-8');const body=JSON.parse(calls[0].options.body);assert.equal(body.scope,MAIL_SCOPE);assert.equal(body.code_verifier,'x'.repeat(43));assert.equal(body.redirect_uri,MAIL_CALLBACK);assert.equal('offline_access' in body,false);
     profile={...profile,tenant_key:'other_tenant'};await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),e=>e.status===403);
     profile={...profile,tenant_key:fixtureConfig.tenantKey,enterprise_email:undefined,email:fixtureConfig.bootstrapEmail};await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),e=>e.status===403);
     globalThis.fetch=async()=>new Response(JSON.stringify({code:20027,error:'fictional-error'}));await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),e=>e.status===401);

@@ -27,7 +27,10 @@ async function providerJson(url,options,stage){
   return value;
 }
 export async function fetchMailIdentity(config,{code,verifier}){
-  const token=await providerJson('https://accounts.feishu.cn/oauth/v3/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:config.appId,client_secret:config.appSecret,code,redirect_uri:MAIL_CALLBACK,code_verifier:verifier,scope:MAIL_SCOPE})},'token');
+  // The v1 authorization endpoint currently documents PKCE with v2 token only.
+  // Production v3 returned 20049 for these S256-bound codes. Use that documented
+  // pairing, retaining PKCE and scope restriction; never retry without PKCE.
+  const token=await providerJson('https://open.feishu.cn/open-apis/authen/v2/oauth/token',{method:'POST',headers:{'Content-Type':'application/json; charset=utf-8'},body:JSON.stringify({grant_type:'authorization_code',client_id:config.appId,client_secret:config.appSecret,code,redirect_uri:MAIL_CALLBACK,code_verifier:verifier,scope:MAIL_SCOPE})},'token');
   if(!token||token.error||token.code!==undefined&&token.code!==0||typeof token.access_token!=='string'||token.access_token.length<1||token.access_token.length>16384){providerDiagnostic('token',token?.code);throw new MailAuthError(401,'飞书授权失败 请重新登录');}
   const info=await providerJson('https://open.feishu.cn/open-apis/authen/v1/user_info',{headers:{Authorization:'Bearer '+token.access_token}},'identity');
   if(!info||info.code!==0||!info.data){providerDiagnostic('identity',info?.code);throw new MailAuthError(401,'无法验证飞书身份');}

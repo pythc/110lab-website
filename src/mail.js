@@ -1,5 +1,5 @@
 const embedded=location.pathname==='/mail/embedded',prefix='/api/mail/'+(embedded?'embedded/':'');
-let csrf='',revision=null,profile=null,flow=null,popup=null,busy=false,generation=0,action=null;
+let csrf='',revision=null,profile=null,flow=null,busy=false,generation=0,action=null;
 const $=id=>document.getElementById(id),labels={super_admin:'超级管理员',admin:'普通管理员',member:'普通成员'};
 function message(text=''){ $('message').textContent=text;$('message').hidden=!text; }
 async function api(path,{method='GET',data}={}){
@@ -28,14 +28,21 @@ async function load(){
   }catch(e){if(epoch!==generation)return;if(e.status===401){clearIdentity();return;}if(e.status===403){clearIdentity();message('管理员权限已变更 请重新加载');return;}message(e.message);}
 }
 async function login(){
-  if(busy)return;busy=true;message('');popup=window.open('about:blank','_blank');
-  try{flow=await api('auth/start',{method:'POST',data:{}});$('continue-login').href=flow.launchUrl;$('continue-login').hidden=Boolean(popup);$('handoff').hidden=false;$('login-code').value='';if(popup)popup.location.href=flow.launchUrl;}
-  catch(e){popup?.close();popup=null;message(e.message);}finally{busy=false;}
+  if(busy)return;busy=true;message('');$('login').disabled=true;$('reauth').disabled=true;
+  try{flow=await api('auth/start',{method:'POST',data:{}});$('continue-login').href=flow.launchUrl;$('handoff').hidden=false;$('manual-login').open=false;$('login-code').value='';
+    if(embedded&&window.parent!==window)requestHostLogin();else location.assign(flow.launchUrl);
+  }catch(e){flow=null;$('handoff').hidden=true;message(e.message);}finally{busy=false;$('login').disabled=false;$('reauth').disabled=false;}
 }
+function requestHostLogin(){if(flow)window.parent.postMessage({type:'110lab-mail-open-login',state:flow.state,url:flow.launchUrl},'*');}
+$('continue-login').onclick=e=>{if(embedded&&window.parent!==window){e.preventDefault();login();}};
+$('open-mailbox').onclick=e=>{if(embedded&&window.parent!==window){e.preventDefault();window.parent.postMessage({type:'110lab-mail-open-mailbox',url:'https://www.feishu.cn/mail'},'*');}};
 async function redeem(ticket){if(busy||!flow)return;busy=true;try{await api('auth/redeem',{method:'POST',data:{state:flow.state,ticket}});flow=null;$('login-code').value='';message('');await load();}catch(e){message(e.message);}finally{busy=false;}}
 $('login').onclick=login;$('reauth').onclick=login;
 $('code-form').onsubmit=e=>{e.preventDefault();redeem($('login-code').value.trim());};
-window.addEventListener('message',e=>{const m=e.data;if(e.origin!==location.origin||!popup||e.source!==popup||!flow||m?.type!=='110lab-mail-login'||m.state!==flow.state||typeof m.ticket!=='string'||!/^[-\w]{43}$/.test(m.ticket))return;redeem(m.ticket);});
+window.addEventListener('message',e=>{const m=e.data;if(!embedded||e.source!==window.parent)return;
+  if(m?.type==='110lab-mail-mailbox-result'){if(!m.opened)message('飞书邮箱未打开 请使用独立窗口');return;}
+  if(!flow||m?.type!=='110lab-mail-open-result'||m.state!==flow.state)return;message(m.opened?'请在打开的飞书页面完成授权':'授权窗口未打开 请点击上方链接重试');
+});
 $('logout').onclick=async()=>{if(busy)return;busy=true;try{await api('logout',{method:'POST',data:{}});generation++;flow=null;clearIdentity();message('');}catch(e){message(e.message);}finally{busy=false;}};
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 $('grant-form').onsubmit=e=>{e.preventDefault();if($('member').value)ask('grant',$('member').value);};

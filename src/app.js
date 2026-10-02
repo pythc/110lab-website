@@ -5,15 +5,16 @@ import config from './projects.json';
 import { EMBEDDED_APPS, initEmbeddedWorkspace } from './embedded-workspace.js';
 
 const portal=initWorkbench(config,{embeddedIds:Object.keys(EMBEDDED_APPS)});
-initEmbeddedWorkspace();
+const workspace=initEmbeddedWorkspace();
 // The same compiled resource can be previewed outside an MCP host.
 if(window.parent!==window){
-  const app=new App({name:'110lab',version:'0.8.3'},{},{autoResize:false});
+  const app=new App({name:'110lab',version:'0.8.5'},{},{autoResize:false});
   new OpenAIExtensions(app);
   app.ontoolresult=()=>{}; // The catalog is already in this resource; never re-call its opener.
   try{
     await app.connect();
     portal.setExternalOpener(url=>app.openLink({url}));
+    workspace?.setExternalOpener(url=>app.openLink({url}));
     const context=app.getHostContext();
     if(context?.displayMode!=='fullscreen'&&context?.availableDisplayModes?.includes('fullscreen')){
       await app.requestDisplayMode({mode:'fullscreen'});

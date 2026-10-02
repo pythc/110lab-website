@@ -60,6 +60,7 @@ test('mail HTTP enforces verified members, CSRF, fresh authentication, atomic tr
     assert.equal((await (await h.request('/api/mail/session',{jar:owner.jar})).json()).role,'member');
     assert.equal((await h.request('/mail',{host:'110-lab.cn'})).status,404);
     assert.equal((await h.request('/api/mail/config',{host:'110-lab.cn'})).status,404);
+    const invalidCallback=await h.request('/mail/auth/callback?state=private-invalid-state&code=private-invalid-code');assert.equal(invalidCallback.status,401);assert.match(invalidCallback.headers.get('content-type'),/text\/html/);assert.match(await invalidCallback.text(),/返回公共邮箱管理/);assert.doesNotMatch(await invalidCallback.text(),/private-invalid/);
     const embeddedPage=await h.request('/mail/embedded');assert.equal(embeddedPage.status,200);assert.match(embeddedPage.headers.get('content-security-policy'),/codex-sandbox:/);assert.doesNotMatch(embeddedPage.headers.get('content-security-policy'),/\*/);
     const embedded=await login(h,'member',{embedded:true});assert.match(embedded.jar,/__Host-110lab_mail_embedded=/);
     assert.equal((await h.request('/api/mail/session',{jar:embedded.jar})).status,401);

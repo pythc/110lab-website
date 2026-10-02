@@ -21,9 +21,9 @@ async function body(req){
   });
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new MailAuthError(400,'请求格式无效');}
 }
-function page(res,html,{head=false,embedded=false}={}){
+function page(res,html,{head=false,embedded=false,status=200}={}){
   const ancestors=embedded?"'self' "+ADMIN_FRAME_ANCESTORS.join(' '):"'none'";
-  res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(head?undefined:html);
+  res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(head?undefined:html);
 }
 export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
   const html=await readFile(new URL('../dist/mail.html',import.meta.url),'utf8');
@@ -82,6 +82,10 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
       throw new MailAuthError(404,'Not found');
     }catch(error){
       req.resume();if(res.headersSent||res.destroyed)return true;
+      if(path==='/mail/auth/callback'&&host==='internal.110-lab.cn'){
+        const text=error instanceof MailAuthError?error.message:'暂时无法完成飞书登录 请重新登录';
+        page(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>飞书登录未完成 · 110lab</title><main><h1>登录未完成</h1><p>${escapeHTML(text)}</p><p>授权通知仅表示飞书已记录授权 公共邮箱登录尚未完成</p><a href="/mail">返回公共邮箱管理</a></main></html>`,{status:error instanceof MailAuthError?error.status:503});return true;
+      }
       if(error instanceof MailAuthError)json(res,error.status,{error:error.message});
       else if(error instanceof MailAccessError)json(res,error.status,{error:accessMessages[error.message]||'无法完成管理员操作 请检查信息后重试'});
       else if(error instanceof z.ZodError)json(res,400,{error:'请检查邮箱和操作信息'});
