@@ -7,6 +7,9 @@ import {UpdateError} from './updates.mjs';
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
 export const ADMIN_FRAME_ANCESTORS=Object.freeze([
   'https://internal-110-lab-cn.web-sandbox.oaiusercontent.com',
+  // Observed 110lab 0.8.7 local-plugin sidebar and conversation sandbox origins.
+  'codex-sandbox://mcp-app-378d4bef0808dd032fe89b17252aa980ad0e29f3d5ace47c.web-sandbox.oaiusercontent.com',
+  'codex-sandbox://mcp-app-6231ba4b79ed6a654eda2cd7ee1cca5ff88c1453a659ea27.web-sandbox.oaiusercontent.com',
   'codex-sandbox://mcp-app-eb754d6717539b08789f5fc6b454ba6b2faf9c1a6a456d80.web-sandbox.oaiusercontent.com',
   'codex-sandbox://mcp-app-866fa2382627ef9fa973c3a972919d239ffee4f00b64dac0.web-sandbox.oaiusercontent.com'
 ]);
