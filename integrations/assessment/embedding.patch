@@ -1,0 +1,399 @@
+--- a/runtime.mjs
++++ b/runtime.mjs
+@@ -4,18 +4,13 @@
+ import { createApp } from './server/dist/app.js';
+ import { createContext, closeContext } from './server/dist/context.js';
+ import { startWorkers } from './server/dist/workers.js';
++import { securityHeaders } from './server/dist/http.js';
+ 
+ const root=path.dirname(fileURLToPath(import.meta.url));
+ const ctx=await createContext();
+ const app=express();
+ app.disable('x-powered-by');
+-app.use((_req,res,next)=>{
+-  res.setHeader('X-Content-Type-Options','nosniff');
+-  res.setHeader('Referrer-Policy','no-referrer');
+-  res.setHeader('X-Frame-Options','DENY');
+-  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+-  next();
+-});
++app.use(securityHeaders(ctx));
+ app.use('/assets',express.static(path.join(root,'client/dist/assets'),{immutable:true,maxAge:'1y',fallthrough:false}));
+ app.use('/downloads',express.static(path.join(root,'public/downloads'),{maxAge:'1h',fallthrough:false,setHeaders(res){res.setHeader('Content-Disposition','attachment');}}));
+ app.get('/favicon.svg',(_req,res)=>res.sendFile(path.join(root,'client/dist/favicon.svg')));
+--- a/server/package.json
++++ b/server/package.json
+@@ -10,7 +10,7 @@
+     "build": "tsc -p tsconfig.build.json",
+     "dev": "tsx watch src/index.ts",
+     "start": "node dist/index.js",
+-    "test": "tsx --test src/security.test.ts src/integration.test.ts src/oauth.integration.test.ts src/adminDeletion.test.ts",
++    "test": "tsx --test src/security.test.ts src/integration.test.ts src/oauth.integration.test.ts src/adminDeletion.test.ts src/embedding.test.ts",
+     "seed": "tsx src/seed.ts"
+   },
+   "dependencies": {
+--- a/server/src/app.ts
++++ b/server/src/app.ts
+@@ -12,7 +12,7 @@
+   const app = express();
+   app.disable('x-powered-by');
+   if (ctx.config.trustProxy) app.set('trust proxy', 1);
+-  app.use(securityHeaders);
++  app.use(securityHeaders(ctx));
+   registerOAuthPublic(app, ctx);
+   registerMcp(app, ctx);
+   registerMaterialUploads(app, ctx);
+--- a/server/src/auth.ts
++++ b/server/src/auth.ts
+@@ -2,6 +2,7 @@
+ import type { PoolClient } from 'pg';
+ import type { Request, Response } from 'express';
+ import { z } from 'zod';
++import { EMBED_SESSION_COOKIE } from './embedding.js';
+ import type { AppContext } from './context.js';
+ import { HttpError } from './errors.js';
+ import { insertAudit } from './audit.js';
+@@ -177,21 +178,23 @@
+   return { sessionId, csrfToken };
+ }
+ 
+-export function setSessionCookie(res: Response, ctx: AppContext, sessionId: string): void {
++export function setSessionCookie(res: Response, ctx: AppContext, sessionId: string, embedded = false): void {
+   const parts = [
+-    `lab_session=${sessionId}`,
++    `${embedded ? EMBED_SESSION_COOKIE : 'lab_session'}=${sessionId}`,
+     'HttpOnly',
+     'Path=/',
+-    'SameSite=Lax',
++    embedded ? 'SameSite=None' : 'SameSite=Lax',
+     `Max-Age=${7 * 24 * 3600}`,
+   ];
+   if (ctx.config.cookieSecure) parts.push('Secure');
++  if (embedded) parts.push('Partitioned');
+   res.append('Set-Cookie', parts.join('; '));
+ }
+ 
+-export function clearSessionCookie(res: Response, ctx: AppContext): void {
+-  const parts = ['lab_session=', 'HttpOnly', 'Path=/', 'SameSite=Lax', 'Max-Age=0'];
++export function clearSessionCookie(res: Response, ctx: AppContext, embedded = false): void {
++  const parts = [`${embedded ? EMBED_SESSION_COOKIE : 'lab_session'}=`, 'HttpOnly', 'Path=/', embedded ? 'SameSite=None' : 'SameSite=Lax', 'Max-Age=0'];
+   if (ctx.config.cookieSecure) parts.push('Secure');
++  if (embedded) parts.push('Partitioned');
+   res.append('Set-Cookie', parts.join('; '));
+ }
+ 
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -1,4 +1,5 @@
+ import { randomBytes } from 'node:crypto';
++import { parseEmbeddingOrigins } from './embedding.js';
+ 
+ export type SmtpConfig = {
+   host: string;
+@@ -17,6 +18,7 @@
+   port: number;
+   dbSchema: string;
+   cookieSecure: boolean;
++  embeddingOrigins?: string[];
+   trustProxy: boolean;
+   mailTestSink: boolean;
+   seedDemo: boolean;
+@@ -125,6 +127,10 @@
+   const cookieSecure = env.COOKIE_SECURE
+     ? flag(env.COOKIE_SECURE)
+     : publicBaseUrl.startsWith('https://');
++  const embeddingOrigins = parseEmbeddingOrigins(env.EMBEDDING_ORIGINS);
++  if (embeddingOrigins.length && (!cookieSecure || !appOrigin.startsWith('https://'))) {
++    throw new Error('Embedding requires HTTPS and secure cookies');
++  }
+ 
+   const config: AppConfig = {
+     appOrigin,
+@@ -134,6 +140,7 @@
+     port,
+     dbSchema,
+     cookieSecure,
++    embeddingOrigins,
+     trustProxy: flag(env.TRUST_PROXY),
+     mailTestSink,
+     seedDemo,
+--- a/server/src/http.ts
++++ b/server/src/http.ts
+@@ -3,6 +3,7 @@
+ import type { AppContext } from './context.js';
+ import { clearSessionCookie, loadSession, setSessionCookie, type SessionAuth } from './auth.js';
+ import { safeEqualString } from './security.js';
++import { EMBED_SESSION_COOKIE, usesEmbeddingSession } from './embedding.js';
+ 
+ declare global {
+   namespace Express {
+@@ -26,16 +27,20 @@
+   };
+ }
+ 
+-export function securityHeaders(_req: Request, res: Response, next: NextFunction): void {
+-  res.setHeader('X-Content-Type-Options', 'nosniff');
+-  res.setHeader('Referrer-Policy', 'no-referrer');
+-  res.setHeader('X-Frame-Options', 'DENY');
+-  res.setHeader('Cache-Control', 'no-store');
+-  res.setHeader(
+-    'Content-Security-Policy',
+-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+-  );
+-  next();
++export function securityHeaders(ctx: AppContext) {
++  return (_req: Request, res: Response, next: NextFunction): void => {
++    res.setHeader('X-Content-Type-Options', 'nosniff');
++    res.setHeader('Referrer-Policy', 'no-referrer');
++    const ancestors = ctx.config.embeddingOrigins ?? [];
++    if (!ancestors.length) res.setHeader('X-Frame-Options', 'DENY');
++    else res.removeHeader('X-Frame-Options');
++    res.setHeader('Cache-Control', 'no-store');
++    res.setHeader(
++      'Content-Security-Policy',
++      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors " + (ancestors.length ? ancestors.join(' ') : "'none'"),
++    );
++    next();
++  };
+ }
+ 
+ export function cors(ctx: AppContext) {
+@@ -71,7 +76,8 @@
+ export function sessionLoader(ctx: AppContext) {
+   return asyncHandler(async (req, _res, next) => {
+     if (req.path === '/mcp') return next(); // MCP authenticates its scoped bearer token.
+-    const cookie = readCookie(req, 'lab_session');
++    const embedded = usesEmbeddingSession(ctx.config, req);
++    const cookie = embedded ? readCookie(req, EMBED_SESSION_COOKIE) : readCookie(req, 'lab_session');
+     if (cookie) req.auth = (await loadSession(ctx, cookie)) ?? undefined;
+     next();
+   });
+@@ -137,12 +143,12 @@
+   return undefined;
+ }
+ 
+-export function sendSession(res: Response, ctx: AppContext, sessionId: string): void {
+-  setSessionCookie(res, ctx, sessionId);
++export function sendSession(res: Response, ctx: AppContext, sessionId: string, req: Request): void {
++  setSessionCookie(res, ctx, sessionId, usesEmbeddingSession(ctx.config, req));
+ }
+ 
+-export function clearSession(res: Response, ctx: AppContext): void {
+-  clearSessionCookie(res, ctx);
++export function clearSession(res: Response, ctx: AppContext, req: Request): void {
++  clearSessionCookie(res, ctx, usesEmbeddingSession(ctx.config, req));
+ }
+ 
+ export function routeId(value: string | string[] | undefined): string {
+--- a/server/src/routes.ts
++++ b/server/src/routes.ts
+@@ -69,12 +69,12 @@
+   }));
+   router.post('/auth/register', asyncHandler(async (req, res) => {
+     const result = await registerAccount(ctx, req);
+-    sendSession(res, ctx, result.sessionId);
++    sendSession(res, ctx, result.sessionId, req);
+     res.json({ user: result.user, csrfToken: result.csrfToken });
+   }));
+   router.post('/auth/login', asyncHandler(async (req, res) => {
+     const result = await loginAccount(ctx, req);
+-    sendSession(res, ctx, result.sessionId);
++    sendSession(res, ctx, result.sessionId, req);
+     res.json({ user: result.user, csrfToken: result.csrfToken });
+   }));
+   router.get('/auth/me', asyncHandler(async (req, res) => {
+@@ -84,7 +84,7 @@
+   router.post('/auth/logout', asyncHandler(async (req, res) => {
+     const auth = requireUser(req);
+     await logoutAccount(ctx, auth);
+-    clearSession(res, ctx);
++    clearSession(res, ctx, req);
+     res.json({ ok: true });
+   }));
+   router.post('/auth/reset-password', asyncHandler(async (req, res) => {
+--- a/client/src/api/http.ts
++++ b/client/src/api/http.ts
+@@ -61,7 +61,9 @@
+   const controller = new AbortController()
+   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+   try {
+-    return await fetch(path, { ...init, signal: controller.signal })
++    const headers = new Headers(init.headers)
++    if (window.parent !== window) headers.set('X-Lab-Embedded', '1')
++    return await fetch(path, { ...init, headers, signal: controller.signal })
+   } catch (error) {
+     if (error instanceof DOMException && error.name === 'AbortError') {
+       throw new ApiError('请求超时。请检查网络后重试。', 0, 'TIMEOUT')
+--- /dev/null
++++ b/server/src/embedding.ts
+@@ -0,0 +1,33 @@
++import type { Request } from 'express';
++import type { AppConfig } from './config.js';
++import { HttpError } from './errors.js';
++
++export const EMBED_SESSION_COOKIE = 'lab_embedded_session';
++
++export function parseEmbeddingOrigins(value: string | undefined): string[] {
++  const entries = value?.split(',').map((item) => item.trim()).filter(Boolean) ?? [];
++  if (entries.length > 8) throw new Error('EMBEDDING_ORIGINS supports at most eight exact origins');
++  return [...new Set(entries.map((item) => {
++    const url = new URL(item);
++    if (!['https:', 'codex-sandbox:'].includes(url.protocol) || !url.hostname ||
++        item.includes('*') || url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
++      throw new Error('EMBEDDING_ORIGINS must contain exact HTTPS or Codex sandbox origins');
++    }
++    if (!/^[a-z0-9.-]+$/i.test(url.hostname) && !/^\[[a-f0-9:]+\]$/i.test(url.hostname)) {
++      throw new Error('Unsupported embedding hostname');
++    }
++    if (url.protocol === 'codex-sandbox:' && !url.hostname.endsWith('.web-sandbox.oaiusercontent.com')) {
++      throw new Error('Unsupported Codex sandbox host');
++    }
++    return `${url.protocol}//${url.host}`;
++  }))];
++}
++
++export function usesEmbeddingSession(config: AppConfig, req: Request): boolean {
++  const marker = req.header('x-lab-embedded');
++  if (!marker) return false;
++  if (marker !== '1' || !config.embeddingOrigins?.length || !config.cookieSecure) {
++    throw new HttpError(403, '插件内登录尚未启用', 'EMBEDDING_DISABLED');
++  }
++  return true;
++}
+--- /dev/null
++++ b/server/src/embedding.test.ts
+@@ -0,0 +1,134 @@
++import assert from 'node:assert/strict';
++import test from 'node:test';
++import { once } from 'node:events';
++import { createServer } from 'node:http';
++import { spawn } from 'node:child_process';
++import { fileURLToPath } from 'node:url';
++import { mkdtemp, rm } from 'node:fs/promises';
++import { tmpdir } from 'node:os';
++import path from 'node:path';
++import { Pool } from 'pg';
++import { loadConfig } from './config.js';
++import { parseEmbeddingOrigins } from './embedding.js';
++import { createApp } from './app.js';
++import { createContext, closeContext } from './context.js';
++
++const sandbox = 'codex-sandbox://mcp-app-fixture.web-sandbox.oaiusercontent.com';
++const appOrigin = 'https://assessment.example.test';
++const env = {DATABASE_URL: 'postgres://localhost/fixture', NODE_ENV: 'test', APP_ORIGIN: appOrigin};
++
++test('embedding is off by default and accepts only a bounded exact origin list over HTTPS', () => {
++  assert.deepEqual(loadConfig(env).config.embeddingOrigins, []);
++  assert.deepEqual(parseEmbeddingOrigins(`${sandbox}, ${appOrigin}, ${sandbox}`), [sandbox, appOrigin]);
++  for (const entry of ['*', 'https://*.example.test', 'http://example.test', 'https://a.test/path',
++    'https://a.test?q=1', 'https://a.test#x', 'https://u:p@a.test', 'codex-sandbox://other.test',
++    'https://a.test;script-src']) {
++    assert.throws(() => parseEmbeddingOrigins(entry), entry);
++  }
++  assert.throws(() => parseEmbeddingOrigins(Array.from({length: 9}, (_, i) => `https://a${i}.test`).join(',')));
++  assert.throws(() => loadConfig({...env, EMBEDDING_ORIGINS: sandbox, COOKIE_SECURE: 'false'}));
++  assert.throws(() => loadConfig({...env, APP_ORIGIN: 'http://localhost', EMBEDDING_ORIGINS: sandbox}));
++});
++
++test('embedded login has a separate partitioned session and preserves origin, CSRF, and ordinary sessions',
++  {skip: !process.env.TEST_DATABASE_URL && 'needs a disposable PostgreSQL database', timeout: 30_000}, async () => {
++    const databaseUrl = process.env.TEST_DATABASE_URL!;
++    const schema = `assessment_embed_${process.pid}`;
++    const storage = await mkdtemp(path.join(tmpdir(), 'assessment-embed-'));
++    Object.assign(process.env, {
++      DATABASE_URL: databaseUrl, DB_SCHEMA: schema, NODE_ENV: 'test',
++      APP_ORIGIN: appOrigin, PUBLIC_BASE_URL: appOrigin, COOKIE_SECURE: 'true',
++      EMBEDDING_ORIGINS: sandbox, SESSION_SECRET: 'fictional-fixture-secret-with-32-characters',
++      MAIL_TEST_SINK: 'true', ADMIN_EMAIL: 'fixture@example.test', ADMIN_PASSWORD: 'Fictional-fixture-123',
++      STORAGE_DIR: storage,
++    });
++    delete process.env.SMTP_HOST;
++    delete process.env.SEED_DEMO;
++    const ctx = await createContext();
++    const server = createServer(createApp(ctx));
++    try {
++      server.listen(0, '127.0.0.1');
++      await once(server, 'listening');
++      const address = server.address();
++      assert.ok(address && typeof address !== 'string');
++      const base = `http://127.0.0.1:${address.port}`;
++      const request = (pathname: string, init: RequestInit = {}) => fetch(base + pathname, {
++        ...init, headers: {origin: appOrigin, 'content-type': 'application/json', ...init.headers},
++      });
++      const body = JSON.stringify({account: 'fixture@example.test', password: 'Fictional-fixture-123'});
++      const normal = await request('/api/auth/login', {method: 'POST', body});
++      assert.equal(normal.status, 200);
++      const normalCookie = normal.headers.getSetCookie()[0]!;
++      assert.match(normalCookie, /^lab_session=/);
++      assert.match(normalCookie, /SameSite=Lax/);
++      assert.doesNotMatch(normalCookie, /Partitioned/);
++      const regularToken = (await normal.json()).csrfToken;
++      const embedded = await request('/api/auth/login', {method: 'POST', body, headers: {'x-lab-embedded': '1'}});
++      assert.equal(embedded.status, 200);
++      assert.match(embedded.headers.get('content-security-policy')!, new RegExp(`frame-ancestors ${sandbox.replaceAll('.', '\\.')}$`));
++      assert.equal(embedded.headers.get('x-frame-options'), null);
++      const embeddedCookie = embedded.headers.getSetCookie()[0]!;
++      assert.match(embeddedCookie, /^lab_embedded_session=/);
++      for (const attribute of ['HttpOnly', 'Secure', 'SameSite=None', 'Partitioned']) assert.ok(embeddedCookie.includes(attribute));
++      const embeddedToken = (await embedded.json()).csrfToken;
++      const normalPair = normalCookie.split(';')[0]!;
++      const embeddedPair = embeddedCookie.split(';')[0]!;
++      assert.equal((await request('/api/auth/me', {headers: {cookie: normalPair, 'x-lab-embedded': '1'}})).status, 401);
++      assert.equal((await request('/api/auth/me', {headers: {cookie: embeddedPair}})).status, 401);
++      const valid = {cookie: embeddedPair, 'x-lab-embedded': '1'};
++      assert.equal((await request('/api/auth/me', {headers: valid})).status, 200);
++      assert.equal((await request('/api/auth/logout', {method: 'POST', body: '{}', headers: valid})).status, 403);
++      assert.equal((await request('/api/auth/logout', {method: 'POST', body: '{}', headers: {...valid, 'x-csrf-token': regularToken}})).status, 403);
++      assert.equal((await request('/api/auth/logout', {method: 'POST', body: '{}', headers: {...valid, 'x-csrf-token': embeddedToken, origin: 'https://untrusted.example.test'}})).status, 403);
++      const logout = await request('/api/auth/logout', {method: 'POST', body: '{}', headers: {...valid, 'x-csrf-token': embeddedToken}});
++      assert.equal(logout.status, 200);
++      assert.match(logout.headers.getSetCookie()[0]!, /lab_embedded_session=;.*Max-Age=0; Secure; Partitioned/);
++      assert.equal((await request('/api/auth/me', {headers: valid})).status, 401);
++      assert.equal((await request('/api/auth/me', {headers: {cookie: normalPair}})).status, 200);
++      ctx.config.embeddingOrigins = [];
++      const disabled = await request('/api/auth/login', {method: 'POST', body, headers: {'x-lab-embedded': '1'}});
++      assert.equal(disabled.status, 403);
++      assert.equal(disabled.headers.get('x-frame-options'), 'DENY');
++      assert.match(disabled.headers.get('content-security-policy')!, /frame-ancestors 'none'$/);
++      // The deployed entrypoint has its own static HTML middleware. Exercise it
++      // against the same isolated database so it cannot reintroduce DENY.
++      await new Promise<void>((resolve) => server.close(() => resolve()));
++      const entrypoint = fileURLToPath(new URL('../../runtime.mjs', import.meta.url));
++      const child = spawn(process.execPath, [entrypoint], {
++        cwd: path.dirname(entrypoint), env: {...process.env, PORT: String(address.port)},
++        stdio: ['ignore', 'pipe', 'pipe'],
++      });
++      let stderr = '';
++      child.stderr.on('data', (chunk) => { stderr += String(chunk); });
++      try {
++        await new Promise<void>((resolve, reject) => {
++          const timer = setTimeout(() => reject(new Error('runtime readiness timeout')), 8_000);
++          child.stdout.on('data', (chunk) => {
++            if (String(chunk).includes('assessment-ready')) { clearTimeout(timer); resolve(); }
++          });
++          child.once('error', (error) => { clearTimeout(timer); reject(error); });
++          child.once('exit', () => { clearTimeout(timer); reject(new Error('runtime exited: ' + stderr)); });
++        });
++        const html = await request('/');
++        assert.equal(html.status, 200);
++        assert.match(await html.text(), /<html/);
++        assert.equal(html.headers.get('x-frame-options'), null);
++        assert.ok(html.headers.get('content-security-policy')!.endsWith(`frame-ancestors ${sandbox}`));
++        assert.match(html.headers.get('content-security-policy')!, /form-action 'self'/);
++      } finally {
++        if (child.exitCode === null) {
++          const exited = once(child, 'exit');
++          child.kill('SIGTERM');
++          const timer = setTimeout(() => child.kill('SIGKILL'), 10_000);
++          try { await exited; } finally { clearTimeout(timer); }
++        }
++      }
++    } finally {
++      await new Promise<void>((resolve) => server.close(() => resolve()));
++      await closeContext(ctx);
++      const pool = new Pool({connectionString: databaseUrl});
++      await pool.query(`DROP SCHEMA ${schema} CASCADE`);
++      await pool.end();
++      await rm(storage, {recursive: true, force: true});
++    }
++  });
