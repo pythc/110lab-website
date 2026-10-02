@@ -13,7 +13,7 @@
     "defaultPrompt": "打开 110lab 工作台，使用考核系统或需求平台。"
   },
   "name": "110lab",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "110 实验室工作台：考核系统与需求平台原页面，以及按个人权限连接的需求协作 MCP。",
   "author": {
     "name": "110 实验室"
