@@ -13,7 +13,7 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     const opener=tools.find(t=>t.name==='open_110lab');
     assert.equal(opener.title,'110lab');
     assert.equal(opener._meta.ui.resourceUri,UI_URI);
-    assert.equal(UI_URI,'ui://110lab/workbench/v0.8.1');
+    assert.equal(UI_URI,'ui://110lab/workbench/v0.8.2');
     assert.match(opener.icons[0].src,/^data:image\/png;base64,/);
     assert.equal(opener.icons[0].mimeType,'image/png');
     assert.deepEqual(opener._meta['openai/ui'].entrypoints,[{type:'global'}]);
@@ -24,6 +24,9 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     assert.equal(resource.contents[0].mimeType,'text/html;profile=mcp-app');
     assert.deepEqual(resource.contents[0]._meta['openai/ui'].availableDisplayModes,['fullscreen']);
     assert.equal(resource.contents[0]._meta.ui.domain,'https://internal.110-lab.cn');
+    assert.equal(resource.contents[0]._meta['openai/widgetDomain'],resource.contents[0]._meta.ui.domain);
+    assert.deepEqual(resource.contents[0]._meta['openai/widgetCSP'].frame_domains,resource.contents[0]._meta.ui.csp.frameDomains);
+    assert.ok(resource.contents[0]._meta['openai/widgetCSP'].redirect_domains.includes('https://internal.110-lab.cn'));
     assert.deepEqual(resource.contents[0]._meta.ui.csp,{
       connectDomains:[],resourceDomains:[],frameDomains:[
         'https://47.109.176.127',
@@ -41,6 +44,8 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     assert.doesNotMatch(resource.contents[0].text,/首页管理|hero-story/);
     const legacy=await client.readResource({uri:LEGACY_UI_URI});
     assert.equal(legacy.contents[0].text,resource.contents[0].text);
+    const v081=await client.readResource({uri:'ui://110lab/workbench/v0.8.1'});
+    assert.equal(v081.contents[0].text,resource.contents[0].text);
     const v08=await client.readResource({uri:'ui://110lab/workbench/v0.8.0'});
     assert.equal(v08.contents[0].text,resource.contents[0].text);
     const v07=await client.readResource({uri:'ui://110lab/workbench/v0.7.0'});

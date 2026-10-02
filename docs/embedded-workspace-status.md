@@ -48,3 +48,7 @@
 ## 固定插件来源
 
 资源声明 `_meta.ui.domain = https://internal.110-lab.cn`。依据当前桌面客户端来源构造规则，连接型插件将使用 `https://internal-110-lab-cn.web-sandbox.oaiusercontent.com` 与独立持久存储分区。考核额外允许这一精确来源，同时保留两个已观察到的 Codex sandbox 来源供旧客户端使用；没有通配符。该声明不改变飞书自身的 OAuth 回调、Cookie、应用可见范围或登录权限。最终登录结果必须以真实插件中的页面为准。
+
+## 托管入口兼容配置
+
+插件 0.8.2 / 门户 0.8.3 同时提供标准 `ui.domain`、`ui.csp` 和官方兼容字段 `openai/widgetDomain`、`openai/widgetCSP`。两组配置共用同一份精确域名列表；仅既有应用、飞书登录与回调域名可被嵌入或从宿主打开。更新远程连接为既有 `/mcp/workbench-v6-1` 路由，并使用新资源 URI，以触发入口重新发现，保留旧路由与资源兼容。用户确认考核页面已展示；飞书登录仍未验收，不将此配置修正宣称为快捷登录成功。
