@@ -23,7 +23,7 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={
     get clientMetadata(){return {redirect_uris:[job.redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code'],scope:'mail:session'};},
     state:()=>job.oauthState,
     clientInformation:()=>information,saveClientInformation:value=>{information=value;},
-    tokens:()=>tokens,saveTokens:value=>{if(!job||job.done)throw new Error('Login expired');tokens=value;},
+    tokens:()=>tokens,saveTokens:value=>{if(!job||job.done&&!job.finishing)throw new Error('Login expired');tokens=value;},
     saveCodeVerifier:value=>{verifier=value;},codeVerifier:()=>verifier,
     invalidateCredentials(scope){if(['all','client'].includes(scope))information=undefined;if(['all','tokens'].includes(scope))tokens=undefined;if(['all','verifier'].includes(scope))verifier=undefined;},
     async validateResourceURL(server,resource){if(String(server)!==RESOURCE||resource!==RESOURCE)throw new Error('Unexpected resource');return new URL(RESOURCE);},
@@ -59,7 +59,7 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={
   return {
     async start({state,fresh=false}={}){
       if(!secret(state)||typeof fresh!=='boolean')return error('登录请求无效');
-      if(job&&(!job.done||job.starting||job.callbackStarted&&!job.callbackFinished))return error('已有登录正在进行 请完成授权或稍后重试');
+      if(job&&(!job.done||job.starting||job.finishing||job.callbackStarted&&!job.callbackFinished))return error('已有登录正在进行 请完成授权或稍后重试');
       const current={state,fresh,oauthState:randomBytes(32).toString('base64url'),done:false,starting:true};current.wait=new Promise(resolve=>{current.resolve=resolve;});job=current;
       try{
         await listener(current);await connect();
@@ -76,8 +76,9 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={
       if(cancel){settle(current,false);return {content:[{type:'text',text:'已取消本次连接'}]};}
       if(!current.done)return {content:[{type:'text',text:'等待用户完成飞书登录'}],_meta:{mailAuthorizationPending:{state}}};
       current.result ||= (async()=>{
-        if(!await current.wait||current!==job)return error('授权未完成 请重新登录');
-        try{return await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh:current.fresh}});}catch{return error('连接未完成 请重新登录');}
+        current.finishing=true;
+        try{if(!await current.wait||current!==job)return error('授权未完成 请重新登录');return await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh:current.fresh}});}catch{return error('连接未完成 请重新登录');}
+        finally{current.finishing=false;}
       })();return current.result;
     },
     async close(){if(job)settle(job,false);await client.close();tokens=undefined;verifier=undefined;information=undefined;}

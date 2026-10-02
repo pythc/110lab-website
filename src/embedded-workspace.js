@@ -23,9 +23,9 @@ export async function handleMailExternalRequest(event,{frame,openExternal,callTo
       result=await callTool?.({name:'connect_110lab_mail',arguments:{state:m.state,fresh:m.fresh}});
       const authorization=result?._meta?.mailAuthorization;
       if(authorization){
+        waitingForCallback=true;
         const url=new URL(authorization.url);
         if(result.isError||authorization.state!==m.state||url.origin!=='https://internal.110-lab.cn'||url.pathname!=='/authorize'||url.username||url.password||url.hash||typeof openExternal!=='function')throw new Error('Invalid login bridge');
-        waitingForCallback=true;
         const opened=await openExternal(url.href);if(opened?.isError)throw new Error('Not opened');
         frame.contentWindow.postMessage({type:'110lab-mail-host-opened',state:m.state},'https://internal.110-lab.cn');
         const deadline=Date.now()+270000;

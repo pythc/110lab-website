@@ -62,7 +62,9 @@ test('local client opens standard OAuth and uses a validated loopback callback t
     assert.equal((await h.call('/api/mail/embedded/session',{headers:{Cookie:jar(redeemed)}})).value.role,'super_admin');
     const second=await h.start(),again=await mail.start({state:second.state});assert.ok(again._meta.mailHandoff.ticket);assert.equal(again._meta.mailAuthorization,undefined);
     h.advance(300001);const fresh=await h.start(),reauth=await mail.start({state:fresh.state,fresh:true});assert.ok(reauth._meta.mailAuthorization);
-    await mail.finish({state:fresh.state,cancel:true});
+    // RFC 8252 permits a new loopback port with the same registered client.
+    assert.equal(new URL(reauth._meta.mailAuthorization.url).searchParams.get('client_id'),new URL(url).searchParams.get('client_id'));
+    const freshCallback=await h.approve(reauth._meta.mailAuthorization.url);assert.equal((await fetch(freshCallback)).status,200);assert.ok((await mail.finish({state:fresh.state}))._meta.mailHandoff.ticket);
   }finally{await mail.close();await h.close();}
 });
 
@@ -102,4 +104,15 @@ test('packaged local bridge initializes without node_modules or private configur
   try{await client.connect(transport);assert.equal(client.getServerVersion().name,'110lab');assert.ok(client.getServerCapabilities().tools);}
   catch(e){throw new Error(stderr.slice(-4000)||e.message);}
   finally{await client.close();await rm(directory,{recursive:true,force:true});}
+});
+
+test('a second login cannot replace the client while its authenticated handoff is in flight',async()=>{
+  const h=await harness();let block=false,release,arrived;
+  const gate=new Promise(r=>{release=r;}),received=new Promise(r=>{arrived=r;});
+  const mail=createMailLoginClient({fetchImpl:async(input,init)=>{if(block&&new URL(String(input)).pathname==='/mcp/workbench-v6-1'&&new Headers(init?.headers).has('authorization')&&init?.body?.includes('connect_110lab_mail')){arrived();await gate;}return h.fetchImpl(input,init);}});
+  try{
+    const flow=await h.start(),started=await mail.start({state:flow.state}),callback=await h.approve(started._meta.mailAuthorization.url);assert.equal((await fetch(callback)).status,200);
+    block=true;const completing=mail.finish({state:flow.state});await received;
+    assert.equal((await mail.start({state:'z'.repeat(43)})).isError,true);release();assert.equal((await completing)._meta.mailHandoff.state,flow.state);
+  }finally{release();await mail.close();await h.close();}
 });
