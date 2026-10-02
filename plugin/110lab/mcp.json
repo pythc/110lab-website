@@ -4,6 +4,14 @@
     "110lab": {
       "type": "streamable-http",
       "url": "https://internal.110-lab.cn/mcp/workbench-v6"
+    },
+    "110lab_requirements": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/requirements-bridge.mjs"
+      ],
+      "cwd": "${PLUGIN_ROOT}"
     }
   }
 }

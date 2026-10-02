@@ -1,6 +1,6 @@
-# 110lab 完整页面嵌入候选
+# 110lab 完整页面嵌入状态
 
-状态：本地候选，未发布到公网或账号插件。
+状态：0.7.0 插件和门户 0.8.0 已发布；考核嵌入登录页已在真实插件内显示。用户反馈需求平台无法打开，正在补齐飞书登录跳转白名单并继续核验。
 
 ## 已实现与核验
 
@@ -13,7 +13,7 @@
 
 ## 考核系统适配
 
-适配差异保存在 `integrations/assessment/embedding.patch`，以线上 rc11 源码为基线。适配源码在 `/Users/alex/Documents/Codex/2026-09-13/geng/work/110lab-assessment`，没有提交或部署。
+适配差异保存在 `integrations/assessment/embedding.patch`，以线上 rc11 源码为基线。适配源码在 `/Users/alex/Documents/Codex/2026-09-13/geng/work/110lab-assessment`；嵌入相关差异已归档并部署，发布 `20261002-embedding-91916722f6`。
 
 - `EMBEDDING_ORIGINS` 默认空，保持 `X-Frame-Options: DENY` 和 `frame-ancestors 'none'`。启用时只允许有限数量的精确 HTTPS/Codex sandbox 来源，并要求 HTTPS 和 Secure Cookie。
 - 嵌入请求由 `X-Lab-Embedded: 1` 标识；使用独立的 `lab_embedded_session` Cookie，属性为 HttpOnly、Secure、SameSite=None、Partitioned。
@@ -23,7 +23,7 @@
 - 自审补充拒绝可注入 CSP 分隔符的非法主机名；服务端重新构建和相关配置测试通过。
 - 本次创建的本地测试数据库容器已停止并自动移除，未连接生产数据库测试。
 
-公网只读核对：`lab110-assessment` 容器健康，当前发布 `20260929-rc11`，镜像 `sha256:46dcf6b6ccc2fe2401e37bbf8c6a1a56271c468865e4220727eb741f47570c8a`，数据挂载 `/opt/110lab-assessment/data`。公网仍禁止嵌入。
+发布前基线：`lab110-assessment` 发布 `20260929-rc11`，镜像 `sha256:46dcf6b6ccc2fe2401e37bbf8c6a1a56271c468865e4220727eb741f47570c8a`，数据挂载 `/opt/110lab-assessment/data`。该 rc11 版本已保留用于回滚。当前嵌入版健康，数据路径未变，精确允许已观察到的 Codex sandbox 来源。
 
 ## 需求平台浏览器嵌入验证
 
@@ -41,4 +41,6 @@
 6. 在插件中验证登录、刷新、切换后状态、主要只读业务页和下载；不要用真实考生进行开考、交卷或删除测试。
 7. 失败时恢复门户上一容器、配置和指针；恢复考核原镜像与原环境配置。因无数据库迁移，不用旧快照覆盖新产生的业务数据。最后检查公网普通登录和服务健康。
 
-在两个系统的真实插件登录均通过之前，不把本候选发布为“已可用”。
+发布回执已保存：门户发布 `20261002T111027Z-627fa1f1bb`，提交 `adc2877d342da7fddc67c7369e36be02f205a542`。服务器备份、旧容器和带并发保护的独立回滚脚本均保留，回滚 dry-run 通过。邮件与清理 sidecar 未替换。
+
+真实需求平台的 Codex 内登录尚未验收。自动浏览器检查拒绝读取该嵌入页（页面协议不在其允许范围），没有绕过检查。完整登录结果由用户确认；不能把公网健康或普通浏览器内登录当作插件登录通过。
