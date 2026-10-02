@@ -34,7 +34,7 @@ async function login(){
   }catch(e){flow=null;$('handoff').hidden=true;message(e.message);}finally{busy=false;$('login').disabled=hostPending;$('reauth').disabled=hostPending;}
 }
 function loginTimeout(ms){clearTimeout(hostTimer);const state=flow?.state;hostTimer=setTimeout(()=>{if(flow?.state!==state)return;hostPending=false;flow=null;$('login').disabled=false;$('reauth').disabled=false;message('登录未完成 请重新打开 110lab 后再试');},ms);}
-function requestHostLogin(){if(!flow||hostPending||Date.now()-lastHostRequest<1500)return;if(Date.now()-flow.started>5*60000){flow=null;message('登录已超时 请重新登录');return;}hostPending=true;lastHostRequest=Date.now();message('正在打开飞书登录');loginTimeout(60000);window.parent.postMessage({type:'110lab-mail-host-login',state:flow.state,fresh:flow.fresh},'*');}
+function requestHostLogin(){if(!flow||hostPending||Date.now()-lastHostRequest<1500)return;if(Date.now()-flow.started>5*60000){flow=null;message('登录已超时 请重新登录');return;}hostPending=true;lastHostRequest=Date.now();message('正在打开飞书登录');loginTimeout(90000);window.parent.postMessage({type:'110lab-mail-host-login',state:flow.state,fresh:flow.fresh},'*');}
 $('continue-login').onclick=e=>{if(embedded&&window.parent!==window){e.preventDefault();login();}};
 $('open-mailbox').onclick=e=>{if(embedded&&window.parent!==window){e.preventDefault();window.parent.postMessage({type:'110lab-mail-open-mailbox',url:'https://www.feishu.cn/mail'},'*');}};
 async function redeem(ticket){if(busy||!flow)return;busy=true;try{await api('auth/redeem',{method:'POST',data:{state:flow.state,ticket}});flow=null;$('login-code').value='';message('');await load();}catch(e){message(e.message);}finally{busy=false;}}

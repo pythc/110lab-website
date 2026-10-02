@@ -28,7 +28,13 @@ export async function handleMailExternalRequest(event,{frame,openExternal,callTo
         waitingForCallback=true;
         const opened=await openExternal(url.href);if(opened?.isError)throw new Error('Not opened');
         frame.contentWindow.postMessage({type:'110lab-mail-host-opened',state:m.state},'https://internal.110-lab.cn');
-        result=await callTool({name:'complete_110lab_mail_login',arguments:{state:m.state}});
+        const deadline=Date.now()+270000;
+        for(;;){
+          result=await callTool({name:'complete_110lab_mail_login',arguments:{state:m.state}});
+          if(!result?._meta?.mailAuthorizationPending)break;
+          if(result._meta.mailAuthorizationPending.state!==m.state||Date.now()>=deadline)throw new Error('Login expired');
+          await new Promise(resolve=>setTimeout(resolve,1500));
+        }
       }
     }catch{if(waitingForCallback)try{await callTool({name:'complete_110lab_mail_login',arguments:{state:m.state,cancel:true}});}catch{}result=null;}
     const handoff=result?._meta?.mailHandoff;

@@ -68,3 +68,8 @@ test('failed external opening cancels the pending local OAuth and rejects untrus
   for(const url of ['https://evil.example/authorize','https://internal.110-lab.cn@evil.example/authorize','https://internal.110-lab.cn/other','javascript:alert(1)'])await handleMailExternalRequest(event,{frame,callTool:async()=>({_meta:{mailAuthorization:{state,url}}}),openExternal:async url=>opened.push(url)});
   assert.deepEqual(opened,[]);
 });
+test('host login polls without keeping one MCP request open while the user authorizes',async()=>{
+  let polls=0,opens=0;const replies=[],source={postMessage:m=>replies.push(m)},frame={contentWindow:source};
+  await handleMailExternalRequest({origin:'https://internal.110-lab.cn',source,data:{type:'110lab-mail-host-login',state,fresh:false}},{frame,openExternal:async()=>{opens++;return {};},callTool:async args=>args.name==='connect_110lab_mail'?{_meta:{mailAuthorization:{state,url:'https://internal.110-lab.cn/authorize'}}}:++polls===1?{_meta:{mailAuthorizationPending:{state}}}:{_meta:{mailHandoff:{state,ticket:'t'.repeat(43)}}}});
+  assert.equal(opens,1);assert.equal(polls,2);assert.equal(replies.at(-1).ticket,'t'.repeat(43));
+});

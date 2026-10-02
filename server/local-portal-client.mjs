@@ -74,6 +74,7 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={
       const current=job;if(!secret(state)||!current||current.state!==state||!current.authorization)return error('登录请求已失效 请重新登录');
       if(typeof cancel!=='boolean')return error('登录请求无效');
       if(cancel){settle(current,false);return {content:[{type:'text',text:'已取消本次连接'}]};}
+      if(!current.done)return {content:[{type:'text',text:'等待用户完成飞书登录'}],_meta:{mailAuthorizationPending:{state}}};
       current.result ||= (async()=>{
         if(!await current.wait||current!==job)return error('授权未完成 请重新登录');
         try{return await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh:current.fresh}});}catch{return error('连接未完成 请重新登录');}

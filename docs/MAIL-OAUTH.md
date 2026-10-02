@@ -19,3 +19,5 @@ DCR 只接受 ChatGPT 官方回调及 Codex 本机 callback 路径。注册地�
 0.8.9 的原生客户端日志确认返回 `Authentication required`，但依然没有启动 DCR。因此插件 0.8.7 的桌面端 `110lab` MCP 改为本地 stdio 桥接，公开工作台与资源仍从同一个 HTTPS 服务获取。只有登录操作由本地公共 OAuth 客户端处理：界面通过 `app.openLink` 打开 `_meta` 内的固定授权地址，本机仅监听 `127.0.0.1` 的随机端口，校验精确 Host、回调路径、一次性 state、issuer 和授权码后交由 SDK 完成 PKCE 兑换。`complete_110lab_mail_login` 仅对界面开放，等待回调后调用既有受保护工具；不能由页面提供身份。HTTP 401 校验继续保留。
 
 此本地桥接需要 Node.js 20.11 或更新版本，不需要 npm 安装。客户端注册资料、令牌和 PKCE 仅保存在进程内存中，退出清除；页面登录仍使用原有 8 小时绝对有效期、30 分钟空闲有效期的 HttpOnly Partitioned Cookie，不因启动桥接或刷新令牌延长。无需向插件分发飞书 App Secret，不新增持久凭据文件。未完成的本机回调最长等待 260 秒，取消或超时会关闭监听；重复回调、其他来源 iframe、错误 state/issuer/Host 均不能完成登录。ChatGPT 网页和手机端不能运行这个本地 MCP 桥接。
+
+界面通过短请求检查本机回调是否完成，不让一次 MCP 调用长时间等待用户授权，避免宿主的工具调用超时中断登录。授权码只通过 loopback 交给原本生成 PKCE verifier 的本地进程；轮询仍需原始页面状态，服务端兑换仍需该 iframe 的绑定 Cookie。

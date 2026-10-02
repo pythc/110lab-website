@@ -47,7 +47,7 @@ test('local client opens standard OAuth and uses a validated loopback callback t
   try{
     const flow=await h.start(),start=await mail.start({state:flow.state});
     const url=start._meta.mailAuthorization.url;assert.doesNotMatch(JSON.stringify(start.content),/authorize|127\.0\.0\.1/);
-    const pending=mail.finish({state:flow.state});assert.equal((await mail.finish({state:'z'.repeat(43)})).isError,true);
+    assert.equal((await mail.finish({state:flow.state}))._meta.mailAuthorizationPending.state,flow.state);assert.equal((await mail.finish({state:'z'.repeat(43)})).isError,true);
     assert.equal((await mail.start({state:'z'.repeat(43)})).isError,true);
     const callback=await h.approve(url),wrongState=new URL(callback);wrongState.searchParams.set('state','wrong');
     assert.equal((await fetch(wrongState)).status,400);
@@ -55,7 +55,7 @@ test('local client opens standard OAuth and uses a validated loopback callback t
     const duplicateState=new URL(callback);duplicateState.searchParams.append('state',callback.searchParams.get('state'));assert.equal((await fetch(duplicateState)).status,400);
     const wrongHost=await new Promise((resolve,reject)=>{const req=request(callback,{headers:{Host:'localhost:'+callback.port}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});req.on('error',reject);req.end();});assert.equal(wrongHost,404);
     assert.equal((await fetch(callback)).status,200);
-    const result=await pending;assert.equal(result.isError,undefined);const ticket=result._meta.mailHandoff.ticket;
+    const result=await mail.finish({state:flow.state});assert.equal(result.isError,undefined);const ticket=result._meta.mailHandoff.ticket;
     assert.doesNotMatch(JSON.stringify(result.content),new RegExp(ticket));
     assert.equal((await h.call('/api/mail/embedded/auth/redeem',{data:{state:flow.state,ticket}})).status,401);
     const redeemed=await h.call('/api/mail/embedded/auth/redeem',{data:{state:flow.state,ticket},headers:{Cookie:flow.cookie}});assert.equal(redeemed.status,200);
@@ -70,8 +70,8 @@ test('cancelled and expired local authorizations do not hang or prevent retry',a
   const h=await harness(),mail=createMailLoginClient({fetchImpl:h.fetchImpl,timeoutMs:1500});
   try{
     const first=await h.start();assert.ok((await mail.start({state:first.state}))._meta.mailAuthorization);
-    const pending=mail.finish({state:first.state});await mail.finish({state:first.state,cancel:true});assert.equal((await pending).isError,true);
-    const second=await h.start();assert.ok((await mail.start({state:second.state}))._meta.mailAuthorization);assert.equal((await mail.finish({state:second.state})).isError,true);
+    assert.ok((await mail.finish({state:first.state}))._meta.mailAuthorizationPending);await mail.finish({state:first.state,cancel:true});assert.equal((await mail.finish({state:first.state})).isError,true);
+    const second=await h.start();assert.ok((await mail.start({state:second.state}))._meta.mailAuthorization);await new Promise(r=>setTimeout(r,1501));assert.equal((await mail.finish({state:second.state})).isError,true);
     const third=await h.start();assert.ok((await mail.start({state:third.state}))._meta.mailAuthorization);await mail.finish({state:third.state,cancel:true});
     await assert.rejects(portalFetch('https://evil.example/token'),/Unexpected OAuth destination/);
     await assert.rejects(portalFetch(ISSUER+'/other'),/Unexpected OAuth destination/);
@@ -88,9 +88,9 @@ test('local MCP proxy retains workbench metadata and exposes the login bridge on
     const resource=await client.readResource({uri:opener._meta.ui.resourceUri});assert.equal(resource.contents[0]._meta.ui.domain,ISSUER);assert.match(resource.contents[0].text,/110lab/);
     assert.equal((await client.callTool({name:'open_110lab',arguments:{}})).structuredContent.appCount,7);
     const flow=await h.start(),started=await client.callTool({name:'connect_110lab_mail',arguments:{state:flow.state}});
-    const pending=client.callTool({name:'complete_110lab_mail_login',arguments:{state:flow.state}});
+    assert.ok((await client.callTool({name:'complete_110lab_mail_login',arguments:{state:flow.state}}))._meta.mailAuthorizationPending);
     const callback=await h.approve(started._meta.mailAuthorization.url);assert.equal((await fetch(callback)).status,200);
-    assert.equal((await pending)._meta.mailHandoff.state,flow.state);
+    assert.equal((await client.callTool({name:'complete_110lab_mail_login',arguments:{state:flow.state}}))._meta.mailHandoff.state,flow.state);
   }finally{await client.close();await bridge.close();await h.close();}
 });
 
