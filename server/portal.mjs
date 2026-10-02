@@ -5,8 +5,8 @@ import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 import {ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
 
-export const UI_URI='ui://110lab/workbench/v0.7.0';
-export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.6.1';
+export const UI_URI='ui://110lab/workbench/v0.8.0';
+export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.7.0';
 export const LEGACY_UI_URI='ui://110lab/home';
 export async function createPortalServer(){
   const [html,config,icon]=await Promise.all([
@@ -15,7 +15,7 @@ export async function createPortalServer(){
     readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))
   ]);
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
-  const server=new McpServer({name:'110lab',version:'0.7.0'});
+  const server=new McpServer({name:'110lab',version:'0.8.0'});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
     uri,mimeType:RESOURCE_MIME_TYPE,text:html,
@@ -23,12 +23,16 @@ export async function createPortalServer(){
       'https://47.109.176.127',
       'https://fcncvoyreb8p.feishuapp.com',
       'https://fcncvoyreb8p.aiforce.cloud',
+      'https://open.feishu.cn',
       'https://accounts.feishu.cn',
+      'https://passport.feishu.cn',
+      'https://login.feishu.cn',
       'https://miaoda.feishu.cn'
     ]}},'openai/ui':{preferredDisplayMode:'fullscreen',availableDisplayModes:['fullscreen']}}
   }]});
   registerAppResource(server,'110lab-workbench-v5',UI_URI,{description:'110 实验室工作台'},async()=>workbenchResource(UI_URI));
   registerAppResource(server,'110lab-workbench-v5-previous',PREVIOUS_UI_URI,{description:'110 实验室工作台兼容入口'},async()=>workbenchResource(PREVIOUS_UI_URI));
+  registerAppResource(server,'110lab-workbench-v6-1-legacy','ui://110lab/workbench/v0.6.1',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.6.1'));
   registerAppResource(server,'110lab-workbench-v6-legacy','ui://110lab/workbench/v0.6.0',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.6.0'));
   // Older installed clients may retain the original resource URI in tool discovery.
   // Both addresses serve the workbench; only the versioned address is advertised by the opener.

@@ -152,10 +152,18 @@ a:focus-visible, button:focus-visible, input:focus-visible {
 }
 .embedded-toolbar h2 { font-size: 14px; font-weight: 600; }
 .embedded-toolbar a { font-size: 13px; color: var(--slate); }
+.embedded-toolbar h2 { margin-right: auto; }
+.embedded-toolbar button { border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; background: #f7f9fc; font-size: 13px; }
+.embedded-login-help { margin: 0; padding: 9px 16px; color: var(--slate); font-size: 12px; line-height: 1.6; border-bottom: 1px solid var(--line); }
+.embedded-page:has(.embedded-login-help) iframe { height: calc(100dvh - 270px); }
+.embedded-diagnostics { padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--slate); }
+.embedded-diagnostics summary { cursor: pointer; }
+.embedded-diagnostics pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+.embedded-diagnostics button { border: 1px solid var(--line); background: #f7f9fc; border-radius: 7px; padding: 7px 10px; }
 .embedded-page iframe {
   display: block;
   width: 100%;
-  height: calc(100dvh - 182px);
+  height: calc(100dvh - 220px);
   min-height: 460px;
   border: 0;
   background: #fff;
