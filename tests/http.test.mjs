@@ -35,7 +35,9 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
     await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp/workbench-v5-1')));
     const list=await client.listTools();assert.deepEqual(list.tools.map(t=>t.name).sort(),['connect_110lab_mail','open_110lab','search_110lab_projects']);
     const login=list.tools.find(t=>t.name==='connect_110lab_mail');assert.deepEqual(login._meta.ui.visibility,['app']);assert.deepEqual(login._meta.securitySchemes,[{type:'oauth2',scopes:['mail:session']}]);
-    const challenge=await client.callTool({name:'connect_110lab_mail',arguments:{state:'x'.repeat(43)}});assert.equal(challenge.isError,true);assert.ok(challenge._meta['mcp/www_authenticate']);
+    await assert.rejects(client.callTool({name:'connect_110lab_mail',arguments:{state:'x'.repeat(43)}}),error=>error.code===401);
+    const challenge=await fetch(base+'/mcp/workbench-v6-1',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json, text/event-stream'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'connect_110lab_mail',arguments:{state:'x'.repeat(43)}}})});
+    assert.equal(challenge.status,401);assert.match(challenge.headers.get('www-authenticate'),/resource_metadata=.*scope="mail:session"/);assert.match(challenge.headers.get('access-control-expose-headers'),/WWW-Authenticate/);assert.equal((await challenge.json()).result.isError,true);
     for(let i=0;i<3;i++){
       const result=await client.callTool({name:'search_110lab_projects',arguments:{query:'需求'}});
       assert.equal(result.structuredContent.projects.length,1);
