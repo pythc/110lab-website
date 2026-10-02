@@ -35,5 +35,14 @@ try{
  const discovery=await call('/mcp/workbench-v6',{jsonrpc:'2.0',id:1,method:'tools/list'},{'Accept':'application/json, text/event-stream','MCP-Protocol-Version':'2025-11-25'});
  assert.equal(discovery.status,200);assert.match(discovery.body.result.tools[0].icons[0].src,/^data:image\/png;base64,/);
  assert.equal((await call('/api/admin/logout',{},headers)).status,200);assert.equal((await call('/api/admin/session',undefined,headers)).status,401);
- console.log(JSON.stringify({isolatedAdminBundle:true,privateAccountInitializer:true,secondInitializationRefused:true,draftsPrivate:true,publishVerified:true,logoutVerified:true,toolIconVerified:true}));
+ const embeddedPage=await call('/admin/embedded');assert.equal(embeddedPage.status,200);assert.match(embeddedPage.headers['content-security-policy'],/internal-110-lab-cn\.web-sandbox\.oaiusercontent\.com/);
+ const embedded=await call('/api/admin/embedded/login',{username:'fixture_admin',password});assert.equal(embedded.status,200);
+ const embeddedHeaders={Cookie:embedded.headers['set-cookie'][0].split(';')[0],'X-CSRF-Token':embedded.body.csrf};
+ assert.match(embedded.headers['set-cookie'][0],/SameSite=None.*Secure; Partitioned/);
+ assert.equal((await call('/api/admin/embedded/session',undefined,embeddedHeaders)).status,200);
+ assert.equal((await call('/api/admin/session',undefined,embeddedHeaders)).status,401);
+ assert.equal((await call('/api/admin/embedded/updates',undefined,embeddedHeaders)).body.updates.length,1);
+ assert.equal((await call('/api/admin/embedded/logout',{},embeddedHeaders)).status,200);
+ assert.equal((await call('/api/admin/embedded/session',undefined,embeddedHeaders)).status,401);
+ console.log(JSON.stringify({embeddedSessionVerified:true,isolatedAdminBundle:true,privateAccountInitializer:true,secondInitializationRefused:true,draftsPrivate:true,publishVerified:true,logoutVerified:true,toolIconVerified:true}));
 }finally{if(server)await new Promise(resolve=>{server.close(resolve);server.closeAllConnections();});delete process.env.PORTAL_UPDATES_DATABASE;rmSync(root,{recursive:true,force:true});}

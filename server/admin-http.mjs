@@ -5,6 +5,11 @@ import {AdminError,openAdminAuth} from './admin-auth.mjs';
 import {UpdateError} from './updates.mjs';
 
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
+export const ADMIN_FRAME_ANCESTORS=Object.freeze([
+  'https://internal-110-lab-cn.web-sandbox.oaiusercontent.com',
+  'codex-sandbox://mcp-app-eb754d6717539b08789f5fc6b454ba6b2faf9c1a6a456d80.web-sandbox.oaiusercontent.com',
+  'codex-sandbox://mcp-app-866fa2382627ef9fa973c3a972919d239ffee4f00b64dac0.web-sandbox.oaiusercontent.com'
+]);
 const revision=z.number().int().positive();
 async function body(req,limit=32768){
   if(req.headers['content-type']!=='application/json')throw new AdminError(415,'请求格式无效');
@@ -28,12 +33,16 @@ export async function createAdminHttp({updates,enabled=process.env.PORTAL_ADMIN_
   const auth=openAdminAuth({directory,configPath,config,localTest}),html=await readFile(new URL('../dist/admin.html',import.meta.url),'utf8'),allowed=new Set(origins),proxies=new Set(trustedProxies);
   return {enabled:true,close(){auth.close();},
     async handle(req,res,path,host){
-      if(!['/admin','/admin/'].includes(path)&&!path.startsWith('/api/admin/'))return false;
+      const pagePath=['/admin','/admin/','/admin/embedded'].includes(path);
+      if(!pagePath&&!path.startsWith('/api/admin/'))return false;
+      const embedded=path==='/admin/embedded'||path.startsWith('/api/admin/embedded/');
+      if(path.startsWith('/api/admin/embedded/'))path='/api/admin/'+path.slice('/api/admin/embedded/'.length);
       try{
         const local=localTest&&['localhost','127.0.0.1'].includes(host);
         if(host!=='internal.110-lab.cn'&&!local)throw new AdminError(404,'Not found');
-        if(['/admin','/admin/'].includes(path)&&['GET','HEAD'].includes(req.method)){
-          res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"});res.end(req.method==='HEAD'?undefined:html);return true;
+        if(pagePath&&['GET','HEAD'].includes(req.method)){
+          const ancestors=embedded?"'self' "+ADMIN_FRAME_ANCESTORS.join(' '):"'none'";
+          res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(req.method==='HEAD'?undefined:html);return true;
         }
         if(!['GET','POST'].includes(req.method))throw new AdminError(405,'请求方式无效');
         if(req.method==='POST'){
@@ -44,10 +53,10 @@ export async function createAdminHttp({updates,enabled=process.env.PORTAL_ADMIN_
           if(Buffer.byteLength(value.password)>256)throw new AdminError(400,'请求格式无效');
           const remote=req.socket.remoteAddress||'unknown',forwarded=String(req.headers['x-forwarded-for']||'').split(',')[0].trim();
           const ip=proxies.has(remote)&&isIP(forwarded)?forwarded:remote;
-          const result=await auth.login(value.username,value.password,ip);res.setHeader('Set-Cookie',result.cookie);json(res,200,result.session);return true;
+          const result=await auth.login(value.username,value.password,ip,{embedded});res.setHeader('Set-Cookie',result.cookie);json(res,200,result.session);return true;
         }
-        const session=auth.session(req.headers.cookie);
-        if(path==='/api/admin/session'&&req.method==='GET'){const {key,...publicSession}=session;json(res,200,publicSession);return true;}
+        const session=auth.session(req.headers.cookie,{embedded});
+        if(path==='/api/admin/session'&&req.method==='GET'){const {key,embedded:context,...publicSession}=session;json(res,200,publicSession);return true;}
         if(req.method==='POST')auth.csrf(session,req.headers['x-csrf-token']);
         if(path==='/api/admin/logout'&&req.method==='POST'){z.object({}).strict().parse(await body(req,128));res.setHeader('Set-Cookie',auth.logout(session));json(res,200,{loggedOut:true});return true;}
         if(path==='/api/admin/updates'){
