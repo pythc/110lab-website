@@ -13,23 +13,28 @@ export function readMailConfig(path){const s=lstatSync(path);if(!s.isFile()||s.i
 export function parseMailConfig(value){return settings.parse(value);}
 export function bootstrapMailOwner(config){return {subject:config.tenantKey+':'+config.bootstrapUnionId,email:config.bootstrapEmail.toLowerCase(),name:config.bootstrapName};}
 
-async function providerJson(url,options){
+function providerDiagnostic(stage,code=null,extra={}){
+  // Never log provider text, URLs, authorization codes, tokens or profiles.
+  console.warn('Mail OAuth failed',JSON.stringify({stage,code:Number.isInteger(code)?code:null,...extra}));
+}
+async function providerJson(url,options,stage){
   let response;
   try{response=await fetch(url,{...options,redirect:'error',signal:AbortSignal.timeout(10000)});}catch{throw new MailAuthError(503,'飞书登录暂时不可用 请稍后再试');}
-  if(!response.ok){await response.body?.cancel();throw new MailAuthError(502,'飞书登录失败 请重新登录');}
   const reader=response.body.getReader();let size=0;const parts=[];
   try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>65536){await reader.cancel();throw new MailAuthError(502,'飞书登录响应无效');}parts.push(value);}}finally{reader.releaseLock();}
-  try{return JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{throw new MailAuthError(502,'飞书登录响应无效');}
+  let value;try{value=JSON.parse(Buffer.concat(parts).toString('utf8'));}catch{providerDiagnostic(stage,null,{httpStatus:response.status});throw new MailAuthError(502,'飞书登录响应无效');}
+  if(!response.ok){providerDiagnostic(stage,value?.code,{httpStatus:response.status});throw new MailAuthError(502,'飞书登录失败 请重新登录');}
+  return value;
 }
 export async function fetchMailIdentity(config,{code,verifier}){
-  const token=await providerJson('https://accounts.feishu.cn/oauth/v3/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:config.appId,client_secret:config.appSecret,code,redirect_uri:MAIL_CALLBACK,code_verifier:verifier,scope:MAIL_SCOPE})});
-  if(token.error||token.code!==undefined&&token.code!==0||typeof token.access_token!=='string'||token.access_token.length<1||token.access_token.length>16384)throw new MailAuthError(401,'飞书授权失败 请重新登录');
-  const info=await providerJson('https://open.feishu.cn/open-apis/authen/v1/user_info',{headers:{Authorization:'Bearer '+token.access_token}});
-  if(info.code!==0||!info.data)throw new MailAuthError(401,'无法验证飞书身份');
+  const token=await providerJson('https://accounts.feishu.cn/oauth/v3/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:config.appId,client_secret:config.appSecret,code,redirect_uri:MAIL_CALLBACK,code_verifier:verifier,scope:MAIL_SCOPE})},'token');
+  if(!token||token.error||token.code!==undefined&&token.code!==0||typeof token.access_token!=='string'||token.access_token.length<1||token.access_token.length>16384){providerDiagnostic('token',token?.code);throw new MailAuthError(401,'飞书授权失败 请重新登录');}
+  const info=await providerJson('https://open.feishu.cn/open-apis/authen/v1/user_info',{headers:{Authorization:'Bearer '+token.access_token}},'identity');
+  if(!info||info.code!==0||!info.data){providerDiagnostic('identity',info?.code);throw new MailAuthError(401,'无法验证飞书身份');}
   const p=info.data;
   // A contact email is not identity proof. Require Feishu's enterprise mailbox
   // and bind permissions to tenant + union_id, never a user-supplied name.
-  if(p.tenant_key!==config.tenantKey||!/^on_[a-zA-Z0-9_-]{10,100}$/.test(p.union_id||'')||typeof p.enterprise_email!=='string'||!/^[-a-zA-Z0-9._+]+@110-lab\.cn$/i.test(p.enterprise_email)||typeof p.name!=='string'||!p.name||p.name.length>80||/[\x00-\x1f\x7f]/.test(p.name))throw new MailAuthError(403,'请使用 110 实验室的飞书企业账号登录');
+  if(p.tenant_key!==config.tenantKey||!/^on_[a-zA-Z0-9_-]{10,100}$/.test(p.union_id||'')||typeof p.enterprise_email!=='string'||!/^[-a-zA-Z0-9._+]+@110-lab\.cn$/i.test(p.enterprise_email)||typeof p.name!=='string'||!p.name||p.name.length>80||/[\x00-\x1f\x7f]/.test(p.name)){providerDiagnostic('identity-validation',null,{tenantMatches:p.tenant_key===config.tenantKey,unionPresent:typeof p.union_id==='string',enterpriseEmailPresent:typeof p.enterprise_email==='string',namePresent:typeof p.name==='string'});throw new MailAuthError(403,'请使用 110 实验室的飞书企业账号登录');}
   return {subject:p.tenant_key+':'+p.union_id,email:p.enterprise_email.toLowerCase(),name:p.name};
 }
 export function openMailAuth({directory,config,now=Date.now,localTest=false,fetchIdentity=fetchMailIdentity}){

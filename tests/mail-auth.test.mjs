@@ -55,3 +55,15 @@ test('OAuth start is bounded globally and per IP',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'110lab-mail-budget-')),auth=openMailAuth({directory:dir,config:fixtureConfig});
   try{for(let n=0;n<10;n++)auth.start('',{ip:'192.0.2.5'});assert.throws(()=>auth.start('',{ip:'192.0.2.5'}),e=>e.status===429);assert.equal(auth.start('',{ip:'192.0.2.6'}).state.length,43);}finally{auth.close();await rm(dir,{recursive:true,force:true});}
 });
+test('provider failures preserve a safe server code without exposing credentials or provider text',async()=>{
+  const originalFetch=globalThis.fetch,originalWarn=console.warn,records=[];
+  globalThis.fetch=async()=>new Response(JSON.stringify({code:20049,error:'invalid_grant',error_description:'private authorization code and profile',access_token:'private-token'}),{status:400});
+  console.warn=(...args)=>records.push(args);
+  try{
+    await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'private-code',verifier:'x'.repeat(43)}),e=>e.status===502&&e.message==='飞书登录失败 请重新登录');
+    assert.deepEqual(records,[['Mail OAuth failed',JSON.stringify({stage:'token',code:20049,httpStatus:400})]]);
+    assert.doesNotMatch(JSON.stringify(records),/private|fictional-app-secret|access_token|error_description/);
+    globalThis.fetch=async()=>new Response('null');
+    await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'private-code',verifier:'x'.repeat(43)}),e=>e.status===401);
+  }finally{globalThis.fetch=originalFetch;console.warn=originalWarn;}
+});
