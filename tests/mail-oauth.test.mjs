@@ -29,9 +29,11 @@ async function grant(h){
   const query=new URLSearchParams({client_id:client,redirect_uri:redirect,response_type:'code',code_challenge:challenge,code_challenge_method:'S256',resource:MAIL_RESOURCE,scope:'mail:session',state:'fictional_host_state'});
   const authorization=await h.call('/authorize?'+query);assert.equal(authorization.status,200);const bind=cookies(authorization);
   const start=await h.call('/mail/oauth/login',{form:{request:requestId(authorization)},headers:{Cookie:bind}});assert.equal(start.status,303);
+  assert.equal((await h.call('/mail/oauth/login',{form:{request:requestId(authorization)},headers:{Cookie:bind}})).status,400);
   const feishu=new URL(start.headers.location);assert.equal(feishu.origin,'https://accounts.feishu.cn');assert.equal(feishu.searchParams.get('redirect_uri'),MAIL_ISSUER+'/mail/auth/callback');
   const callback=await h.call('/mail/auth/callback?'+new URLSearchParams({state:feishu.searchParams.get('state'),code:'fictional-code'}),{headers:{Cookie:bind+'; '+cookies(start)}});
   assert.equal(callback.status,200);assert.match(callback.text,/确认连接/);assert.doesNotMatch(callback.text,/<code>|一次性登录码/);
+  assert.equal(callback.headers['set-cookie'],undefined,'host consent must not also sign the browser into the mailbox');
   const approval=await h.call('/mail/oauth/approve',{form:{request:requestId(callback)},headers:{Cookie:bind}});assert.equal(approval.status,303);
   const returned=new URL(approval.headers.location);assert.equal(returned.origin,'http://127.0.0.1:49111');assert.equal(returned.searchParams.get('state'),'fictional_host_state');assert.equal(returned.searchParams.get('iss'),MAIL_ISSUER);
   assert.equal((await h.call('/mail/oauth/approve',{form:{request:requestId(callback)},headers:{Cookie:bind}})).status,400);

@@ -74,7 +74,7 @@ export function openMailAuth({directory,config,now=Date.now,localTest=false,fetc
       try{const profile=await fetchIdentity(config,{code,verifier:row.verifier});
         if(row.expected_subject&&profile.subject!==row.expected_subject)throw new MailAuthError(403,'请使用当前管理员的飞书账号确认身份');
         if(now()>=row.expires)throw new MailAuthError(401,'登录链接已过期');
-        return {profile,complete(){const ticket=nonce();if(db.prepare("UPDATE mail_flows SET status='complete',subject=?,handoff_hash=?,verifier='' WHERE state=? AND status='exchanging' AND expires>?").run(profile.subject,hash(ticket),hash(state),now()).changes!==1)throw new MailAuthError(409,'登录状态已改变');return {...mint(profile.subject,false),ticket,state};}};
+        return {profile,consumeForHost(){if(db.prepare("UPDATE mail_flows SET status='consumed',subject=?,verifier='' WHERE state=? AND status='exchanging' AND expires>?").run(profile.subject,hash(state),now()).changes!==1)throw new MailAuthError(409,'登录状态已改变');},complete(){const ticket=nonce();if(db.prepare("UPDATE mail_flows SET status='complete',subject=?,handoff_hash=?,verifier='' WHERE state=? AND status='exchanging' AND expires>?").run(profile.subject,hash(ticket),hash(state),now()).changes!==1)throw new MailAuthError(409,'登录状态已改变');return {...mint(profile.subject,false),ticket,state};}};
       }catch(e){db.prepare("UPDATE mail_flows SET status='failed',verifier='' WHERE state=?").run(hash(state));if(e instanceof MailAuthError)throw e;throw new MailAuthError(502,'无法验证飞书身份');}
     },
     // Knowing a flow URL and polling cookie must never be enough to acquire

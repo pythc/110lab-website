@@ -72,13 +72,15 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     async exchangeAuthorizationCode(client,code,verifier,redirectUri,resource){
       checkResource(resource);const row=secret(code)&&db.prepare('SELECT * FROM oauth_codes WHERE key=? AND expires>?').get(hash(code),now());
       if(!row||row.client!==client.client_id||redirectUri!==row.redirect||typeof verifier!=='string'||!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)||createHash('sha256').update(verifier).digest('base64url')!==row.challenge)throw new InvalidGrantError('Invalid authorization code or PKCE verifier');
-      db.exec('BEGIN IMMEDIATE');try{if(db.prepare('DELETE FROM oauth_codes WHERE key=?').run(hash(code)).changes!==1)throw new InvalidGrantError('Authorization code already used');const result=mint(row);db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}
+      db.exec('BEGIN IMMEDIATE');try{if(db.prepare('DELETE FROM oauth_codes WHERE key=? AND expires>?').run(hash(code),now()).changes!==1)throw new InvalidGrantError('Authorization code already used or expired');const result=mint(row);db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}
     },
     async exchangeRefreshToken(client,token,scopes,resource){
-      checkResource(resource);if(scopes?.some(v=>v!==MAIL_HOST_SCOPE))throw new InvalidScopeError('Unsupported scope');const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='refresh'").get(hash(token));
-      if(!row||row.client!==client.client_id||row.expires<=now())throw new InvalidGrantError('Refresh token expired');
-      if(row.used){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);throw new InvalidGrantError('Refresh token reused');}
-      db.exec('BEGIN IMMEDIATE');try{if(db.prepare('UPDATE oauth_tokens SET used=1 WHERE key=? AND used=0').run(hash(token)).changes!==1)throw new InvalidGrantError('Refresh token already used');const result=mint(row,row.family);db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}
+      checkResource(resource);if(scopes?.some(v=>v!==MAIL_HOST_SCOPE))throw new InvalidScopeError('Unsupported scope');
+      let result,reused=false;
+      // Read and consume under one write lock, including across HTTP processes.
+      // A concurrent replay must revoke the winner's newly issued token family.
+      db.exec('BEGIN IMMEDIATE');try{const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='refresh'").get(hash(token));if(!row||row.client!==client.client_id||row.expires<=now())throw new InvalidGrantError('Refresh token expired');if(row.used){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);reused=true;}else{db.prepare('UPDATE oauth_tokens SET used=1 WHERE key=?').run(hash(token));result=mint(row,row.family);}db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+      if(reused)throw new InvalidGrantError('Refresh token reused');return result;
     },
     async verifyAccessToken(token){
       const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');
@@ -99,7 +101,8 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   const sameOrigin=req=>req.headers.origin===MAIL_ISSUER&&(!req.headers['sec-fetch-site']||req.headers['sec-fetch-site']==='same-origin');
   app.post('/mail/oauth/login',(req,res)=>{
     try{if(!sameOrigin(req))throw new InvalidRequestError('Use the authorization page');const id=req.body.request,row=getRequest(id,req.headers.cookie);if(row.status!=='created')throw new InvalidGrantError('Authorization already started');
-      const started=auth.start(req.headers.cookie,{ip:req.ip});const launch=auth.launch(started.state);db.prepare("UPDATE oauth_requests SET status='launched',flow=? WHERE id=? AND status='created'").run(hash(started.state),hash(id));res.append('Set-Cookie',launch.cookie);res.redirect(303,launch.url);
+      if(db.prepare("UPDATE oauth_requests SET status='starting' WHERE id=? AND status='created'").run(hash(id)).changes!==1)throw new InvalidGrantError('Authorization already started');
+      const started=auth.start(req.headers.cookie,{ip:req.ip});const launch=auth.launch(started.state);if(db.prepare("UPDATE oauth_requests SET status='launched',flow=? WHERE id=? AND status='starting'").run(hash(started.state),hash(id)).changes!==1)throw new InvalidGrantError('Authorization unavailable');res.append('Set-Cookie',launch.cookie);res.redirect(303,launch.url);
     }catch{respond(res,'登录未完成','<p>此授权页面已失效 请返回插件重新登录</p>',400);}
   });
   app.post('/mail/oauth/approve',(req,res)=>{
@@ -113,9 +116,10 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   const paths=new Set(['/authorize','/token','/register','/revoke','/mail/oauth/login','/mail/oauth/approve','/.well-known/oauth-authorization-server','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource/mcp/workbench-v6-1']);
   return {provider,
     handle(req,res,path,host){if(!paths.has(path))return false;if(host!=='internal.110-lab.cn'&&!(localTest&&host==='127.0.0.1')){res.writeHead(404);res.end();return true;}app(req,res);return true;},
-    finishCallback(state,profile,req,res){
+    finishCallback(state,profile,req,res,consumeIdentity){
       const row=db.prepare('SELECT * FROM oauth_requests WHERE flow=? AND expires>?').get(hash(state),now());if(!row)return false;
       if(row.status!=='launched'||!binding(req.headers.cookie)||hash(binding(req.headers.cookie))!==row.binding){respond(res,'连接未完成','<p>请在发起授权的浏览器完成登录</p>',401);return true;}
+      consumeIdentity();
       const id=nonce(); // Replace the URL's request nonce after authenticating.
       if(db.prepare("UPDATE oauth_requests SET id=?,subject=?,authenticated=?,status='verified' WHERE id=? AND status='launched'").run(hash(id),profile.subject,now(),row.id).changes!==1){respond(res,'连接未完成','<p>授权已处理 请返回插件</p>',409);return true;}
       // Explicit consent prevents silent grants to a remotely initiated client.
