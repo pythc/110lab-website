@@ -50,6 +50,15 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   // Keep same-origin POST Origin intact without forwarding OAuth URL query parameters.
   const respond=(res,title,content,status=200)=>{res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 110lab</title><style>body{background:#f5f7fa;color:#202a38;font:15px/1.7 system-ui;margin:0;padding:48px 20px}main{max-width:440px;margin:auto;padding:28px;background:white;border:1px solid #e1e6ee;border-radius:16px}h1{font-size:23px;margin:0 0 12px}p{overflow-wrap:anywhere;color:#58677b}button{font:inherit;border:0;border-radius:9px;background:#23304b;color:white;padding:10px 18px;cursor:pointer}form{margin-top:22px}</style><main><h1>${title}</h1>${content}</main></html>`);};
   const form=(id,endpoint,label)=>`<form method="post" action="${endpoint}"><input type="hidden" name="request" value="${id}"><button>${label}</button></form>`;
+  // Chromium applies form-action to the entire redirect chain. Finish the
+  // same-origin POST first, then navigate without forwarding a form or referrer.
+  const navigate=(res,destination)=>{
+    const url=new URL(destination);
+    if(url.username||url.password||!(url.origin==='https://accounts.feishu.cn'&&url.pathname==='/open-apis/authen/v1/authorize'||allowedMailRedirect(url.origin+url.pathname)))throw new InvalidRequestError('Invalid navigation destination');
+    const target=escapeHTML(url.href);
+    res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"});
+    res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${target}"><title>正在继续登录 · 110lab</title><p>正在继续登录</p><a href="${target}" rel="noreferrer">继续</a></html>`);
+  };
   const mint=(row,family=nonce())=>{const accessToken=nonce(),refreshToken=nonce(),absolute=row.authenticated+lifetime,expires=Math.min(now()+30*60000,absolute);if(expires<=now())throw new InvalidGrantError('Sign in again');for(const [token,kind,expiry]of [[accessToken,'access',expires],[refreshToken,'refresh',absolute]])db.prepare('INSERT INTO oauth_tokens VALUES(?,?,?,?,?,?,?,0)').run(hash(token),kind,row.client,family,row.subject,row.authenticated,expiry);return {access_token:accessToken,token_type:'Bearer',expires_in:Math.floor((expires-now())/1000),refresh_token:refreshToken,scope:MAIL_HOST_SCOPE};};
   const checkResource=resource=>{if(resource?.href!==MAIL_RESOURCE)throw new InvalidRequestError('Invalid resource');};
   const provider={
@@ -109,14 +118,14 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   app.post('/mail/oauth/login',(req,res)=>{
     try{if(!sameOrigin(req))throw new InvalidRequestError('Use the authorization page');const id=req.body.request,row=getRequest(id,req.headers.cookie);if(row.status!=='created')throw new InvalidGrantError('Authorization already started');
       if(db.prepare("UPDATE oauth_requests SET status='starting' WHERE id=? AND status='created'").run(hash(id)).changes!==1)throw new InvalidGrantError('Authorization already started');
-      const started=auth.start(req.headers.cookie,{ip:req.ip});const launch=auth.launch(started.state);if(db.prepare("UPDATE oauth_requests SET status='launched',flow=? WHERE id=? AND status='starting'").run(hash(started.state),hash(id)).changes!==1)throw new InvalidGrantError('Authorization unavailable');res.append('Set-Cookie',launch.cookie);res.redirect(303,launch.url);
+      const started=auth.start(req.headers.cookie,{ip:req.ip});const launch=auth.launch(started.state);if(db.prepare("UPDATE oauth_requests SET status='launched',flow=? WHERE id=? AND status='starting'").run(hash(started.state),hash(id)).changes!==1)throw new InvalidGrantError('Authorization unavailable');res.append('Set-Cookie',launch.cookie);navigate(res,launch.url);
     }catch{respond(res,'登录未完成','<p>此授权页面已失效 请返回插件重新登录</p>',400);}
   });
   app.post('/mail/oauth/approve',(req,res)=>{
     try{if(!sameOrigin(req))throw new InvalidRequestError('Use the authorization page');const id=req.body.request,row=getRequest(id,req.headers.cookie);if(row.status!=='verified'||!row.subject)throw new InvalidGrantError('Verify your identity first');
       const client=provider.clientsStore.getClient(row.client);if(!client||!client.redirect_uris.some(r=>redirectUriMatches(row.redirect,r)))throw new InvalidGrantError('Client unavailable');
       const code=nonce();db.exec('BEGIN IMMEDIATE');try{if(db.prepare("UPDATE oauth_requests SET status='consumed' WHERE id=? AND status='verified'").run(hash(id)).changes!==1)throw new InvalidGrantError('Authorization already completed');db.prepare('INSERT INTO oauth_codes VALUES(?,?,?,?,?,?,?)').run(hash(code),row.client,row.redirect,row.challenge,row.subject,row.authenticated,now()+60000);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
-      const url=new URL(row.redirect);url.searchParams.set('code',code);url.searchParams.set('state',row.state);url.searchParams.set('iss',MAIL_ISSUER);res.redirect(303,url.href);
+      const url=new URL(row.redirect);url.searchParams.set('code',code);url.searchParams.set('state',row.state);url.searchParams.set('iss',MAIL_ISSUER);navigate(res,url.href);
     }catch{respond(res,'连接未完成','<p>此授权页面已失效 请返回插件重新登录</p>',400);}
   });
   app.use((_error,_req,res,_next)=>res.status(400).json({error:'invalid_request',error_description:'Invalid OAuth request'}));

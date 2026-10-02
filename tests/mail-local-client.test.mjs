@@ -12,6 +12,7 @@ import {createLocalPortalBridge} from '../server/local-portal-bridge.mjs';
 import {createHttpServer} from '../server/http.mjs';
 import {fixtureConfig,fixtureIdentity} from './helpers/mail-fixtures.mjs';
 
+const navigationURL=r=>{assert.equal(r.status,200);assert.equal(r.headers.location,undefined);assert.equal(r.headers['referrer-policy'],'no-referrer');assert.match(r.headers['content-security-policy'],/form-action 'none'/);return new URL(r.text.match(/<meta http-equiv="refresh" content="0;url=([^"]+)"/)[1].replaceAll('&amp;','&'));};
 const jar=r=>(r.headers['set-cookie']||[]).map(v=>v.split(';')[0]).join('; ');
 const requestId=r=>r.text.match(/name="request" value="([\w-]{43})"/)[1];
 async function harness(){
@@ -33,11 +34,11 @@ async function harness(){
     const u=new URL(authorization),page=await call(u.pathname+u.search),binding=jar(page);
     assert.equal(u.searchParams.get('resource'),RESOURCE);assert.equal(u.searchParams.get('code_challenge_method'),'S256');
     const launch=await call('/mail/oauth/login',{form:{request:requestId(page)},headers:{Cookie:binding}});
-    const feishu=new URL(launch.headers.location);assert.equal(feishu.origin,'https://accounts.feishu.cn');
+    const feishu=navigationURL(launch);assert.equal(feishu.origin,'https://accounts.feishu.cn');
     const identity=await call('/mail/auth/callback?'+new URLSearchParams({code:'fictional-code',state:feishu.searchParams.get('state')}),{headers:{Cookie:binding+'; '+jar(launch)}});
     assert.match(identity.text,/确认连接/);assert.equal(identity.headers['set-cookie'],undefined);
-    const approval=await call('/mail/oauth/approve',{form:{request:requestId(identity)},headers:{Cookie:binding}});assert.equal(approval.status,303);
-    return new URL(approval.headers.location);
+    const approval=await call('/mail/oauth/approve',{form:{request:requestId(identity)},headers:{Cookie:binding}});assert.equal(approval.status,200);
+    return navigationURL(approval);
   };
   return {call,fetchImpl,start,approve,advance(ms){time+=ms;},async close(){await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
 }
