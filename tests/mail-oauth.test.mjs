@@ -5,6 +5,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {request} from 'node:http';
 import {createHash} from 'node:crypto';
+import {Client} from '@modelcontextprotocol/sdk/client/index.js';
+import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {UnauthorizedError} from '@modelcontextprotocol/sdk/client/auth.js';
 import {createHttpServer} from '../server/http.mjs';
 import {fixtureConfig,fixtureIdentity} from './helpers/mail-fixtures.mjs';
 import {MAIL_RESOURCE,MAIL_ISSUER,allowedMailRedirect} from '../server/mail-oauth.mjs';
@@ -49,7 +52,7 @@ test('host OAuth completes Feishu -> PKCE -> MCP -> cookie-bound iframe without 
     const bearer=token.body.access_token;
     const login=async()=>{const started=await h.call('/api/mail/embedded/auth/start',{data:{}});return {state:started.body.state,jar:cookies(started)};};
     const connect=(state,header=bearer,fresh=false)=>h.call('/mcp/workbench-v6-1',{data:{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'connect_110lab_mail',arguments:{state,fresh}}},headers:{Authorization:'Bearer '+header}});
-    const flow=await login();const denied=await connect(flow.state,'x'.repeat(43));assert.equal(denied.body.result.isError,true);assert.ok(denied.body.result._meta['mcp/www_authenticate']);
+    const flow=await login();const denied=await connect(flow.state,'x'.repeat(43));assert.equal(denied.status,401);assert.match(denied.headers['www-authenticate'],/resource_metadata=/);assert.equal(denied.body.result.isError,true);assert.ok(denied.body.result._meta['mcp/www_authenticate']);
     const handoff=await connect(flow.state);assert.equal(handoff.status,200);const ticket=handoff.body.result._meta.mailHandoff.ticket;assert.doesNotMatch(JSON.stringify(handoff.body.result.content),new RegExp(ticket));
     assert.equal((await h.call('/api/mail/embedded/auth/redeem',{data:{state:flow.state,ticket}})).status,401);
     const redeemed=await h.call('/api/mail/embedded/auth/redeem',{data:{state:flow.state,ticket},headers:{Cookie:flow.jar}});assert.equal(redeemed.status,200);assert.match(redeemed.headers['set-cookie'][0],/HttpOnly; SameSite=None.*Secure; Partitioned/);
@@ -77,4 +80,36 @@ test('OAuth rejects redirects and cross-browser consent and rotates/revokes refr
     assert.equal((await h.call('/token',{form:refresh})).status,400);
     assert.equal((await h.call('/token',{form:{...refresh,refresh_token:next.body.refresh_token}})).status,400);
   }finally{await h.close();}
+});
+
+test('an MCP HTTP client discovers OAuth after a protected call and retries with its token',async()=>{
+  const h=await harness(),client=new Client({name:'fictional-oauth-client',version:'1'});
+  let information,tokens,pkce,authorization;
+  const paths=[],redirect='http://127.0.0.1:49112/callback/fictional_client';
+  const provider={redirectUrl:redirect,clientMetadata:{redirect_uris:[redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']},state:()=> 'fictional_client_state',clientInformation:()=>information,saveClientInformation:v=>{information=v;},tokens:()=>tokens,saveTokens:v=>{tokens=v;},saveCodeVerifier:v=>{pkce=v;},codeVerifier:()=>pkce,redirectToAuthorization:u=>{authorization=u;}};
+  const localFetch=async(input,init={})=>{
+    const url=new URL(input instanceof Request?input.url:String(input));assert.equal(url.origin,MAIL_ISSUER,'no live OAuth or external requests in this test');paths.push(url.pathname);
+    const headers=Object.fromEntries(new Headers(init.headers)),body=init.body;
+    const response=await h.call(url.pathname+url.search,{method:init.method||'GET',headers,...(body?headers['content-type']?.includes('application/json')?{data:JSON.parse(body)}:{form:Object.fromEntries(new URLSearchParams(body))}:{})});
+    return new Response(response.status===204?null:response.text,{status:response.status,headers:Object.fromEntries(Object.entries(response.headers).map(([k,v])=>[k,Array.isArray(v)?v.join(', '):v]))});
+  };
+  const transport=new StreamableHTTPClientTransport(new URL(MAIL_RESOURCE),{authProvider:provider,fetch:localFetch});
+  try{
+    await client.connect(transport);await client.callTool({name:'open_110lab',arguments:{}});assert.equal(authorization,undefined);
+    const started=await h.call('/api/mail/embedded/auth/start',{data:{}}),state=started.body.state;
+    await assert.rejects(client.callTool({name:'connect_110lab_mail',arguments:{state}}),UnauthorizedError);
+    assert.ok(information);assert.ok(authorization);assert.ok(paths.includes('/.well-known/oauth-protected-resource/mcp/workbench-v6-1'));assert.ok(paths.includes('/register'));assert.equal(authorization.searchParams.get('resource'),MAIL_RESOURCE);
+    const page=await h.call(authorization.pathname+authorization.search),bind=cookies(page);
+    const launch=await h.call('/mail/oauth/login',{form:{request:requestId(page)},headers:{Cookie:bind}});
+    const feishu=new URL(launch.headers.location);
+    const callback=await h.call('/mail/auth/callback?'+new URLSearchParams({state:feishu.searchParams.get('state'),code:'fictional-code'}),{headers:{Cookie:bind+'; '+cookies(launch)}});
+    const approved=await h.call('/mail/oauth/approve',{form:{request:requestId(callback)},headers:{Cookie:bind}});
+    const destination=new URL(approved.headers.location);assert.equal(destination.searchParams.get('state'),'fictional_client_state');assert.equal(destination.searchParams.get('iss'),MAIL_ISSUER);
+    await transport.finishAuth(destination.searchParams.get('code'));
+    const result=await client.callTool({name:'connect_110lab_mail',arguments:{state}});assert.equal(result.isError,undefined);
+    assert.equal((await h.call('/api/mail/embedded/auth/redeem',{data:{state,ticket:result._meta.mailHandoff.ticket},headers:{Cookie:cookies(started)}})).status,200);
+    // Invalid tokens must challenge without making anonymous tools unusable.
+    tokens={...tokens,access_token:'x'.repeat(43)};
+    assert.equal((await client.callTool({name:'open_110lab',arguments:{}})).isError,undefined);
+  }finally{await client.close();await h.close();}
 });

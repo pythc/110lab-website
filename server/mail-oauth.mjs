@@ -88,10 +88,16 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     },
     async revokeToken(client,{token}){if(!secret(token))return;const row=db.prepare('SELECT family FROM oauth_tokens WHERE key=? AND client=?').get(hash(token),client.client_id);if(row)db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);}
   };
+  const hostIdentity=async(header,{fresh=false}={})=>{
+    if(typeof header!=='string'||!/^Bearer [\w-]{43}$/.test(header))throw new InvalidTokenError('Sign in required');
+    const info=await provider.verifyAccessToken(header.slice(7));
+    if(fresh&&now()-info.extra.authenticatedAt>5*60000){await provider.revokeToken({client_id:info.clientId},{token:info.token});throw new InvalidTokenError('Fresh sign in required');}
+    return info;
+  };
   const app=express();app.disable('x-powered-by');app.set('trust proxy',ip=>trustedProxies.includes(ip));
   app.use((req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');next();});
   app.use(express.json({limit:'8kb'}),express.urlencoded({extended:false,limit:'8kb',parameterLimit:20}));
-  const metadata={issuer:MAIL_ISSUER,authorization_response_iss_parameter_supported:true,authorization_endpoint:MAIL_ISSUER+'/authorize',token_endpoint:MAIL_ISSUER+'/token',registration_endpoint:MAIL_ISSUER+'/register',revocation_endpoint:MAIL_ISSUER+'/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none','client_secret_post'],scopes_supported:[MAIL_HOST_SCOPE]};
+  const metadata={issuer:MAIL_ISSUER,authorization_response_iss_parameter_supported:true,authorization_endpoint:MAIL_ISSUER+'/authorize',token_endpoint:MAIL_ISSUER+'/token',registration_endpoint:MAIL_ISSUER+'/register',revocation_endpoint:MAIL_ISSUER+'/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none','client_secret_post'],revocation_endpoint_auth_methods_supported:['none','client_secret_post'],scopes_supported:[MAIL_HOST_SCOPE]};
   app.get('/.well-known/oauth-authorization-server',(_req,res)=>res.set('Access-Control-Allow-Origin','*').json(metadata));
   app.get(['/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource/mcp/workbench-v6-1'],(_req,res)=>res.set('Access-Control-Allow-Origin','*').json({resource:MAIL_RESOURCE,authorization_servers:[MAIL_ISSUER],scopes_supported:[MAIL_HOST_SCOPE],resource_name:'110lab 公共邮箱登录'}));
   // The SDK validates registered redirects before issuing protocol errors.
@@ -115,6 +121,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   app.use((_error,_req,res,_next)=>res.status(400).json({error:'invalid_request',error_description:'Invalid OAuth request'}));
   const paths=new Set(['/authorize','/token','/register','/revoke','/mail/oauth/login','/mail/oauth/approve','/.well-known/oauth-authorization-server','/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource/mcp/workbench-v6-1']);
   return {provider,
+    async authorized(header,options){try{await hostIdentity(header,options);return true;}catch(e){if(e instanceof InvalidTokenError)return false;throw e;}},
     handle(req,res,path,host){if(!paths.has(path))return false;if(host!=='internal.110-lab.cn'&&!(localTest&&host==='127.0.0.1')){res.writeHead(404);res.end();return true;}app(req,res);return true;},
     finishCallback(state,profile,req,res,consumeIdentity){
       const row=db.prepare('SELECT * FROM oauth_requests WHERE flow=? AND expires>?').get(hash(state),now());if(!row)return false;
@@ -127,7 +134,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
       respond(res,'确认连接',`<p>${escapeHTML(profile.name)}<br>${escapeHTML(profile.email)}</p><p>将此飞书身份用于${destination}的 110lab 公共邮箱管理</p>${form(id,'/mail/oauth/approve','连接并返回插件')}`);return true;
     },
     async handoff(header,state,{fresh=false}={}){
-      try{if(typeof header!=='string'||!/^Bearer [\w-]{43}$/.test(header))return mailAuthChallenge();const info=await provider.verifyAccessToken(header.slice(7));if(fresh&&now()-info.extra.authenticatedAt>5*60000){await provider.revokeToken({client_id:info.clientId},{token:info.token});return mailAuthChallenge();}access.me(info.extra.subject);const result=auth.completeForHost(state,info.extra);return {content:[{type:'text',text:'登录身份已验证'}],_meta:{mailHandoff:result}};
+      try{const info=await hostIdentity(header,{fresh});access.me(info.extra.subject);const result=auth.completeForHost(state,info.extra);return {content:[{type:'text',text:'登录身份已验证'}],_meta:{mailHandoff:result}};
       }catch(e){if(e instanceof InvalidTokenError)return mailAuthChallenge();return {isError:true,content:[{type:'text',text:'登录已失效 请重新点击飞书登录'}]};}
     },
     close(){clearInterval(timer);db.close();}

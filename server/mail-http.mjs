@@ -32,7 +32,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
   const proxies=new Set(trustedProxies);let auth,access,oauth;
   if(enabled){if(!directory||(!config&&!configPath))throw new Error('Mail login requires private configuration');config=config?parseMailConfig(config):readMailConfig(configPath);auth=openMailAuth({directory,config,now,localTest,fetchIdentity});try{access=openMailAccessStore({filename:join(directory,'mail-access.sqlite'),bootstrapOwner:bootstrapMailOwner(config),now});}catch(e){auth.close();throw e;}}
   if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies});}catch(e){auth.close();access.close();throw e;}}
-  return {enabled,hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
+  return {enabled,hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
     if(oauth?.handle(req,res,path,host))return true;
     if(!['/mail','/mail/','/mail/embedded','/mail/auth/launch','/mail/auth/callback'].includes(path)&&!path.startsWith('/api/mail/'))return false;
     const embedded=path==='/mail/embedded'||path.startsWith('/api/mail/embedded/');

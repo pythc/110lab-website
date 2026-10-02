@@ -10,6 +10,7 @@ import {openUpdatesStore} from './updates.mjs';
 import {createRecruitmentHttp} from './recruitment-http.mjs';
 import {createAdminHttp} from './admin-http.mjs';
 import {createMailHttp} from './mail-http.mjs';
+import {mailAuthChallenge} from './mail-oauth.mjs';
 import packageInfo from '../package.json' with {type:'json'};
 class HttpError extends Error {constructor(status,message){super(message);this.status=status;}}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
@@ -62,6 +63,14 @@ export async function createHttpServer(options={}){
         if(req.method!=='POST'){res.writeHead(405,{Allow:'POST, OPTIONS'});res.end('Method not allowed');return;}
         let parsed;
         try{parsed=await jsonBody(req,32*1024);}catch(error){if(error.status===400){json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}});return;}throw error;}
+        // Tool-result metadata alone does not start OAuth in every MCP host.
+        // Challenge only this protected call; discovery and the workbench stay public.
+        if(parsed?.method==='tools/call'&&parsed.params?.name==='connect_110lab_mail'&&!await mail.hostAuthorized(req.headers.authorization,{fresh:parsed.params.arguments?.fresh===true})){
+          const challenge=mailAuthChallenge();
+          res.setHeader('WWW-Authenticate',challenge._meta['mcp/www_authenticate'][0]);
+          res.setHeader('Access-Control-Expose-Headers','WWW-Authenticate');
+          json(res,401,{jsonrpc:'2.0',id:typeof parsed.id==='string'||typeof parsed.id==='number'?parsed.id:null,result:challenge});return;
+        }
         const mcp=await createPortalServer({mailHandoff:(state,options)=>mail.hostHandoff(req.headers.authorization,state,options)}),transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
         try{await mcp.connect(transport);await transport.handleRequest(req,res,parsed);}finally{await transport.close();await mcp.close();}return;
       }
