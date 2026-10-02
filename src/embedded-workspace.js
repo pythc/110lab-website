@@ -1,6 +1,7 @@
 // Only these owned applications can become embedded pages. Never accept a
 // frame URL from tool results, query parameters, messages or local storage.
 export const EMBEDDED_APPS = Object.freeze({
+  'public-mail': Object.freeze({title:'公共邮箱管理',url:'https://internal.110-lab.cn/mail/embedded',externalUrl:'https://internal.110-lab.cn/mail',nav:false}),
   assessment: Object.freeze({title: '考核系统', url: 'https://47.109.176.127'}),
   requirements: Object.freeze({title: '需求平台', url: 'https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x'}),
   'updates-admin': Object.freeze({

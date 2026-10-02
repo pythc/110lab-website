@@ -13,12 +13,12 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     const opener=tools.find(t=>t.name==='open_110lab');
     assert.equal(opener.title,'110lab');
     assert.equal(opener._meta.ui.resourceUri,UI_URI);
-    assert.equal(UI_URI,'ui://110lab/workbench/v0.8.3');
+    assert.equal(UI_URI,'ui://110lab/workbench/v0.8.4');
     assert.match(opener.icons[0].src,/^data:image\/png;base64,/);
     assert.equal(opener.icons[0].mimeType,'image/png');
     assert.deepEqual(opener._meta['openai/ui'].entrypoints,[{type:'global'}]);
     const opened=await client.callTool({name:'open_110lab',arguments:{}});
-    assert.equal(opened.structuredContent.appCount,6);
+    assert.equal(opened.structuredContent.appCount,7);
     assert.equal(opened.structuredContent.systems.assessment,'https://47.109.176.127');
     const resource=await client.readResource({uri:UI_URI});
     assert.equal(resource.contents[0].mimeType,'text/html;profile=mcp-app');
@@ -41,6 +41,8 @@ test('MCP client discovers the global workbench and reads its bundled resource',
       ]
     });
     assert.match(resource.contents[0].text,/批改系统内网版/);
+    assert.match(resource.contents[0].text,/公共邮箱管理/);
+    assert.ok(resource.contents[0]._meta['openai/widgetCSP'].redirect_domains.includes('https://www.feishu.cn'));
     assert.match(resource.contents[0].text,/<title>110lab 工作台<\/title>/);
     assert.doesNotMatch(resource.contents[0].text,/首页管理|hero-story/);
     const legacy=await client.readResource({uri:LEGACY_UI_URI});
