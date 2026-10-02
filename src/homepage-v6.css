@@ -2,6 +2,23 @@
 #about,#projects,#join {scroll-margin-top:10px}
 .lab-label {color:#84818e;font-size:11px;font-weight:550;letter-spacing:.15em;line-height:1.6}
 .lab-intro {padding:108px 0 100px;background:#fff}
+/* A tiny visitor stays inside the introduction's existing empty bottom edge. */
+.lab-intro {position:relative}
+.naidan-nook {position:absolute;bottom:2px;right:max(20px,calc((100% - 1120px)/2));width:216px;max-width:calc(100% - 40px);height:56px}
+.naidan {display:flex;align-items:center;justify-content:flex-end;height:56px;gap:2px}
+.naidan[hidden] {display:none}
+.naidan-message {font-size:11px;line-height:1.5;color:#5b537c;white-space:nowrap}
+.naidan-greet,.naidan-close {display:grid;place-items:center;flex:none;margin:0;padding:0;border:0;background:transparent;cursor:pointer;border-radius:12px;touch-action:manipulation}
+.naidan-greet {width:64px;height:56px}
+.naidan-close {width:44px;height:44px;color:#5b537c;font-size:20px}
+.naidan-close:hover {background:#fff8}
+.naidan-peek {display:block;width:56px;height:52px;overflow:hidden}
+.naidan-peek img {display:block;width:56px;height:auto;transform:translateY(8px);animation:naidan-peek-in .45s ease-out both;transition:transform .2s ease-out}
+.naidan.is-found .naidan-peek img {animation:none;transform:translateY(1px) rotate(-7deg)}
+@keyframes naidan-peek-in {from {transform:translateY(44px)} to {transform:translateY(8px)}}
+@media (prefers-reduced-motion:reduce) {
+ .naidan-peek img,.naidan.is-found .naidan-peek img {animation:none;transition:none;transform:translateY(8px)}
+}
 .lab-intro-grid {display:grid;grid-template-columns:1fr 1.18fr;gap:90px;align-items:start}
 .lab-heading h2 {margin:18px 0 36px;font-size:clamp(32px,3.1vw,44px);line-height:1.23;letter-spacing:-.05em;font-weight:580}
 .lab-facts {display:flex;gap:36px;align-items:baseline}
