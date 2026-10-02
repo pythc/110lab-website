@@ -6,10 +6,10 @@
 <main>
   <div class="identity"><p id="identity">未登录</p><div class="auth-actions"><button id="login" type="button">飞书登录</button><button id="logout" type="button" hidden>退出</button></div></div>
   <p id="message" role="status" aria-live="polite" hidden></p>
-  <section id="handoff" hidden aria-label="完成飞书登录"><a id="continue-login" target="_blank" hidden>继续飞书登录</a><form id="code-form"><label for="login-code">原窗口未自动登录时，输入一次性登录码</label><div class="input-row"><input id="login-code" autocomplete="off" maxlength="43" required><button>完成登录</button></div></form></section>
+  <section id="handoff" hidden aria-label="完成飞书登录"><a id="continue-login" target="_blank">打开飞书授权页面</a><details id="manual-login"><summary>已完成授权 但原页面未登录</summary><form id="code-form"><label for="login-code">粘贴授权成功页面提供的一次性登录码</label><p>这是返回插件的临时凭证 不是短信或飞书验证码</p><div class="input-row"><input id="login-code" autocomplete="off" maxlength="43" required><button>完成登录</button></div></form></details></section>
   <nav aria-label="公共邮箱管理"><button type="button" data-tab="mailboxes" aria-selected="true">邮箱</button><button type="button" data-tab="administrators" hidden>管理员</button><button type="button" data-tab="audit" hidden>操作记录</button></nav>
   <section id="mailboxes" class="mail-grid" aria-label="公共邮箱">
-    <article class="mail-card"><p class="eyebrow">团队对外沟通</p><h2>noreply@110-lab.cn</h2><p>进入飞书后，在其他账号中选择 noreply 写信</p><a class="primary" href="https://www.feishu.cn/mail" target="_blank" rel="noopener noreferrer">打开飞书邮箱</a></article>
+    <article class="mail-card"><p class="eyebrow">团队对外沟通</p><h2>noreply@110-lab.cn</h2><p>进入飞书后 点击切换账号 选择 noreply 写信</p><a id="open-mailbox" class="primary" href="https://www.feishu.cn/mail" target="_blank" rel="noopener noreferrer">打开飞书邮箱</a></article>
     <article class="mail-card"><p class="eyebrow">系统通知</p><h2>noreply@notify.110-lab.cn</h2><p>供考核系统和简历投递发信</p><span class="status">人工发信尚未启用</span></article>
   </section>
   <section id="administrators" hidden aria-labelledby="admins-title"><div class="section-heading"><h2 id="admins-title">管理员</h2><button id="reauth" type="button">重新确认身份</button></div><p class="hint">成员先通过飞书登录这里，再添加为管理员</p><form id="grant-form"><label for="member">添加普通管理员</label><div class="input-row"><select id="member" required><option value="">选择成员</option></select><button>添加</button></div></form><ul id="admin-list" aria-label="管理员列表"></ul></section>

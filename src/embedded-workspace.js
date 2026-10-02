@@ -12,6 +12,26 @@ export const EMBEDDED_APPS = Object.freeze({
   })
 });
 
+// Nested application pages cannot open a Codex window themselves. Forward only
+// these two exact destinations through the host bridge, never arbitrary links.
+export async function handleMailExternalRequest(event,{frame,openExternal}) {
+  if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame?.contentWindow||typeof openExternal!=='function')return false;
+  const m=event.data;
+  if(m?.type==='110lab-mail-open-login'&&/^[\w-]{43}$/.test(m.state||'')&&m.url==='https://internal.110-lab.cn/mail/auth/launch?state='+m.state){
+    let opened=false;
+    try{const result=await openExternal(m.url);opened=result?.isError!==true;}catch{}
+    frame.contentWindow.postMessage({type:'110lab-mail-open-result',state:m.state,opened},'https://internal.110-lab.cn');
+    return true;
+  }
+  if(m?.type==='110lab-mail-open-mailbox'&&m.url==='https://www.feishu.cn/mail'){
+    let opened=false;
+    try{const result=await openExternal(m.url);opened=result?.isError!==true;}catch{}
+    frame.contentWindow.postMessage({type:'110lab-mail-mailbox-result',opened},'https://internal.110-lab.cn');
+    return true;
+  }
+  return false;
+}
+
 export function initEmbeddedWorkspace() {
   const main = document.querySelector('main.shell');
   const footer = document.querySelector('.wb-footer');
@@ -23,6 +43,7 @@ export function initEmbeddedWorkspace() {
   nav.setAttribute('aria-label', '工作区');
   const pages = new Map();
   const controls = new Map();
+  let externalOpener=null;
   const outlet = document.createElement('div');
   outlet.className = 'workspace-outlet';
   outlet.hidden = true;
@@ -98,5 +119,9 @@ export function initEmbeddedWorkspace() {
     (controls.get(id) || pages.get(id))?.focus();
   }, {capture: true});
   show('workbench');
-  return {show};
+  window.addEventListener('message',event=>{
+    const page=pages.get('public-mail');
+    if(page&&!page.hidden)void handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener});
+  });
+  return {show,setExternalOpener(opener){externalOpener=opener;}};
 }

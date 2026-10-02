@@ -5,8 +5,8 @@ import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 import {ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
 
-export const UI_URI='ui://110lab/workbench/v0.8.4';
-export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.8.3';
+export const UI_URI='ui://110lab/workbench/v0.8.5';
+export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.8.4';
 export const LEGACY_UI_URI='ui://110lab/home';
 const WIDGET_DOMAIN='https://internal.110-lab.cn';
 const EMBED_FRAME_DOMAINS=Object.freeze([
@@ -32,7 +32,7 @@ export async function createPortalServer(){
     readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))
   ]);
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
-  const server=new McpServer({name:'110lab',version:'0.8.4'});
+  const server=new McpServer({name:'110lab',version:'0.8.5'});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
     uri,mimeType:RESOURCE_MIME_TYPE,text:html,
@@ -40,6 +40,7 @@ export async function createPortalServer(){
   }]});
   registerAppResource(server,'110lab-workbench-v5',UI_URI,{description:'110 实验室工作台'},async()=>workbenchResource(UI_URI));
   registerAppResource(server,'110lab-workbench-v5-previous',PREVIOUS_UI_URI,{description:'110 实验室工作台兼容入口'},async()=>workbenchResource(PREVIOUS_UI_URI));
+  registerAppResource(server,'110lab-workbench-v8-3-legacy','ui://110lab/workbench/v0.8.3',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.8.3'));
   registerAppResource(server,'110lab-workbench-v8-2-legacy','ui://110lab/workbench/v0.8.2',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.8.2'));
   registerAppResource(server,'110lab-workbench-v8-1-legacy','ui://110lab/workbench/v0.8.1',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.8.1'));
   registerAppResource(server,'110lab-workbench-v8-legacy','ui://110lab/workbench/v0.8.0',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.8.0'));
