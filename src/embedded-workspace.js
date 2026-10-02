@@ -15,7 +15,6 @@ export function initEmbeddedWorkspace() {
   nav.setAttribute('aria-label', '工作区');
   const pages = new Map();
   const controls = new Map();
-  let reportDiagnostics;
   const outlet = document.createElement('div');
   outlet.className = 'workspace-outlet';
   outlet.hidden = true;
@@ -44,41 +43,12 @@ export function initEmbeddedWorkspace() {
     // session storage or page contents, and never executes business operations.
     toolbar.append(heading, external);
     page.append(toolbar, frame);
-    const diagnostics = document.createElement('details');
-    diagnostics.className = 'embedded-diagnostics';
-    const summary = document.createElement('summary');
-    summary.textContent = '连接诊断';
-    const report = document.createElement('pre');
-    const info = {
-      version: '0.8.0', application: id,
-      pageOrigin: document.location.origin,
-      pageSchemeHost: document.location.protocol + '//' + document.location.host,
-      ancestors: Array.from(document.location.ancestorOrigins || []),
-      referrerOrigin: document.referrer ? new URL(document.referrer).origin : ''
-    };
-    report.textContent = JSON.stringify(info, null, 2);
-    const send = document.createElement('button');
-    send.type = 'button';
-    send.textContent = '发送诊断到当前对话';
-    send.addEventListener('click', async () => {
-      if (!reportDiagnostics) { send.textContent = '请复制上方诊断信息到当前对话'; return; }
-      send.disabled = true;
-      try { await reportDiagnostics(info); send.textContent = '诊断已发送'; }
-      catch { send.textContent = '发送失败，请复制上方信息'; }
-      finally { send.disabled = false; }
-    });
-    diagnostics.append(summary, report, send);
-    toolbar.after(diagnostics);
     if (id === 'requirements') {
       const retry = document.createElement('button');
       retry.type = 'button';
       retry.textContent = '重新加载';
       retry.addEventListener('click', () => { frame.src = app.url; });
       toolbar.append(retry);
-      const help = document.createElement('p');
-      help.className = 'embedded-login-help';
-      help.textContent = '飞书首次授权如无法在此完成，可使用独立窗口登录。返回后重新加载；若仍无法登录，请继续使用独立窗口。';
-      toolbar.after(help);
     }
     outlet.append(page);
     pages.set(id, page);
@@ -118,5 +88,5 @@ export function initEmbeddedWorkspace() {
     controls.get(id)?.focus();
   }, {capture: true});
   show('workbench');
-  return {show, setDiagnosticsReporter(callback) { reportDiagnostics = callback; }};
+  return {show};
 }

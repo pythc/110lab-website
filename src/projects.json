@@ -74,6 +74,24 @@
       "status": "available",
       "icon": "requirements",
       "edition": "团队协作"
+    },
+    {
+      "id": "lab-home",
+      "title": "实验室首页",
+      "description": "打开 110 实验室公开首页。",
+      "url": "https://110-lab.cn",
+      "status": "available",
+      "icon": "home",
+      "edition": "公开站点"
+    },
+    {
+      "id": "updates-admin",
+      "title": "动态管理",
+      "description": "发布和维护实验室动态。",
+      "url": "https://internal.110-lab.cn/admin",
+      "status": "available",
+      "icon": "updates",
+      "edition": "内部管理"
     }
   ]
 }

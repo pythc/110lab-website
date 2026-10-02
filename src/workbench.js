@@ -54,6 +54,18 @@ function iconSvg(kind) {
       svgEl('circle', {cx: '5.5', cy: '12', r: '1', fill: 'currentColor', stroke: 'none'}),
       svgEl('circle', {cx: '5.5', cy: '17', r: '1', fill: 'currentColor', stroke: 'none'})
     );
+  } else if (kind === 'home') {
+    svg.append(
+      svgEl('path', {d: 'M4 11 12 4.5 20 11'}),
+      svgEl('path', {d: 'M6.8 10.2V19.5h10.4V10.2'})
+    );
+  } else if (kind === 'updates') {
+    svg.append(
+      svgEl('path', {d: 'M4 12a8 8 0 0 1 13.5-5.8'}),
+      svgEl('path', {d: 'M20 12a8 8 0 0 1-13.5 5.8'}),
+      svgEl('path', {d: 'M15.5 4.2H20V8.5'}),
+      svgEl('path', {d: 'M8.5 19.8H4V15.5'})
+    );
   } else {
     svg.append(
       svgEl('rect', {x: '4', y: '4', width: '6.5', height: '6.5', rx: '1.5'}),
