@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "110lab",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "110 实验室工作台：考核系统与需求平台原页面，以及按个人权限连接的需求协作 MCP。",
   "author": {
     "name": "110 实验室"

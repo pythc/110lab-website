@@ -42,7 +42,7 @@ export async function createAdminHttp({updates,enabled=process.env.PORTAL_ADMIN_
         if(host!=='internal.110-lab.cn'&&!local)throw new AdminError(404,'Not found');
         if(pagePath&&['GET','HEAD'].includes(req.method)){
           const ancestors=embedded?"'self' "+ADMIN_FRAME_ANCESTORS.join(' '):"'none'";
-          res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(req.method==='HEAD'?undefined:html);return true;
+          res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(req.method==='HEAD'?undefined:embedded?html.replace('<body>','<body class="embedded">'):html);return true;
         }
         if(!['GET','POST'].includes(req.method))throw new AdminError(405,'请求方式无效');
         if(req.method==='POST'){
