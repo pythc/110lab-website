@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "110lab",
-  "version": "0.6.1",
-  "description": "110 实验室工作台：批改系统、考核系统与需求平台的快捷入口。",
+  "version": "0.7.0",
+  "description": "110 实验室工作台：嵌入考核系统与需求平台，保留各自登录及完整页面。",
   "author": {
     "name": "110 实验室"
   },
@@ -11,7 +11,7 @@
       "interface": {
         "displayName": "110lab",
         "shortDescription": "110 实验室的应用工作台",
-        "longDescription": "从侧边栏进入 110 实验室工作台，直接打开批改系统内网版、批改系统外网版、考核系统或需求平台。外网批改系统已启用，内网应用需要校园网络或 VPN。",
+        "longDescription": "从侧边栏进入 110 实验室工作台，在插件内使用考核系统和需求平台完整页面，或打开批改系统。内网应用需要校园网络或 VPN。",
         "developerName": "110 实验室",
         "category": "Productivity",
         "capabilities": [
@@ -19,7 +19,7 @@
         ],
         "logo": "./assets/logo.png",
         "composerIcon": "./assets/sidebar-icon.png",
-        "defaultPrompt": "打开 110lab 首页，看看实验室项目。"
+        "defaultPrompt": "打开 110lab 工作台，使用考核系统或需求平台。"
       }
     }
   }

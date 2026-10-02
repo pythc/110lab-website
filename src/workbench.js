@@ -12,6 +12,7 @@ const runtime = {
   messageTimer: 0,
   attempt: 0
 };
+let embeddedIds = new Set();
 
 function svgEl(name, attrs) {
   const el = document.createElementNS(SVG_NS, name);
@@ -175,7 +176,7 @@ function createCard(app) {
     open.textContent = '打开';
     const hidden = document.createElement('span');
     hidden.className = 'visually-hidden';
-    hidden.textContent = '（在新窗口打开）';
+    hidden.textContent = embeddedIds.has(app?.id) ? '（在插件内打开）' : '（在新窗口打开）';
     card.append(open, hidden);
   }
   return card;
@@ -235,7 +236,8 @@ function bindChrome() {
   });
 }
 
-export function initWorkbench(config) {
+export function initWorkbench(config, options = {}) {
+  embeddedIds = new Set(Array.isArray(options.embeddedIds) ? options.embeddedIds : []);
   runtime.apps = Array.isArray(config?.apps) ? config.apps : [];
   bindChrome();
   const input = document.querySelector('#app-search');
