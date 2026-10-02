@@ -57,12 +57,12 @@ export async function createHttpServer(options={}){
       if(path==='/mcp'||path==='/mcp/workbench-v5'||path==='/mcp/workbench-v5-1'||path==='/mcp/workbench-v6'||path==='/mcp/workbench-v6-1'){
         if(!internalHost)throw new HttpError(404,'Not found');
         res.setHeader('Access-Control-Allow-Origin','*');res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id');res.setHeader('Cache-Control','no-store');
+        res.setHeader('Access-Control-Allow-Headers','Content-Type, Accept, Authorization, MCP-Protocol-Version, MCP-Session-Id');res.setHeader('Cache-Control','no-store');
         if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
         if(req.method!=='POST'){res.writeHead(405,{Allow:'POST, OPTIONS'});res.end('Method not allowed');return;}
         let parsed;
         try{parsed=await jsonBody(req,32*1024);}catch(error){if(error.status===400){json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}});return;}throw error;}
-        const mcp=await createPortalServer(),transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
+        const mcp=await createPortalServer({mailHandoff:(state,options)=>mail.hostHandoff(req.headers.authorization,state,options)}),transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
         try{await mcp.connect(transport);await transport.handleRequest(req,res,parsed);}finally{await transport.close();await mcp.close();}return;
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}

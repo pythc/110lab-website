@@ -6,6 +6,7 @@ import {openMailAuth,readMailConfig,parseMailConfig,bootstrapMailOwner,MailAuthE
 import {openMailAccessStore,MailAccessError} from './mail-access-store.mjs';
 import {ADMIN_FRAME_ANCESTORS} from './admin-http.mjs';
 import {escapeHTML} from './render.mjs';
+import {openMailOAuth,mailAuthChallenge} from './mail-oauth.mjs';
 
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
 const revision=z.number().int().positive(),email=z.string().email().max(254);
@@ -28,15 +29,17 @@ function page(res,html,{head=false,embedded=false,status=200}={}){
 export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
   const html=await readFile(new URL('../dist/mail.html',import.meta.url),'utf8');
   if(trustedProxies.some(p=>!isIP(p)))throw new Error('Invalid mail trusted proxy');
-  const proxies=new Set(trustedProxies);let auth,access;
+  const proxies=new Set(trustedProxies);let auth,access,oauth;
   if(enabled){if(!directory||(!config&&!configPath))throw new Error('Mail login requires private configuration');config=config?parseMailConfig(config):readMailConfig(configPath);auth=openMailAuth({directory,config,now,localTest,fetchIdentity});try{access=openMailAccessStore({filename:join(directory,'mail-access.sqlite'),bootstrapOwner:bootstrapMailOwner(config),now});}catch(e){auth.close();throw e;}}
-  return {enabled,close(){auth?.close();access?.close();},async handle(req,res,path,host){
+  if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies});}catch(e){auth.close();access.close();throw e;}}
+  return {enabled,hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
+    if(oauth?.handle(req,res,path,host))return true;
     if(!['/mail','/mail/','/mail/embedded','/mail/auth/launch','/mail/auth/callback'].includes(path)&&!path.startsWith('/api/mail/'))return false;
     const embedded=path==='/mail/embedded'||path.startsWith('/api/mail/embedded/');
     const route=embedded&&path.startsWith('/api/mail/embedded/')?'/api/mail/'+path.slice('/api/mail/embedded/'.length):path;
     try{
       if(host!=='internal.110-lab.cn'&&!(localTest&&['127.0.0.1','localhost'].includes(host)))throw new MailAuthError(404,'Not found');
-      if(['/mail','/mail/','/mail/embedded'].includes(path)&&['GET','HEAD'].includes(req.method)){page(res,html,{head:req.method==='HEAD',embedded});return true;}
+      if(['/mail','/mail/','/mail/embedded'].includes(path)&&['GET','HEAD'].includes(req.method)){page(res,embedded?html.replace('<body>','<body class="embedded">'):html,{head:req.method==='HEAD',embedded});return true;}
       if(route==='/api/mail/config'&&req.method==='GET'){json(res,200,{loginAvailable:enabled,notifyManualSend:false});return true;}
       if(!enabled)throw new MailAuthError(503,'飞书登录尚未配置');
       if(!['GET','POST'].includes(req.method))throw new MailAuthError(405,'请求方式无效');
@@ -57,6 +60,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
         const params=new URL(req.url,'https://internal.110-lab.cn').searchParams;
         if(params.getAll('state').length!==1||params.getAll('code').length!==1||params.has('error'))throw new MailAuthError(401,'飞书登录未完成 请重新登录');
         const pending=await auth.callback(params.get('state'),params.get('code'),req.headers.cookie);
+        if(oauth.finishCallback(params.get('state'),pending.profile,req,res,()=>{pending.consumeForHost();access.registerIdentity(pending.profile);}))return true;
         access.registerIdentity(pending.profile);const result=pending.complete();res.setHeader('Set-Cookie',result.cookie);
         const script=JSON.stringify({type:'110lab-mail-login',state:result.state,ticket:result.ticket});
         page(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>飞书登录完成 · 110lab</title><style>body{margin:0;padding:40px 24px;font:16px/1.6 system-ui;background:#f6f8fb;color:#20242c}main{max-width:520px;margin:auto;padding:24px;background:white;border-radius:16px}code{display:block;overflow-wrap:anywhere;padding:12px;background:#f2f5fa}a{color:#235fd5}</style><main><h1>已登录</h1><p>${escapeHTML(pending.profile.name)} · ${escapeHTML(pending.profile.email)}</p><p>返回公共邮箱管理。如果原窗口未自动登录，可输入下面的一次性登录码</p><code>${result.ticket}</code><p><a href="/mail">打开公共邮箱管理</a></p></main><script>const message=${script};if(window.opener)window.opener.postMessage(message,'https://internal.110-lab.cn');</script></html>`);return true;

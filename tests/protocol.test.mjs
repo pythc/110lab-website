@@ -13,7 +13,7 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     const opener=tools.find(t=>t.name==='open_110lab');
     assert.equal(opener.title,'110lab');
     assert.equal(opener._meta.ui.resourceUri,UI_URI);
-    assert.equal(UI_URI,'ui://110lab/workbench/v0.8.5');
+    assert.equal(UI_URI,'ui://110lab/workbench/v0.8.6');
     assert.match(opener.icons[0].src,/^data:image\/png;base64,/);
     assert.equal(opener.icons[0].mimeType,'image/png');
     assert.deepEqual(opener._meta['openai/ui'].entrypoints,[{type:'global'}]);

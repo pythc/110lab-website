@@ -33,7 +33,9 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
     const invalidTarget=await new Promise((resolve,reject)=>{const r=request(base,{path:'http://[',headers:{Host:'localhost'}},res=>{res.resume();resolve(res.statusCode);});r.on('error',reject);r.end();});
     assert.equal(invalidTarget,400);assert.equal((await fetch(base+'/healthz')).status,200);
     await client.connect(new StreamableHTTPClientTransport(new URL(base+'/mcp/workbench-v5-1')));
-    const list=await client.listTools();assert.deepEqual(list.tools.map(t=>t.name).sort(),['open_110lab','search_110lab_projects']);
+    const list=await client.listTools();assert.deepEqual(list.tools.map(t=>t.name).sort(),['connect_110lab_mail','open_110lab','search_110lab_projects']);
+    const login=list.tools.find(t=>t.name==='connect_110lab_mail');assert.deepEqual(login._meta.ui.visibility,['app']);assert.deepEqual(login._meta.securitySchemes,[{type:'oauth2',scopes:['mail:session']}]);
+    const challenge=await client.callTool({name:'connect_110lab_mail',arguments:{state:'x'.repeat(43)}});assert.equal(challenge.isError,true);assert.ok(challenge._meta['mcp/www_authenticate']);
     for(let i=0;i<3;i++){
       const result=await client.callTool({name:'search_110lab_projects',arguments:{query:'需求'}});
       assert.equal(result.structuredContent.projects.length,1);

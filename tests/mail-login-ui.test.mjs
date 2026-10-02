@@ -20,20 +20,32 @@ test('mail host bridge only opens exact destinations from its owned iframe',asyn
 });
 
 async function ui(embedded,{failStart=false}={}){
-  const elements=new Map(),sent=[],navigated=[],requests=[];
+  const elements=new Map(),sent=[],navigated=[],requests=[],listeners={};let authenticated=false;
   const el=id=>{if(!elements.has(id))elements.set(id,{hidden:false,disabled:false,value:'',textContent:'',open:false,replaceChildren(){},addEventListener(){}});return elements.get(id);};
   const parent={postMessage:m=>sent.push(m)};
-  const window={parent,addEventListener(){},open(){throw new Error('must never open a blank popup');}};
+  const window={parent,addEventListener:(name,fn)=>listeners[name]=fn,open(){throw new Error('must never open a blank popup');}};
   const location={pathname:embedded?'/mail/embedded':'/mail',assign:u=>navigated.push(u)};
-  const fetch=async(path)=>{requests.push(path);if(path.endsWith('config'))return {ok:true,json:async()=>({loginAvailable:true})};if(path.endsWith('session'))return {ok:false,status:401,json:async()=>({error:'unauthenticated'})};return failStart?{ok:false,status:429,json:async()=>({error:'请稍后再试'})}:{ok:true,json:async()=>({state,launchUrl:url})};};
+  const fetch=async(path)=>{requests.push(path);if(path.endsWith('config'))return {ok:true,json:async()=>({loginAvailable:true})};if(path.endsWith('auth/redeem')){authenticated=true;return {ok:true,json:async()=>({loggedIn:true})};}if(path.endsWith('session'))return authenticated?{ok:true,json:async()=>({name:'虚构成员',role:'member',csrf:state})}:{ok:false,status:401,json:async()=>({error:'unauthenticated'})};return failStart?{ok:false,status:429,json:async()=>({error:'请稍后再试'})}:{ok:true,json:async()=>({state,launchUrl:url})};};
   const source=await readFile(new URL('../src/mail.js',import.meta.url),'utf8');
   await runInNewContext('(async()=>{'+source+'})()',{window,location,document:{getElementById:el,querySelectorAll:()=>[]},fetch,AbortSignal,setInterval(){},Option:function(){}});
-  await el('login').onclick();return {el,sent,navigated,requests};
+  await el('login').onclick();return {el,sent,navigated,requests,async receive(data,source=parent){listeners.message({source,data});await new Promise(r=>setImmediate(r));}};
 }
-test('embedded login uses host open-link with a visible retry and collapsed manual code',async()=>{
-  const h=await ui(true);assert.equal(h.navigated.length,0);assert.deepEqual(JSON.parse(JSON.stringify(h.sent)),[{type:'110lab-mail-open-login',state,url}]);
-  assert.equal(h.el('handoff').hidden,false);assert.equal(h.el('manual-login').open,false);assert.equal(h.el('continue-login').href,url);assert.equal(h.el('login').disabled,false);
+test('embedded login automatically redeems only the host result for its current flow',async()=>{
+  const h=await ui(true);assert.equal(h.navigated.length,0);assert.deepEqual(JSON.parse(JSON.stringify(h.sent)),[{type:'110lab-mail-host-login',state,fresh:false}]);
+  assert.equal(h.el('handoff').hidden,true);assert.equal(h.el('manual-login').open,false);assert.equal(h.el('login').disabled,true);
+  const result={type:'110lab-mail-host-result',state,ticket:'t'.repeat(43)};
+  await h.receive(result,{});await h.receive({...result,state:'y'.repeat(43)});assert.equal(h.requests.some(p=>p.endsWith('redeem')),false);
+  await h.receive(result);assert.equal(h.el('identity').textContent,'虚构成员 · 普通成员');assert.equal(h.el('login').hidden,true);assert.equal(h.el('logout').hidden,false);
   h.el('open-mailbox').onclick({preventDefault(){}});assert.equal(h.sent.at(-1).url,'https://www.feishu.cn/mail');
+});
+test('host login bridge uses an app-only OAuth tool and never exposes a ticket to other frames',async()=>{
+  const replies=[],calls=[],source={postMessage:(...args)=>replies.push(args)},frame={contentWindow:source};
+  const event={origin:'https://internal.110-lab.cn',source,data:{type:'110lab-mail-host-login',state,fresh:false}};
+  const options={frame,callTool:async args=>{calls.push(args);return {_meta:{mailHandoff:{state,ticket:'t'.repeat(43)}}};}};
+  assert.equal(await handleMailExternalRequest({...event,origin:'https://evil.example'},options),false);
+  assert.equal(await handleMailExternalRequest({...event,source:{}},options),false);assert.equal(calls.length,0);
+  await handleMailExternalRequest(event,options);assert.deepEqual(calls,[{name:'connect_110lab_mail',arguments:{state,fresh:false}}]);assert.equal(replies[0][0].ticket,'t'.repeat(43));assert.equal(replies[0][1],event.origin);
+  await handleMailExternalRequest(event,{frame,callTool:async()=>({_meta:{'mcp/www_authenticate':['Bearer']},isError:true})});assert.equal(replies.at(-1)[0].pending,true);assert.equal(replies.at(-1)[0].ticket,undefined);
 });
 test('regular browser login navigates in the current tab; failed start restores the button',async()=>{
   const regular=await ui(false);assert.deepEqual(regular.navigated,[url]);assert.equal(regular.sent.length,0);

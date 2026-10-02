@@ -14,9 +14,18 @@ export const EMBEDDED_APPS = Object.freeze({
 
 // Nested application pages cannot open a Codex window themselves. Forward only
 // these two exact destinations through the host bridge, never arbitrary links.
-export async function handleMailExternalRequest(event,{frame,openExternal}) {
-  if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame?.contentWindow||typeof openExternal!=='function')return false;
+export async function handleMailExternalRequest(event,{frame,openExternal,callTool}) {
+  if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame?.contentWindow)return false;
   const m=event.data;
+  if(m?.type==='110lab-mail-host-login'&&/^[\w-]{43}$/.test(m.state||'')&&typeof m.fresh==='boolean'){
+    let result;
+    try{result=await callTool?.({name:'connect_110lab_mail',arguments:{state:m.state,fresh:m.fresh}});}catch{}
+    const handoff=result?._meta?.mailHandoff;
+    const valid=!result?.isError&&handoff?.state===m.state&&/^[\w-]{43}$/.test(handoff?.ticket||'');
+    frame.contentWindow.postMessage({type:'110lab-mail-host-result',state:m.state,...(valid?{ticket:handoff.ticket}:{pending:!!result?._meta?.['mcp/www_authenticate']})},'https://internal.110-lab.cn');
+    return true;
+  }
+  if(typeof openExternal!=='function')return false;
   if(m?.type==='110lab-mail-open-login'&&/^[\w-]{43}$/.test(m.state||'')&&m.url==='https://internal.110-lab.cn/mail/auth/launch?state='+m.state){
     let opened=false;
     try{const result=await openExternal(m.url);opened=result?.isError!==true;}catch{}
@@ -44,11 +53,21 @@ export function initEmbeddedWorkspace() {
   const pages = new Map();
   const controls = new Map();
   let externalOpener=null;
+  let toolCaller=null,loginPending=false;
+  const actions=document.createElement('div');
+  actions.className='workspace-actions';actions.hidden=true;
+  const external=document.createElement('a');external.target='_blank';external.rel='noopener noreferrer';external.textContent='独立打开';
+  const retry=document.createElement('button');retry.type='button';retry.textContent='重新加载';
+  let currentId='workbench';
+  external.addEventListener('click',async event=>{if(!externalOpener)return;event.preventDefault();try{await externalOpener(external.href);}catch{}});
+  retry.addEventListener('click',()=>{const page=pages.get(currentId);if(page)page.querySelector('iframe').src=EMBEDDED_APPS[currentId].url;});
+  actions.append(external,retry);
   const outlet = document.createElement('div');
   outlet.className = 'workspace-outlet';
   outlet.hidden = true;
   main.after(outlet);
   document.querySelector('.masthead-inner')?.append(nav);
+  document.querySelector('.masthead-inner')?.append(actions);
 
   function createPage(id) {
     const app = EMBEDDED_APPS[id];
@@ -56,30 +75,13 @@ export function initEmbeddedWorkspace() {
     page.className = 'embedded-page';
     page.tabIndex = -1;
     page.setAttribute('aria-label', app.title);
-    const toolbar = document.createElement('div');
-    toolbar.className = 'embedded-toolbar';
-    const heading = document.createElement('h2');
-    heading.textContent = app.title;
-    const external = document.createElement('a');
-    external.href = app.externalUrl || app.url;
-    external.target = '_blank';
-    external.rel = 'noopener noreferrer';
-    external.textContent = '独立窗口打开';
     const frame = document.createElement('iframe');
     frame.title = app.title;
     frame.referrerPolicy = 'no-referrer';
     frame.src = app.url;
     // Each app keeps its own login boundary. The parent never reads credentials,
     // session storage or page contents, and never executes business operations.
-    toolbar.append(heading, external);
-    page.append(toolbar, frame);
-    if (id === 'requirements') {
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.textContent = '重新加载';
-      retry.addEventListener('click', () => { frame.src = app.url; });
-      toolbar.append(retry);
-    }
+    page.append(frame);
     outlet.append(page);
     pages.set(id, page);
     return page;
@@ -88,6 +90,8 @@ export function initEmbeddedWorkspace() {
   function show(id) {
     if (id !== 'workbench' && !Object.hasOwn(EMBEDDED_APPS, id)) return;
     if (id !== 'workbench' && !pages.has(id)) createPage(id);
+    currentId=id;actions.hidden=id==='workbench';
+    if(id!=='workbench'){external.href=EMBEDDED_APPS[id].externalUrl||EMBEDDED_APPS[id].url;external.setAttribute('aria-label','独立打开'+EMBEDDED_APPS[id].title);retry.hidden=id!=='requirements';}
     main.hidden = id !== 'workbench';
     if (footer) footer.hidden = id !== 'workbench';
     outlet.hidden = id === 'workbench';
@@ -119,9 +123,14 @@ export function initEmbeddedWorkspace() {
     (controls.get(id) || pages.get(id))?.focus();
   }, {capture: true});
   show('workbench');
-  window.addEventListener('message',event=>{
+  window.addEventListener('message',async event=>{
     const page=pages.get('public-mail');
-    if(page&&!page.hidden)void handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener});
+    if(!page||page.hidden)return;
+    if(event.data?.type==='110lab-mail-host-login'){
+      if(loginPending)return;loginPending=true;
+      try{await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});}finally{loginPending=false;}
+    }else await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});
   });
-  return {show,setExternalOpener(opener){externalOpener=opener;}};
+  window.addEventListener('focus',()=>{const page=pages.get('public-mail');if(page&&!page.hidden&&!loginPending)page.querySelector('iframe').contentWindow.postMessage({type:'110lab-mail-host-focus'},'https://internal.110-lab.cn');});
+  return {show,setExternalOpener(opener){externalOpener=opener;},setToolCaller(caller){toolCaller=caller;}};
 }
