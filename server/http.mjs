@@ -10,6 +10,7 @@ import {openUpdatesStore} from './updates.mjs';
 import {createRecruitmentHttp} from './recruitment-http.mjs';
 import {createAdminHttp} from './admin-http.mjs';
 import {createMailHttp} from './mail-http.mjs';
+import packageInfo from '../package.json' with {type:'json'};
 class HttpError extends Error {constructor(status,message){super(message);this.status=status;}}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
@@ -66,7 +67,7 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.8.5',contentManagement:false,mailManagement:mail.enabled,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:packageInfo.version,contentManagement:false,mailManagement:mail.enabled,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
