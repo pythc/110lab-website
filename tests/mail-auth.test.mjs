@@ -1,0 +1,57 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {openMailAuth,fetchMailIdentity,MAIL_SCOPE,MAIL_CALLBACK} from '../server/mail-auth.mjs';
+
+import {fixtureConfig,fixtureIdentity} from './helpers/mail-fixtures.mjs';
+const first=c=>c.split(';')[0];
+async function completed(auth,{embedded=false,ip='192.0.2.4',expectedSubject=null}={}){
+  const start=auth.start('',{embedded,ip,expectedSubject}),launch=auth.launch(start.state);
+  const pending=await auth.callback(start.state,'fictional_code_2026',first(launch.cookie));
+  return {start,launch,result:pending.complete()};
+}
+test('mail login uses PKCE, one-use callback, separate context cookies and bound handoff',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'110lab-mail-auth-'));let captured;const auth=openMailAuth({directory:dir,config:fixtureConfig,fetchIdentity:async(_,{code,verifier})=>{captured={code,verifier};return fixtureIdentity;}});
+  try{
+    const f=await completed(auth,{embedded:true});const u=new URL(f.launch.url);assert.equal(u.origin,'https://accounts.feishu.cn');assert.equal(u.searchParams.get('redirect_uri'),MAIL_CALLBACK);assert.equal(u.searchParams.get('scope'),MAIL_SCOPE);assert.equal(u.searchParams.get('code_challenge_method'),'S256');assert.equal(captured.verifier.length,43);
+    assert.match(f.launch.cookie,/SameSite=Lax;.*Secure$/);assert.match(f.start.cookie,/SameSite=None;.*Secure; Partitioned$/);
+    // A phishing attacker who knows their flow and binding cookie still cannot
+    // import the victim's login without the callback window's separate ticket.
+    assert.throws(()=>auth.redeem(f.start.state,'a'.repeat(43),first(f.start.cookie),{embedded:true}),e=>e.status===401);
+    assert.throws(()=>auth.redeem(f.start.state,f.result.ticket,'',{embedded:true}),e=>e.status===401);
+    assert.throws(()=>auth.redeem(f.start.state,f.result.ticket,first(f.start.cookie)),e=>e.status===401);
+    const login=auth.redeem(f.start.state,f.result.ticket,first(f.start.cookie),{embedded:true});assert.match(login.cookie,/SameSite=None;.*Secure; Partitioned$/);
+    assert.equal(auth.session(first(login.cookie),{embedded:true}).subject,fixtureIdentity.subject);
+    assert.throws(()=>auth.session(first(login.cookie).replace(auth.names.embedded+'=',auth.names.normal+'=')),e=>e.status===401);
+    assert.throws(()=>auth.redeem(f.start.state,f.result.ticket,first(f.start.cookie),{embedded:true}),e=>e.status===401);
+    await assert.rejects(()=>auth.callback(f.start.state,'fictional_code_2026',first(f.launch.cookie)),e=>e.status===401);
+    const session=auth.session(first(login.cookie),{embedded:true});assert.throws(()=>auth.csrf(session,'b'.repeat(43)),e=>e.status===403);auth.csrf(session,session.csrf);
+    auth.logout(session);assert.throws(()=>auth.session(first(login.cookie),{embedded:true}),e=>e.status===401);
+  }finally{auth.close();await rm(dir,{recursive:true,force:true});}
+});
+test('reauthentication cannot switch identity; freshness, expiry and persisted sessions hold',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'110lab-mail-reauth-'));let time=Date.now();let auth=openMailAuth({directory:dir,config:fixtureConfig,now:()=>time,fetchIdentity:async()=>fixtureIdentity});
+  try{
+    const f=await completed(auth),cookie=first(f.result.cookie),session=auth.session(cookie);auth.recent(session);
+    time+=5*60000+1;assert.throws(()=>auth.recent(session),e=>e.status===403);auth.close();auth=openMailAuth({directory:dir,config:fixtureConfig,now:()=>time,fetchIdentity:async()=>fixtureIdentity});assert.equal(auth.session(cookie).subject,fixtureIdentity.subject);
+    const mismatch=auth.start('',{expectedSubject:'fictional_tenant:on_other_user_2026'}),launched=auth.launch(mismatch.state);await assert.rejects(()=>auth.callback(mismatch.state,'fictional_code',first(launched.cookie)),e=>e.status===403);
+    const expired=auth.start('');time+=5*60000+1;assert.throws(()=>auth.launch(expired.state),e=>e.status===401);
+    time+=31*60000;assert.throws(()=>auth.session(cookie),e=>e.status===401);
+  }finally{auth.close();await rm(dir,{recursive:true,force:true});}
+});
+test('identity provider rejects different tenants, contact email fallback and invalid token responses',async()=>{
+  const original=globalThis.fetch;let calls=[];let profile={tenant_key:fixtureConfig.tenantKey,union_id:fixtureConfig.bootstrapUnionId,enterprise_email:fixtureConfig.bootstrapEmail,name:fixtureConfig.bootstrapName};
+  globalThis.fetch=async(url,options)=>{calls.push({url,options});return new Response(JSON.stringify(url.includes('/token')?{access_token:'fictional-test-access-token'}:{code:0,data:profile}),{status:200});};
+  try{
+    assert.deepEqual(await fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),fixtureIdentity);assert.equal(calls[0].url,'https://accounts.feishu.cn/oauth/v3/token');assert.equal(calls[0].options.body.get('scope'),MAIL_SCOPE);assert.equal(calls[0].options.body.has('offline_access'),false);
+    profile={...profile,tenant_key:'other_tenant'};await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),e=>e.status===403);
+    profile={...profile,tenant_key:fixtureConfig.tenantKey,enterprise_email:undefined,email:fixtureConfig.bootstrapEmail};await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),e=>e.status===403);
+    globalThis.fetch=async()=>new Response(JSON.stringify({code:20027,error:'fictional-error'}));await assert.rejects(()=>fetchMailIdentity(fixtureConfig,{code:'fixture_code',verifier:'x'.repeat(43)}),e=>e.status===401);
+  }finally{globalThis.fetch=original;}
+});
+test('OAuth start is bounded globally and per IP',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'110lab-mail-budget-')),auth=openMailAuth({directory:dir,config:fixtureConfig});
+  try{for(let n=0;n<10;n++)auth.start('',{ip:'192.0.2.5'});assert.throws(()=>auth.start('',{ip:'192.0.2.5'}),e=>e.status===429);assert.equal(auth.start('',{ip:'192.0.2.6'}).state.length,43);}finally{auth.close();await rm(dir,{recursive:true,force:true});}
+});

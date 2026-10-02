@@ -92,6 +92,15 @@
       "status": "available",
       "icon": "updates",
       "edition": "内部管理"
+    },
+    {
+      "id": "public-mail",
+      "title": "公共邮箱管理",
+      "description": "团队公共邮箱和管理员配置。",
+      "url": "https://internal.110-lab.cn/mail",
+      "status": "available",
+      "icon": "mail",
+      "edition": "团队邮箱"
     }
   ]
 }

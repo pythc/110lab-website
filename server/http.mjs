@@ -9,6 +9,7 @@ import {createHash} from 'node:crypto';
 import {openUpdatesStore} from './updates.mjs';
 import {createRecruitmentHttp} from './recruitment-http.mjs';
 import {createAdminHttp} from './admin-http.mjs';
+import {createMailHttp} from './mail-http.mjs';
 class HttpError extends Error {constructor(status,message){super(message);this.status=status;}}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
@@ -32,6 +33,7 @@ export async function createHttpServer(options={}){
   const recruitment=createRecruitmentHttp(options.recruitment);
   if(process.env.PORTAL_ADMIN_ENABLED==='true'&&!process.env.PORTAL_UPDATES_DATABASE&&!options.updatesStore)throw new Error('Admin updates require a persistent database');
   const admin=await createAdminHttp({...options.admin,updates});
+  let mail;try{mail=await createMailHttp(options.mail);}catch(e){admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
     const host=(req.headers.host||'').toLowerCase().replace(/:\d+$/,'');
@@ -41,6 +43,7 @@ export async function createHttpServer(options={}){
     const internalHost=host!=='110-lab.cn';
     try{
       if(await admin.handle(req,res,path,host))return;
+      if(await mail.handle(req,res,path,host))return;
       if(await recruitment.handle(req,res,path,host))return;
       if(path==='/api/updates'){
         if(req.method!=='GET'&&req.method!=='HEAD'){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
@@ -63,7 +66,7 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.8.4',contentManagement:false,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.8.5',contentManagement:false,mailManagement:mail.enabled,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
@@ -86,6 +89,7 @@ export async function createHttpServer(options={}){
   if(!options.updatesStore)server.once('close',()=>updates.close());
   server.once('close',()=>recruitment.close());
   server.once('close',()=>admin.close());
+  server.once('close',()=>mail.close());
   server.requestTimeout=180000;server.headersTimeout=15000;
   return server;
 }
