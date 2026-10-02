@@ -12,6 +12,7 @@ import {createHttpServer} from '../server/http.mjs';
 import {fixtureConfig,fixtureIdentity} from './helpers/mail-fixtures.mjs';
 import {MAIL_RESOURCE,MAIL_ISSUER,allowedMailRedirect} from '../server/mail-oauth.mjs';
 
+const navigationURL=r=>{assert.equal(r.status,200);assert.equal(r.headers.location,undefined);assert.equal(r.headers['referrer-policy'],'no-referrer');assert.match(r.headers['content-security-policy'],/form-action 'none'/);return new URL(r.text.match(/<meta http-equiv="refresh" content="0;url=([^"]+)"/)[1].replaceAll('&amp;','&'));};
 const cookies=r=>(r.headers['set-cookie']||[]).map(v=>v.split(';')[0]).join('; ');
 const requestId=r=>r.text.match(/name="request" value="([\w-]{43})"/)[1];
 const verifier='v'.repeat(43),challenge=createHash('sha256').update(verifier).digest('base64url');
@@ -33,14 +34,14 @@ async function grant(h){
   const authorization=await h.call('/authorize?'+query);assert.equal(authorization.status,200);const bind=cookies(authorization);
   assert.equal(authorization.headers['referrer-policy'],'strict-origin');
   assert.equal((await h.call('/mail/oauth/login',{form:{request:requestId(authorization)},headers:{Cookie:bind,Origin:'null'}})).status,400,'opaque origins must remain rejected');
-  const start=await h.call('/mail/oauth/login',{form:{request:requestId(authorization)},headers:{Cookie:bind}});assert.equal(start.status,303);
+  const start=await h.call('/mail/oauth/login',{form:{request:requestId(authorization)},headers:{Cookie:bind}});assert.equal(start.status,200);
   assert.equal((await h.call('/mail/oauth/login',{form:{request:requestId(authorization)},headers:{Cookie:bind}})).status,400);
-  const feishu=new URL(start.headers.location);assert.equal(feishu.origin,'https://accounts.feishu.cn');assert.equal(feishu.searchParams.get('redirect_uri'),MAIL_ISSUER+'/mail/auth/callback');
+  const feishu=navigationURL(start);assert.equal(feishu.origin,'https://accounts.feishu.cn');assert.equal(feishu.searchParams.get('redirect_uri'),MAIL_ISSUER+'/mail/auth/callback');
   const callback=await h.call('/mail/auth/callback?'+new URLSearchParams({state:feishu.searchParams.get('state'),code:'fictional-code'}),{headers:{Cookie:bind+'; '+cookies(start)}});
   assert.equal(callback.status,200);assert.equal(callback.headers['referrer-policy'],'strict-origin');assert.match(callback.text,/确认连接/);assert.doesNotMatch(callback.text,/<code>|一次性登录码/);
   assert.equal(callback.headers['set-cookie'],undefined,'host consent must not also sign the browser into the mailbox');
-  const approval=await h.call('/mail/oauth/approve',{form:{request:requestId(callback)},headers:{Cookie:bind}});assert.equal(approval.status,303);
-  const returned=new URL(approval.headers.location);assert.equal(returned.origin,'http://127.0.0.1:49111');assert.equal(returned.searchParams.get('state'),'fictional_host_state');assert.equal(returned.searchParams.get('iss'),MAIL_ISSUER);
+  const approval=await h.call('/mail/oauth/approve',{form:{request:requestId(callback)},headers:{Cookie:bind}});assert.equal(approval.status,200);
+  const returned=navigationURL(approval);assert.equal(returned.origin,'http://127.0.0.1:49111');assert.equal(returned.searchParams.get('state'),'fictional_host_state');assert.equal(returned.searchParams.get('iss'),MAIL_ISSUER);
   assert.equal((await h.call('/mail/oauth/approve',{form:{request:requestId(callback)},headers:{Cookie:bind}})).status,400);
   return {client_id:client,code:returned.searchParams.get('code'),redirect_uri:redirect,resource:MAIL_RESOURCE,grant_type:'authorization_code',code_verifier:verifier};
 }
@@ -103,10 +104,10 @@ test('an MCP HTTP client discovers OAuth after a protected call and retries with
     assert.ok(information);assert.ok(authorization);assert.ok(paths.includes('/.well-known/oauth-protected-resource/mcp/workbench-v6-1'));assert.ok(paths.includes('/register'));assert.equal(authorization.searchParams.get('resource'),MAIL_RESOURCE);
     const page=await h.call(authorization.pathname+authorization.search),bind=cookies(page);
     const launch=await h.call('/mail/oauth/login',{form:{request:requestId(page)},headers:{Cookie:bind}});
-    const feishu=new URL(launch.headers.location);
+    const feishu=navigationURL(launch);
     const callback=await h.call('/mail/auth/callback?'+new URLSearchParams({state:feishu.searchParams.get('state'),code:'fictional-code'}),{headers:{Cookie:bind+'; '+cookies(launch)}});
     const approved=await h.call('/mail/oauth/approve',{form:{request:requestId(callback)},headers:{Cookie:bind}});
-    const destination=new URL(approved.headers.location);assert.equal(destination.searchParams.get('state'),'fictional_client_state');assert.equal(destination.searchParams.get('iss'),MAIL_ISSUER);
+    const destination=navigationURL(approved);assert.equal(destination.searchParams.get('state'),'fictional_client_state');assert.equal(destination.searchParams.get('iss'),MAIL_ISSUER);
     await transport.finishAuth(destination.searchParams.get('code'));
     const result=await client.callTool({name:'connect_110lab_mail',arguments:{state}});assert.equal(result.isError,undefined);
     assert.equal((await h.call('/api/mail/embedded/auth/redeem',{data:{state,ticket:result._meta.mailHandoff.ticket},headers:{Cookie:cookies(started)}})).status,200);
