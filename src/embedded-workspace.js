@@ -18,11 +18,22 @@ export async function handleMailExternalRequest(event,{frame,openExternal,callTo
   if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame?.contentWindow)return false;
   const m=event.data;
   if(m?.type==='110lab-mail-host-login'&&/^[\w-]{43}$/.test(m.state||'')&&typeof m.fresh==='boolean'){
-    let result;
-    try{result=await callTool?.({name:'connect_110lab_mail',arguments:{state:m.state,fresh:m.fresh}});}catch{}
+    let result,waitingForCallback=false;
+    try{
+      result=await callTool?.({name:'connect_110lab_mail',arguments:{state:m.state,fresh:m.fresh}});
+      const authorization=result?._meta?.mailAuthorization;
+      if(authorization){
+        const url=new URL(authorization.url);
+        if(result.isError||authorization.state!==m.state||url.origin!=='https://internal.110-lab.cn'||url.pathname!=='/authorize'||url.username||url.password||url.hash||typeof openExternal!=='function')throw new Error('Invalid login bridge');
+        waitingForCallback=true;
+        const opened=await openExternal(url.href);if(opened?.isError)throw new Error('Not opened');
+        frame.contentWindow.postMessage({type:'110lab-mail-host-opened',state:m.state},'https://internal.110-lab.cn');
+        result=await callTool({name:'complete_110lab_mail_login',arguments:{state:m.state}});
+      }
+    }catch{if(waitingForCallback)try{await callTool({name:'complete_110lab_mail_login',arguments:{state:m.state,cancel:true}});}catch{}result=null;}
     const handoff=result?._meta?.mailHandoff;
     const valid=!result?.isError&&handoff?.state===m.state&&/^[\w-]{43}$/.test(handoff?.ticket||'');
-    frame.contentWindow.postMessage({type:'110lab-mail-host-result',state:m.state,...(valid?{ticket:handoff.ticket}:{pending:!!result?._meta?.['mcp/www_authenticate']})},'https://internal.110-lab.cn');
+    frame.contentWindow.postMessage({type:'110lab-mail-host-result',state:m.state,...(valid?{ticket:handoff.ticket}:{updateRequired:!!result?._meta?.['mcp/www_authenticate']})},'https://internal.110-lab.cn');
     return true;
   }
   if(typeof openExternal!=='function')return false;
@@ -131,6 +142,5 @@ export function initEmbeddedWorkspace() {
       try{await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});}finally{loginPending=false;}
     }else await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});
   });
-  window.addEventListener('focus',()=>{const page=pages.get('public-mail');if(page&&!page.hidden&&!loginPending)page.querySelector('iframe').contentWindow.postMessage({type:'110lab-mail-host-focus'},'https://internal.110-lab.cn');});
   return {show,setExternalOpener(opener){externalOpener=opener;},setToolCaller(caller){toolCaller=caller;}};
 }

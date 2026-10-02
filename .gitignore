@@ -6,6 +6,8 @@ server/runtime.mjs
 server/recruitment-worker-runtime.mjs
 server/recruitment-ops-runtime.mjs
 server/admin-init-runtime.mjs
+plugin/110lab/mcp/portal-bridge.mjs
+plugin/110lab/mcp/NOTICE.txt
 release.json
 .DS_Store
 .env

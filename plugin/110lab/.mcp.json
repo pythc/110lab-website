@@ -1,9 +1,12 @@
 {
   "mcpServers": {
     "110lab": {
-      "type": "streamable-http",
-      "headers": {},
-      "url": "https://internal.110-lab.cn/mcp/workbench-v6-1"
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/portal-bridge.mjs"
+      ],
+      "cwd": "${PLUGIN_ROOT}"
     },
     "110lab_requirements": {
       "type": "stdio",
