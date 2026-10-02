@@ -5,6 +5,7 @@ import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/st
 import {createHttpServer} from '../server/http.mjs';
 import {UI_URI} from '../server/portal.mjs';
 import {request} from 'node:http';
+import packageInfo from '../package.json' with {type:'json'};
 
 test('public HTTP server supports stateless MCP and contains only the portal catalog',async()=>{
   const http=await createHttpServer();
@@ -16,7 +17,7 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
     const asset=await fetch(base+'/assets/glass-loop-v2.png');assert.equal(asset.status,200);assert.equal(asset.headers.get('content-type'),'image/png');assert.equal(Buffer.from(await asset.arrayBuffer()).subarray(1,4).toString(),'PNG');
     assert.equal((await fetch(base+'/unknown')).status,404);
     assert.equal((await fetch(base+'/src/projects.json')).status,404);
-    assert.equal((await fetch(base+'/healthz')).status,200);
+    const health=await fetch(base+'/healthz');assert.equal(health.status,200);assert.equal((await health.json()).version,packageInfo.version);
     for(const p of ['/admin','/api/content','/api/admin/session','/api/admin/content','/media/not-a-file']){assert.equal((await fetch(base+p)).status,404);}
     assert.equal((await fetch(base+'/api/admin/content',{method:'PUT',body:'{}'})).status,404);
     const publicHTML=await (await fetch(base)).text();assert.doesNotMatch(publicHTML,/internal\.110-lab\.cn|暂停动效|管理首页/);
