@@ -1,10 +1,11 @@
 import {parseBody,serializeBody,renderPreview} from './admin-markdown.js';
 const login=document.querySelector('#login-form'),editor=document.querySelector('#editor-form'),manager=document.querySelector('#manager'),status=document.querySelector('#admin-status'),list=document.querySelector('#draft-list'),publishDialog=document.querySelector('#publish-dialog'),withdrawDialog=document.querySelector('#withdraw-dialog'),previewButton=document.querySelector('#preview-update'),withdrawButton=document.querySelector('#withdraw-update'),confirmPublic=document.querySelector('#confirm-public'),publishButton=document.querySelector('#publish-update');
+const apiPrefix=location.pathname==='/admin/embedded'?'/api/admin/embedded/':'/api/admin/';
 let session,current=null,rows=[],dirty=false,busy=false;
 const say=message=>{status.textContent=message;};
 function mode(loggedIn){manager.hidden=!loggedIn;document.querySelector('#login-panel').hidden=loggedIn;document.querySelector('#logout').hidden=!loggedIn;if(!loggedIn){session=null;current=null;rows=[];dirty=false;list.replaceChildren();editor.reset();publishDialog.close();withdrawDialog.close();}}
 async function api(path,body){
-  const r=await fetch('/api/admin/'+path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json',...(session?{'X-CSRF-Token':session.csrf}:{})}:{},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});
+  const r=await fetch(apiPrefix+path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json',...(session?{'X-CSRF-Token':session.csrf}:{})}:{},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(15000)});
   const data=await r.json();if(!r.ok){if(r.status===401&&path!=='login')mode(false);throw Object.assign(new Error(data.error||'暂时无法完成操作'),{status:r.status});}return data;
 }
 const content=()=>({title:editor.elements.title.value.trim(),summary:editor.elements.summary.value.trim(),body:parseBody(editor.elements.body.value),link:editor.elements.link.value.trim()||null});

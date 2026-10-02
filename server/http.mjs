@@ -63,7 +63,7 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.8.3',contentManagement:false,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:'0.8.4',contentManagement:false,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;

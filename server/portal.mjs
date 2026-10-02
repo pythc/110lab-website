@@ -5,11 +5,12 @@ import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 import {ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
 
-export const UI_URI='ui://110lab/workbench/v0.8.2';
-export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.8.1';
+export const UI_URI='ui://110lab/workbench/v0.8.3';
+export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.8.2';
 export const LEGACY_UI_URI='ui://110lab/home';
 const WIDGET_DOMAIN='https://internal.110-lab.cn';
 const EMBED_FRAME_DOMAINS=Object.freeze([
+  'https://internal.110-lab.cn',
   'https://47.109.176.127',
   'https://fcncvoyreb8p.feishuapp.com',
   'https://fcncvoyreb8p.aiforce.cloud',
@@ -21,9 +22,9 @@ const EMBED_FRAME_DOMAINS=Object.freeze([
 ]);
 // Hosted plugin adapters also consume the documented compatibility metadata.
 // Keep both forms derived from the same exact origin list.
-const WIDGET_CSP=Object.freeze({connect_domains:[],resource_domains:[],frame_domains:EMBED_FRAME_DOMAINS,redirect_domains:[
+const WIDGET_CSP=Object.freeze({connect_domains:[],resource_domains:[],frame_domains:EMBED_FRAME_DOMAINS,redirect_domains:[...new Set([
   'https://110-lab.cn','https://internal.110-lab.cn','https://aigrading.110-lab.cn','https://ai-grading.110-lab.cn',...EMBED_FRAME_DOMAINS
-]});
+])]});
 export async function createPortalServer(){
   const [html,config,icon]=await Promise.all([
     readFile(new URL('../dist/mcp-app.html',import.meta.url),'utf8'),
@@ -31,7 +32,7 @@ export async function createPortalServer(){
     readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))
   ]);
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
-  const server=new McpServer({name:'110lab',version:'0.8.2'});
+  const server=new McpServer({name:'110lab',version:'0.8.3'});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
     uri,mimeType:RESOURCE_MIME_TYPE,text:html,
@@ -39,6 +40,7 @@ export async function createPortalServer(){
   }]});
   registerAppResource(server,'110lab-workbench-v5',UI_URI,{description:'110 实验室工作台'},async()=>workbenchResource(UI_URI));
   registerAppResource(server,'110lab-workbench-v5-previous',PREVIOUS_UI_URI,{description:'110 实验室工作台兼容入口'},async()=>workbenchResource(PREVIOUS_UI_URI));
+  registerAppResource(server,'110lab-workbench-v8-1-legacy','ui://110lab/workbench/v0.8.1',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.8.1'));
   registerAppResource(server,'110lab-workbench-v8-legacy','ui://110lab/workbench/v0.8.0',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.8.0'));
   registerAppResource(server,'110lab-workbench-v7-legacy','ui://110lab/workbench/v0.7.0',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.7.0'));
   registerAppResource(server,'110lab-workbench-v6-1-legacy','ui://110lab/workbench/v0.6.1',{description:'110 实验室工作台兼容入口'},async()=>workbenchResource('ui://110lab/workbench/v0.6.1'));
