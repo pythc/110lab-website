@@ -7,6 +7,7 @@ import {openMailAccessStore,MailAccessError} from './mail-access-store.mjs';
 import {ADMIN_FRAME_ANCESTORS} from './admin-http.mjs';
 import {escapeHTML} from './render.mjs';
 import {openMailOAuth,mailAuthChallenge} from './mail-oauth.mjs';
+import {openMailMembershipState} from './mail-membership-state.mjs';
 
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
 const revision=z.number().int().positive(),email=z.string().email().max(254);
@@ -26,13 +27,15 @@ function page(res,html,{head=false,embedded=false,status=200}={}){
   const ancestors=embedded?"'self' "+ADMIN_FRAME_ANCESTORS.join(' '):"'none'";
   res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(head?undefined:html);
 }
-export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
+export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',notifyEnabled=process.env.PORTAL_MAIL_NOTIFY_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
   const html=await readFile(new URL('../dist/mail.html',import.meta.url),'utf8');
   if(trustedProxies.some(p=>!isIP(p)))throw new Error('Invalid mail trusted proxy');
-  const proxies=new Set(trustedProxies);let auth,access,oauth;
+  const proxies=new Set(trustedProxies);let auth,access,oauth,membership;
+  if(notifyEnabled&&!enabled)throw new Error('Notify mailbox requires mail login');
   if(enabled){if(!directory||(!config&&!configPath))throw new Error('Mail login requires private configuration');config=config?parseMailConfig(config):readMailConfig(configPath);auth=openMailAuth({directory,config,now,localTest,fetchIdentity});try{access=openMailAccessStore({filename:join(directory,'mail-access.sqlite'),bootstrapOwner:bootstrapMailOwner(config),now});}catch(e){auth.close();throw e;}}
   if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies});}catch(e){auth.close();access.close();throw e;}}
-  return {enabled,hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
+  if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
+  return {enabled,hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){membership?.close();oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
     if(oauth?.handle(req,res,path,host))return true;
     if(!['/mail','/mail/','/mail/embedded','/mail/auth/launch','/mail/auth/callback'].includes(path)&&!path.startsWith('/api/mail/'))return false;
     const embedded=path==='/mail/embedded'||path.startsWith('/api/mail/embedded/');
@@ -40,7 +43,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
     try{
       if(host!=='internal.110-lab.cn'&&!(localTest&&['127.0.0.1','localhost'].includes(host)))throw new MailAuthError(404,'Not found');
       if(['/mail','/mail/','/mail/embedded'].includes(path)&&['GET','HEAD'].includes(req.method)){page(res,embedded?html.replace('<body>','<body class="embedded">'):html,{head:req.method==='HEAD',embedded});return true;}
-      if(route==='/api/mail/config'&&req.method==='GET'){json(res,200,{loginAvailable:enabled,notifyManualSend:false});return true;}
+      if(route==='/api/mail/config'&&req.method==='GET'){json(res,200,{loginAvailable:enabled,notifyManualSend:notifyEnabled});return true;}
       if(!enabled)throw new MailAuthError(503,'飞书登录尚未配置');
       if(!['GET','POST'].includes(req.method))throw new MailAuthError(405,'请求方式无效');
       const originOK=req.headers.origin==='https://internal.110-lab.cn'||localTest&&req.headers.origin==='http://'+req.headers.host;
@@ -71,6 +74,12 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
       }
       const session=auth.session(req.headers.cookie,{embedded}),me=access.me(session.subject);
       if(route==='/api/mail/session'&&req.method==='GET'){json(res,200,{...me,csrf:session.csrf,expiresAt:session.expiresAt});return true;}
+      if(route==='/api/mail/notify'&&req.method==='GET'){
+        access.assertAdministrator(session.subject);
+        if(!membership){json(res,200,{state:'disabled'});return true;}
+        const state=membership.status(access.membershipSnapshot().revision);
+        json(res,200,{...state,...(state.state==='ready'?{url:'https://www.feishu.cn/mail'}:{})});return true;
+      }
       if(req.method==='POST')auth.csrf(session,req.headers['x-csrf-token']);
       if(route==='/api/mail/logout'&&req.method==='POST'){z.object({}).strict().parse(await body(req));res.setHeader('Set-Cookie',auth.logout(session));json(res,200,{loggedOut:true});return true;}
       if(route==='/api/mail/administrators'&&req.method==='GET'){json(res,200,access.listAdministrators(session.subject));return true;}
@@ -81,7 +90,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
         if(route.endsWith('/grant'))access.grantAdministrator(session.subject,v.email,v.revision);
         else if(route.endsWith('/revoke'))access.revokeAdministrator(session.subject,v.email,v.revision);
         else access.transferSuperAdministrator(session.subject,v.email,v.revision);
-        json(res,200,{changed:true});return true;
+        json(res,200,{changed:true,...(membership?{mailbox:membership.status(access.membershipSnapshot().revision)}:{})});return true;
       }
       throw new MailAuthError(404,'Not found');
     }catch(error){
