@@ -538,6 +538,10 @@ function createApi(db, path, now) {
   }
 
   return {
+    // Internal worker API; never expose the desired member set to ordinary users.
+    membershipSnapshot() {
+      return readTransaction(() => ({revision: revision(), subjects: listAdmins.all().map(row => row.subject).sort()}));
+    },
     registerIdentity,
     me,
     listAdministrators,
