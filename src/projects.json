@@ -49,6 +49,15 @@
       "edition": "项目协作"
     },
     {
+      "id": "recruitment-test",
+      "title": "招新流程测试",
+      "description": "初筛、考核、面试与决策 仅使用虚构资料",
+      "url": "https://internal.110-lab.cn/recruitment-test",
+      "status": "available",
+      "icon": "recruitment",
+      "edition": "独立测试空间"
+    },
+    {
       "id": "grading-internal",
       "title": "批改系统内网版",
       "description": "校园教学与作业批改，使用已有内网账号登录。",

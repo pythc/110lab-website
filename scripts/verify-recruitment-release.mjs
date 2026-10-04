@@ -21,7 +21,7 @@ const started=(child,marker)=>new Promise((resolve,reject)=>{
 });
 try{
   for(const directory of ['server','dist','src'])mkdirSync(join(root,directory));
-  for(const path of ['server/runtime.mjs','server/recruitment-worker-runtime.mjs','server/recruitment-ops-runtime.mjs','dist/index.html','dist/workbench.html','dist/mail.html','src/projects.json'])copyFileSync(path,join(root,path));
+  for(const path of ['server/runtime.mjs','server/recruitment-worker-runtime.mjs','server/recruitment-ops-runtime.mjs','dist/index.html','dist/workbench.html','dist/mail.html','dist/recruitment-test.html','src/projects.json'])copyFileSync(path,join(root,path));
   const {createHttpServer}=await import(pathToFileURL(join(root,'server/runtime.mjs')));
   const {runDeliveryOnce}=await import(pathToFileURL(join(root,'server/recruitment-worker-runtime.mjs')));
   const messages=[];

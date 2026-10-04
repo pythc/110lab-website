@@ -11,6 +11,7 @@ import {createRecruitmentHttp} from './recruitment-http.mjs';
 import {createAdminHttp} from './admin-http.mjs';
 import {createMailHttp} from './mail-http.mjs';
 import {createWorkspaceHttp} from './workspace-http.mjs';
+import {createRecruitmentTestHttp} from './recruitment-test-http.mjs';
 import {ADMIN_FRAME_ANCESTORS} from './admin-http.mjs';
 import {mailAuthChallenge} from './mail-oauth.mjs';
 import packageInfo from '../package.json' with {type:'json'};
@@ -31,7 +32,7 @@ async function jsonBody(req,limit=1024*1024){
 }
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
 export async function createHttpServer(options={}){
-  const [homepage,workbench]=await Promise.all(['index','workbench'].map(p=>readFile(new URL('../dist/'+p+'.html',import.meta.url),'utf8')));
+  const [homepage,workbench,recruitmentTestPage]=await Promise.all(['index','workbench','recruitment-test'].map(p=>readFile(new URL('../dist/'+p+'.html',import.meta.url),'utf8')));
   const allowedHosts=new Set(['110-lab.cn','internal.110-lab.cn','110lab-homepage','localhost','127.0.0.1','[::1]']);
   const updates=options.updatesStore||openUpdatesStore(process.env.PORTAL_UPDATES_DATABASE||':memory:');
   const recruitment=createRecruitmentHttp(options.recruitment);
@@ -39,6 +40,7 @@ export async function createHttpServer(options={}){
   const admin=await createAdminHttp({...options.admin,updates});
   let mail;try{mail=await createMailHttp(options.mail);}catch(e){admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   let workspace;try{workspace=createWorkspaceHttp({mail,recruitment,...options.workspace});}catch(e){mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
+  let recruitmentTest;try{recruitmentTest=createRecruitmentTestHttp({mail,...options.recruitmentTest});}catch(e){workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
     const host=(req.headers.host||'').toLowerCase().replace(/:\d+$/,'');
@@ -50,6 +52,7 @@ export async function createHttpServer(options={}){
       if(await admin.handle(req,res,path,host))return;
       if(await mail.handle(req,res,path,host))return;
       if(await workspace.handle(req,res,path,host))return;
+      if(await recruitmentTest.handle(req,res,path,host))return;
       if(await recruitment.handle(req,res,path,host))return;
       if(path==='/api/updates'){
         if(req.method!=='GET'&&req.method!=='HEAD'){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
@@ -80,16 +83,17 @@ export async function createHttpServer(options={}){
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:packageInfo.version,contentManagement:false,mailManagement:mail.enabled,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled,workspaceEnabled:workspace.enabled});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:packageInfo.version,contentManagement:false,mailManagement:mail.enabled,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled,workspaceEnabled:workspace.enabled,recruitmentTestEnabled:recruitmentTest.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
       }
       let html;
       if(['/workbench','/workbench/','/workbench/embedded','/projects','/projects/','/projects/embedded'].includes(path)&&internalHost)html=workbench;
+      else if(['/recruitment-test','/recruitment-test/','/recruitment-test/embedded'].includes(path)&&internalHost)html=recruitmentTestPage;
       else if(path==='/'||path==='/index.html')html=host==='internal.110-lab.cn'?workbench:homepage;
-      if(html&&options.liveReload){const name=path.startsWith('/workbench')||host==='internal.110-lab.cn'?'workbench':'index';html=await readFile(new URL('../dist/'+name+'.html',import.meta.url),'utf8');}
-      if(html){const policy=['/workbench/embedded','/projects/embedded'].includes(path)?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
+      if(html&&options.liveReload){const name=path.startsWith('/recruitment-test')?'recruitment-test':path.startsWith('/workbench')||path.startsWith('/projects')||host==='internal.110-lab.cn'?'workbench':'index';html=await readFile(new URL('../dist/'+name+'.html',import.meta.url),'utf8');}
+      if(html){const policy=['/workbench/embedded','/projects/embedded','/recruitment-test/embedded'].includes(path)?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
       if(path==='/robots.txt'){res.writeHead(200,{'Content-Type':'text/plain'});res.end(head?undefined:host==='110-lab.cn'?'User-agent: *\nAllow: /\n':'User-agent: *\nDisallow: /\n');return;}
       throw new HttpError(404,'Not found');
     }catch(error){
@@ -105,6 +109,7 @@ export async function createHttpServer(options={}){
   server.once('close',()=>admin.close());
   server.once('close',()=>mail.close());
   server.once('close',()=>workspace.close());
+  server.once('close',()=>recruitmentTest.close());
   server.requestTimeout=180000;server.headersTimeout=15000;
   return server;
 }
