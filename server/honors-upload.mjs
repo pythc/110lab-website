@@ -104,11 +104,25 @@ export async function readHonorCertificate(req, { timeoutMs = 60000 } = {}) {
     /[\u0000-\u001f\u007f/\\]/.test(info.filename)
   )
     throw fail(400, "证书资料无效");
-  const buffer = Buffer.concat(chunks),
-    ext = info.filename.split(".").at(-1).toLowerCase();
+  const buffer = Buffer.concat(chunks);
+  const mime = await validateHonorFile(buffer, info.filename, info.mimeType);
+  return {
+    requestId: f.data.requestId,
+    revision: Number(f.data.revision),
+    filename: info.filename,
+    mime,
+    bytes: buffer.length,
+    sha256: createHash("sha256").update(buffer).digest("hex"),
+    buffer,
+  };
+}
+
+export async function validateHonorFile(buffer,filename,mimeType) {
+  const fail = (status,message) => new HonorsError(status,message);
+  const ext = filename.split(".").at(-1).toLowerCase();
   let mime;
   if (ext === "pdf") {
-    await validateResume(buffer, info.filename, info.mimeType).catch((e) => {
+    await validateResume(buffer, filename, mimeType).catch((e) => {
       throw fail(e.status || 400, "PDF 证书格式无效");
     });
     mime = "application/pdf";
@@ -137,16 +151,8 @@ export async function readHonorCertificate(req, { timeoutMs = 60000 } = {}) {
     !mime ||
     !buffer.length ||
     buffer.length > LIMIT ||
-    info.mimeType !== mime
+    mimeType !== mime
   )
     throw fail(400, "文件内容与 PDF PNG JPG 格式不匹配");
-  return {
-    requestId: f.data.requestId,
-    revision: Number(f.data.revision),
-    filename: info.filename,
-    mime,
-    bytes: buffer.length,
-    sha256: createHash("sha256").update(buffer).digest("hex"),
-    buffer,
-  };
+  return mime;
 }

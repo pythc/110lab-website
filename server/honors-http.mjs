@@ -102,7 +102,7 @@ export function createHonorsHttp({
     };
   }
   return {
-    enabled,
+    enabled,store,canonical,
     close() {
       if (!provided) store?.close();
     },

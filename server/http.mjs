@@ -1,3 +1,6 @@
+import {assessmentEntry} from './assessment-entry.mjs';
+import {createBusinessHttp,businessScope,businessChallenge} from './business-http.mjs';
+import {BUSINESS_TOOL_MAP} from './business-tools.mjs';
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
@@ -45,6 +48,7 @@ export async function createHttpServer(options={}){
   let honors;let workspace;try{workspace=createWorkspaceHttp({mail,honorsTodos:a=>honors?.todos(a).items||[],recruitment:recruitmentWorkflow.enabled?recruitmentWorkflow:recruitment,...options.workspace});}catch(e){await recruitmentWorkflow.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   try{honors=createHonorsHttp({mail,projects:a=>workspace.projects(a),...options.honors});}catch(e){await recruitmentWorkflow.close();workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   let recruitmentTest;try{recruitmentTest=createRecruitmentTestHttp({mail,...options.recruitmentTest});}catch(e){honors.close();await recruitmentWorkflow.close();workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
+  let business;try{business=await createBusinessHttp({mail,workspace,honors,recruitment:recruitmentWorkflow,updates,updatesEnabled:admin.enabled,...options.business});}catch(e){recruitmentTest.close();honors.close();workspace.close();await recruitmentWorkflow.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
     const host=(req.headers.host||'').toLowerCase().replace(/:\d+$/,'');
@@ -53,6 +57,7 @@ export async function createHttpServer(options={}){
     try{path=new URL(req.url,'http://localhost').pathname;}catch{res.writeHead(400);res.end('Invalid request target');return;}
     const internalHost=host!=='110-lab.cn';
     try{
+      if(await business.handle(req,res,path,host))return;
       if(await admin.handle(req,res,path,host))return;
       if(await mail.handle(req,res,path,host))return;
       if(await workspace.handle(req,res,path,host))return;
@@ -75,7 +80,7 @@ export async function createHttpServer(options={}){
         if(req.method==='OPTIONS'){res.writeHead(204);res.end();return;}
         if(req.method!=='POST'){res.writeHead(405,{Allow:'POST, OPTIONS'});res.end('Method not allowed');return;}
         let parsed;
-        try{parsed=await jsonBody(req,32*1024);}catch(error){if(error.status===400){json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}});return;}throw error;}
+        try{let limit=32*1024;if(business.enabled&&req.headers.authorization){try{await mail.businessIdentity(req.headers.authorization,[]);limit=16*1024*1024;}catch{}}parsed=await jsonBody(req,limit);}catch(error){if(error.status===400){json(res,400,{jsonrpc:'2.0',id:null,error:{code:-32700,message:'Parse error'}});return;}throw error;}
         // Tool-result metadata alone does not start OAuth in every MCP host.
         // Challenge only this protected call; discovery and the workbench stay public.
         if(parsed?.method==='tools/call'&&parsed.params?.name==='connect_110lab_mail'&&!await mail.hostAuthorized(req.headers.authorization,{fresh:parsed.params.arguments?.fresh===true})){
@@ -84,12 +89,20 @@ export async function createHttpServer(options={}){
           res.setHeader('Access-Control-Expose-Headers','WWW-Authenticate');
           json(res,401,{jsonrpc:'2.0',id:typeof parsed.id==='string'||typeof parsed.id==='number'?parsed.id:null,result:challenge});return;
         }
-        const mcp=await createPortalServer({mailHandoff:(state,options)=>mail.hostHandoff(req.headers.authorization,state,options)}),transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
+        if(business.enabled&&parsed?.method==='tools/call'&&BUSINESS_TOOL_MAP.has(parsed.params?.name)){
+          const scope=businessScope(parsed.params.name,parsed.params.arguments);
+          try{await business.identity(req.headers.authorization,scope);}catch{
+            let previous=[],valid=false;try{const existing=await mail.businessIdentity(req.headers.authorization,[]);valid=true;previous=existing.scopes.filter(s=>s!=='mail:session');}catch{}
+            const challenge=businessChallenge([...new Set(['lab:identity',...previous,scope])].join(' '));res.setHeader('WWW-Authenticate',challenge);res.setHeader('Access-Control-Expose-Headers','WWW-Authenticate');
+            json(res,valid?403:401,{jsonrpc:'2.0',id:parsed.id??null,error:{code:-32001,message:'Business authorization required'}});return;
+          }
+        }
+        const mcp=await createPortalServer({assessmentSsoEnabled:options.mail?.assessmentSsoEnabled,...(business.enabled?{businessCall:(name,args)=>business.call(name,args,req.headers.authorization)}:{}),mailHandoff:(state,options)=>mail.hostHandoff(req.headers.authorization,state,options)}),transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
         try{await mcp.connect(transport);await transport.handleRequest(req,res,parsed);}finally{await transport.close();await mcp.close();}return;
       }
       if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405,{Allow:'GET, HEAD'});res.end('Method not allowed');req.resume();return;}
       const head=req.method==='HEAD';
-      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:packageInfo.version,contentManagement:false,mailManagement:mail.enabled,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled,workspaceEnabled:workspace.enabled,honorsEnabled:honors.enabled,recruitmentTestEnabled:recruitmentTest.enabled,recruitmentWorkflowEnabled:recruitmentWorkflow.enabled});return;}
+      if(path==='/healthz'){json(res,200,{status:'ok',service:'110lab-homepage',version:packageInfo.version,contentManagement:false,businessMcp:business.enabled,mailManagement:mail.enabled,dynamicManagement:admin.enabled,recruitmentEnabled:recruitment.enabled,workspaceEnabled:workspace.enabled,honorsEnabled:honors.enabled,recruitmentTestEnabled:recruitmentTest.enabled,recruitmentWorkflowEnabled:recruitmentWorkflow.enabled});return;}
       if(path.startsWith('/assets/')){
         if(!await serveAsset(req,res,path.slice(8)))throw new HttpError(404,'Not found');
         return;
@@ -101,7 +114,7 @@ export async function createHttpServer(options={}){
       else if(['/honors','/honors/','/honors/embedded'].includes(path)&&internalHost)html=honorsPage;
       else if(path==='/'||path==='/index.html')html=host==='internal.110-lab.cn'?workbench:homepage;
       if(html&&options.liveReload){const name=path.startsWith('/honors')?'honors':path.startsWith('/recruitment-test')?'recruitment-test':path.startsWith('/recruitment')?'recruitment':path.startsWith('/workbench')||path.startsWith('/projects')||host==='internal.110-lab.cn'?'workbench':'index';html=await readFile(new URL('../dist/'+name+'.html',import.meta.url),'utf8');}
-      if(html){const policy=['/honors/embedded','/workbench/embedded','/projects/embedded','/recruitment-test/embedded','/recruitment/embedded'].includes(path)?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
+      if(html){html=assessmentEntry(html,options.mail?.assessmentSsoEnabled);const policy=['/honors/embedded','/workbench/embedded','/projects/embedded','/recruitment-test/embedded','/recruitment/embedded'].includes(path)?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
       if(path==='/robots.txt'){res.writeHead(200,{'Content-Type':'text/plain'});res.end(head?undefined:host==='110-lab.cn'?'User-agent: *\nAllow: /\n':'User-agent: *\nDisallow: /\n');return;}
       throw new HttpError(404,'Not found');
     }catch(error){
@@ -112,10 +125,9 @@ export async function createHttpServer(options={}){
       else{res.writeHead(status,{'Content-Type':'text/plain; charset=utf-8'});res.end(status===500?'Internal error':error.message);}
     }
   });
-  if(!options.updatesStore)server.once('close',()=>updates.close());
   server.once('close',()=>recruitment.close());
   server.once('close',()=>admin.close());
-  server.once('close',()=>{server.workflowClosed=recruitmentWorkflow.close().finally(()=>mail.close());});
+  server.once('close',()=>{server.workflowClosed=business.close().then(()=>recruitmentWorkflow.close()).finally(()=>{if(!options.updatesStore)updates.close();mail.close();});});
   server.once('close',()=>workspace.close());
   server.once('close',()=>honors.close());
   server.once('close',()=>recruitmentTest.close());

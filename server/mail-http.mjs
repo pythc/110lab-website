@@ -39,7 +39,11 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
   if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
   const projectDirectory=enabled?(fetchDirectory?{list:fetchDirectory}:localTest?null:createWorkspaceDirectory({config,now})):null;
   const sso=assessmentSsoEnabled&&enabled?openLabSso({directory,auth,access,now}):null;
-  return {enabled,workspaceDirectory:directory?join(directory,'workspace'):null,
+  return {enabled,
+    businessIdentity:(header,scopes)=>{if(!oauth)throw new MailAuthError(503,'飞书登录尚未配置');return oauth.businessIdentity(header,scopes);},
+    profile:subject=>{if(!access)throw new MailAuthError(503,'飞书登录尚未配置');return access.me(subject);},
+    workspaceDirectory:directory?join(directory,'workspace'):null,
+    mailboxReady(subject,address){access.assertAdministrator(subject);return address==='noreply@110-lab.cn'||address==='noreply@notify.110-lab.cn'&&membership?.status(access.membershipSnapshot().revision).state==='ready';},
     roleForSubject(subject){return access?.me(subject)?.role||'member';},
     // Trusted in-process adapter. Every request re-reads the current lab role.
     identity(req,{embedded=false,write=false}={}) {
@@ -97,7 +101,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
         const params=new URL(req.url,'https://internal.110-lab.cn').searchParams;
         if(params.getAll('state').length!==1||params.getAll('code').length!==1||params.has('error'))throw new MailAuthError(401,'飞书登录未完成 请重新登录');
         const pending=await auth.callback(params.get('state'),params.get('code'),req.headers.cookie);
-        if(oauth.finishCallback(params.get('state'),pending.profile,req,res,()=>{pending.consumeForHost();access.registerIdentity(pending.profile);}))return true;
+        if(oauth.finishCallback(params.get('state'),pending.profile,req,res,(browserSession=false)=>{access.registerIdentity(pending.profile);if(browserSession)res.setHeader('Set-Cookie',pending.complete().cookie);else pending.consumeForHost();}))return true;
         access.registerIdentity(pending.profile);const result=pending.complete();res.setHeader('Set-Cookie',result.cookie);
         const script=JSON.stringify({type:'110lab-mail-login',state:result.state,ticket:result.ticket});
         page(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>飞书登录完成 · 110lab</title><style>body{margin:0;padding:40px 24px;font:16px/1.6 system-ui;background:#f6f8fb;color:#20242c}main{max-width:520px;margin:auto;padding:24px;background:white;border-radius:16px}code{display:block;overflow-wrap:anywhere;padding:12px;background:#f2f5fa}a{color:#235fd5}</style><main><h1>已登录</h1><p>${escapeHTML(pending.profile.name)} · ${escapeHTML(pending.profile.email)}</p><p>返回工作台或公共邮箱管理。如果原窗口未自动登录，可输入下面的一次性登录码</p><code>${result.ticket}</code><p><a href="/workbench">返回工作台</a> · <a href="/mail">打开公共邮箱管理</a></p></main><script>const message=${script};if(window.opener)window.opener.postMessage(message,'https://internal.110-lab.cn');</script></html>`);return true;

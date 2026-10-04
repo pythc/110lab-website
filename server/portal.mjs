@@ -1,4 +1,7 @@
+import {assessmentEntry} from './assessment-entry.mjs';
 import packageInfo from '../package.json' with {type:'json'};
+import {BUSINESS_TOOLS} from './business-tools.mjs';
+import {businessChallenge} from './business-http.mjs';
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {registerAppResource,registerAppTool,RESOURCE_MIME_TYPE} from '@modelcontextprotocol/ext-apps/server';
 import {OpenAIExtensions} from '@openai/mcp-extensions/server';
@@ -28,7 +31,7 @@ const EMBED_FRAME_DOMAINS=Object.freeze([
 const WIDGET_CSP=Object.freeze({connect_domains:[],resource_domains:[],frame_domains:EMBED_FRAME_DOMAINS,redirect_domains:[...new Set([
   'https://110-lab.cn','https://internal.110-lab.cn','https://aigrading.110-lab.cn','https://ai-grading.110-lab.cn','https://www.feishu.cn','https://fcncvoyreb8p.feishu.cn',...EMBED_FRAME_DOMAINS
 ])]});
-export async function createPortalServer({mailHandoff}={}){
+export async function createPortalServer({mailHandoff,businessCall,assessmentSsoEnabled}={}){
   const [html,config,icon]=await Promise.all([
     readFile(new URL('../dist/mcp-app.html',import.meta.url),'utf8'),
     readFile(new URL('../src/projects.json',import.meta.url),'utf8').then(JSON.parse),
@@ -38,7 +41,7 @@ export async function createPortalServer({mailHandoff}={}){
   const server=new McpServer({name:'110lab',version:packageInfo.version});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
-    uri,mimeType:RESOURCE_MIME_TYPE,text:html,
+    uri,mimeType:RESOURCE_MIME_TYPE,text:assessmentEntry(html,assessmentSsoEnabled),
     _meta:{ui:{domain:WIDGET_DOMAIN,csp:{connectDomains:[],resourceDomains:[],frameDomains:EMBED_FRAME_DOMAINS}},'openai/widgetDomain':WIDGET_DOMAIN,'openai/widgetCSP':WIDGET_CSP,'openai/ui':{preferredDisplayMode:'fullscreen',availableDisplayModes:['fullscreen']}}
   }]});
   registerAppResource(server,'110lab-workbench-v5',UI_URI,{description:'110 实验室工作台'},async()=>workbenchResource(UI_URI));
@@ -72,8 +75,18 @@ export async function createPortalServer({mailHandoff}={}){
   const schemes=[{type:'oauth2',scopes:[MAIL_HOST_SCOPE]}];
   const mailLogin={title:'登录公共邮箱管理',description:'将当前已验证的飞书身份连接到发起登录的公共邮箱页面。仅供插件页面调用，不授予发信或管理员权限。',inputSchema:z.object({state:z.string().regex(/^[\w-]{43}$/),fresh:z.boolean().default(false)}).strict(),securitySchemes:schemes,annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false},_meta:{securitySchemes:schemes,ui:{visibility:['app']},'openai/widgetAccessible':true,'openai/visibility':'private'}};
   registerAppTool(server,'connect_110lab_mail',mailLogin,async({state,fresh})=>mailHandoff?mailHandoff(state,{fresh}):mailAuthChallenge());
+  const businessDefinitions={};
+  if(businessCall)for(const tool of BUSINESS_TOOLS){
+    const {name,scope,...definition}=tool,schemes=[{type:'oauth2',scopes:[scope||'lab:identity']}];
+    const spec={...definition,securitySchemes:schemes,_meta:{securitySchemes:schemes}};
+    businessDefinitions[name]=spec;
+    server.registerTool(name,spec,async(args)=>{
+      try{const result=await businessCall(name,args);if(name==='lab_attachment_read'){const {contentBase64,...meta}=result;return {structuredContent:meta,content:[{type:'text',text:JSON.stringify(meta)},{type:'resource',resource:{uri:result.reference,mimeType:result.mime,blob:contentBase64}}]};}return {content:[{type:'text',text:JSON.stringify(result)}],structuredContent:result};}
+      catch(e){const error={code:e.code||'BUSINESS_ERROR',message:e.status?e.message:'操作未完成 请检查内容或服务配置'};return {isError:true,content:[{type:'text',text:JSON.stringify(error)}],structuredContent:error,...e.scope?{_meta:{'mcp/www_authenticate':[businessChallenge(e.scope)]}}:{}};}
+    });
+  }
   // SDK 1.30's high-level registry drops standard Tool.icons. Use its public
   // low-level discovery API; tool execution and validation stay in McpServer.
-  server.server.setRequestHandler(ListToolsRequestSchema,()=>({tools:Object.entries({open_110lab:opener,search_110lab_projects:search,connect_110lab_mail:mailLogin}).map(([name,definition])=>({...definition,name,inputSchema:z.toJSONSchema(definition.inputSchema,{target:'draft-7',io:'input'})}))}));
+  server.server.setRequestHandler(ListToolsRequestSchema,()=>({tools:Object.entries({open_110lab:opener,search_110lab_projects:search,connect_110lab_mail:mailLogin,...businessDefinitions}).map(([name,definition])=>({...definition,name,inputSchema:z.toJSONSchema(definition.inputSchema,{target:'draft-7',io:'input'})}))}));
   return server;
 }

@@ -8,10 +8,10 @@ export const ISSUER='https://internal.110-lab.cn',RESOURCE=ISSUER+'/mcp/workbenc
 const secret=v=>typeof v==='string'&&/^[\w-]{43}$/.test(v);
 const error=text=>({isError:true,content:[{type:'text',text}]});
 const paths=new Set(['/mcp/workbench-v6-1','/.well-known/oauth-protected-resource/mcp/workbench-v6-1','/.well-known/oauth-protected-resource','/.well-known/oauth-authorization-server','/register','/token']);
-export async function portalFetch(input,options={}){
+export async function portalFetch(input,options={},timeoutMs=15000){
   const url=new URL(input instanceof Request?input.url:String(input));
   if(url.origin!==ISSUER||!paths.has(url.pathname)||url.username||url.password)throw new Error('Unexpected OAuth destination');
-  return fetch(input,{...options,redirect:'error',signal:AbortSignal.any([AbortSignal.timeout(15000),...(options.signal?[options.signal]:[])])});
+  return fetch(input,{...options,redirect:'error',signal:AbortSignal.any([AbortSignal.timeout(timeoutMs),...(options.signal?[options.signal]:[])])});
 }
 
 // A public OAuth client lives in the local plugin process. No Feishu App Secret

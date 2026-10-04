@@ -22,6 +22,7 @@ jobs:
       - run: node scripts/verify-recruitment-release.mjs
       - run: node scripts/verify-admin-release.mjs
       - run: node scripts/verify-mail-release.mjs
+      - run: node scripts/verify-business-release.mjs
       - run: node scripts/archive-release.mjs
       - uses: actions/upload-artifact@v4
         with:

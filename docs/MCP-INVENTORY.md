@@ -1,10 +1,10 @@
 # 工作台 MCP 清单
 
-核对日期：2026-10-05。本次只盘点，不新增、合并、删除或重命名工具。
+核对日期：2026-10-05。0.14.0 新增 39 个业务工具，保留原名称与需求平台连接。
 
 ## 已随 110lab 插件安装
 
-插件配置有两个本机 stdio 服务，共 19 个工具定义。其中工作台 3 个辅助工具仅向应用页面开放；模型可直接使用工作台 2 个工具及需求平台 14 个工具。
+插件配置有两个本机 stdio 服务，共 58 个工具定义。其中工作台 3 个辅助工具仅向应用页面开放；模型可直接使用公共入口 2 个、业务工具 39 个及需求平台 14 个工具。
 
 ### 110lab 工作台（5 个）
 
@@ -58,15 +58,59 @@
 
 考核认证限定到考生自己的 enrollment。此次管理员网页飞书认证不扩大这些工具权限，不开放管理工具，也不能通过 MCP 自动交卷。
 
-## 当前没有专用业务 MCP 的应用
+## 新增业务 MCP（39 个）
 
-项目立项、奖项荣誉、招新管理、公共邮箱、动态管理：目前通过网页/API 操作。公共邮箱的登录辅助工具不等于读取邮箱或发信工具。两个批改系统本次不做 MCP 或身份改造。
+共用工作台服务，每次调用核验本人 OAuth 授权、实时角色及对象权限。参见 [实现说明](MCP-BUSINESS.md)。
 
-## 盘点发现的边界与后续候选
+| 工具 | 用途 | 授权 |
+|---|---|---|
+| `lab_whoami` | 读取本人身份和已授权能力 | `lab:identity` |
+| `lab_members_search` | 查找实际实验室成员 | `lab:directory:read` |
+| `lab_operation_get` | 查询操作和确认状态 | `按对象用途` |
+| `lab_file_upload` | 上传用户明确指定的附件 | `按对象用途` |
+| `lab_attachment_read` | 读取有权访问的私有附件 | `按对象用途` |
+| `lab_projects_list` | 筛选内部立项项目 | `projects:read` |
+| `lab_project_get` | 读取项目和里程碑详情 | `projects:read` |
+| `lab_project_save` | 新建或编辑自由探索项目 | `projects:write` |
+| `lab_project_apply` | 申请成为共同项目 | `projects:write` |
+| `lab_project_review` | 审核项目申请 | `projects:review` |
+| `lab_project_milestone_save` | 新增里程碑或完成重开 | `projects:write` |
+| `lab_honors_list` | 筛选可见荣誉 | `honors:read` |
+| `lab_honor_get` | 读取荣誉与审核历史 | `honors:read` |
+| `lab_honor_save` | 填写荣誉草稿 | `honors:write` |
+| `lab_honor_certificate_attach` | 绑定已上传证书 | `honors:write` |
+| `lab_honor_submit` | 提交荣誉审核 | `honors:write` |
+| `lab_honor_withdraw` | 撤回荣誉审核 | `honors:write` |
+| `lab_honor_review` | 审核荣誉 | `honors:review` |
+| `lab_candidates_list` | 筛选官网招新候选人 | `recruitment:read` |
+| `lab_candidate_get` | 读取候选人资料及流程记录 | `recruitment:read` |
+| `lab_recruitment_options` | 读取模板变量和当前配置 | `recruitment:read` |
+| `lab_recruitment_template_save` | 维护招新邮件模板 | `recruitment:write` |
+| `lab_candidate_record` | 记录初筛考核或面试安排 | `recruitment:write` |
+| `lab_candidate_decide` | 记录管理员录取决定 | `recruitment:decide` |
+| `lab_recruitment_notice_preview` | 逐人生成面试通知预览 | `recruitment:write` |
+| `lab_recruitment_feishu_preview` | 预览飞书招新字段变更 | `recruitment:sync` |
+| `lab_recruitment_notice_send` | 发送已逐人确认的面试通知 | `recruitment:send` |
+| `lab_recruitment_feishu_sync` | 执行已确认的飞书同步 | `recruitment:sync` |
+| `lab_mail_send` | 发送已确认的公共邮箱草稿 | `mail:send` |
+| `lab_update_publish` | 发布已确认的官网动态 | `updates:publish` |
+| `lab_update_withdraw` | 撤回已确认的官网动态 | `updates:publish` |
+| `lab_mailboxes_list` | 查询授权公共邮箱及能力 | `mail:read` |
+| `lab_mail_messages_list` | 搜索授权邮箱来信 | `mail:read` |
+| `lab_mail_message_get` | 读取一封邮件及附件引用 | `mail:read` |
+| `lab_mail_draft_save` | 准备邮件草稿和实际发信预览 | `mail:draft` |
+| `lab_updates_list` | 查询官网动态和草稿 | `updates:read` |
+| `lab_update_get` | 读取动态草稿及当前公开版本 | `updates:read` |
+| `lab_update_draft_save` | 保存官网动态草稿 | `updates:write` |
+| `lab_update_publication_preview` | 预览公开发布或撤回 | `updates:publish` |
+
+两个批改系统本次不做 MCP 或身份改造。
+
+## 保留的边界
 
 - `search_110lab_projects` 名称容易被误解为内部立项搜索；现在只查公开展示内容。
 - `connect_110lab_mail` 虽保留历史名称，已用于实验室共享身份。此次不改名，避免破坏已有页面调用。
 - 需求平台 MCP 的个人连接与工作台网页飞书会话是两份授权，不能宣称同一会话；切换飞书账号不会自动更换本机个人 Key。
 - 妙搭网页保留首次飞书官方授权，这是本次用户明确接受的范围。
-- 将来若要统一模型工具授权，应使用明确用途和权限范围的授权流程；不能把当前只用于会话连接的 `mail:session` 悄悄扩大为发信、审核或管理权限。
-- 本次未调用真实写入工具、发送邮件、发起评审或通知，也未修改现有 MCP 业务接口。
+- 业务工具使用明确用途和权限范围的授权流程；不能把当前只用于会话连接的 `mail:session` 悄悄扩大为发信、审核或管理权限。
+- 验证未发送真实邮件、发起真实评审或通知；notify 接通 IMAP/SMTP，根域邮箱待配置，招新发送保持模拟。
