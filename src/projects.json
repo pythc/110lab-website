@@ -40,6 +40,15 @@
   ],
   "apps": [
     {
+      "id": "projects",
+      "title": "项目立项",
+      "description": "发起自由探索项目 组建团队并申请实验室共同立项",
+      "url": "https://internal.110-lab.cn/projects",
+      "status": "available",
+      "icon": "projects",
+      "edition": "项目协作"
+    },
+    {
       "id": "grading-internal",
       "title": "批改系统内网版",
       "description": "校园教学与作业批改，使用已有内网账号登录。",

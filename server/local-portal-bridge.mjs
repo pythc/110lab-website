@@ -9,10 +9,10 @@ import {realpathSync} from 'node:fs';
 import {createRequirementTodos} from './local-requirement-todos.mjs';
 
 export function createLocalPortalBridge({fetchImpl=portalFetch,mail=createMailLoginClient({fetchImpl}),requirementTodos=createRequirementTodos()}={}){
-  const upstream=new Client({name:'110lab-local-workbench',version:'0.9.0'});
+  const upstream=new Client({name:'110lab-local-workbench',version:'0.9.1'});
   const transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{fetch:fetchImpl});
   let connecting;const ready=()=>connecting ||= upstream.connect(transport).catch(e=>{connecting=null;throw e;});
-  const server=new Server({name:'110lab',version:'0.9.0'},{capabilities:{tools:{},resources:{}}});
+  const server=new Server({name:'110lab',version:'0.9.1'},{capabilities:{tools:{},resources:{}}});
   const privateMeta={securitySchemes:[{type:'noauth'}],ui:{visibility:['app']},'openai/widgetAccessible':true,'openai/visibility':'private'};
   server.setRequestHandler(ListToolsRequestSchema,async()=>{
     await ready();const result=await upstream.listTools();

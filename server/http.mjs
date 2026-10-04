@@ -86,10 +86,10 @@ export async function createHttpServer(options={}){
         return;
       }
       let html;
-      if(['/workbench','/workbench/','/workbench/embedded'].includes(path)&&internalHost)html=workbench;
+      if(['/workbench','/workbench/','/workbench/embedded','/projects','/projects/','/projects/embedded'].includes(path)&&internalHost)html=workbench;
       else if(path==='/'||path==='/index.html')html=host==='internal.110-lab.cn'?workbench:homepage;
       if(html&&options.liveReload){const name=path.startsWith('/workbench')||host==='internal.110-lab.cn'?'workbench':'index';html=await readFile(new URL('../dist/'+name+'.html',import.meta.url),'utf8');}
-      if(html){const policy=path==='/workbench/embedded'?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
+      if(html){const policy=['/workbench/embedded','/projects/embedded'].includes(path)?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
       if(path==='/robots.txt'){res.writeHead(200,{'Content-Type':'text/plain'});res.end(head?undefined:host==='110-lab.cn'?'User-agent: *\nAllow: /\n':'User-agent: *\nDisallow: /\n');return;}
       throw new HttpError(404,'Not found');
     }catch(error){

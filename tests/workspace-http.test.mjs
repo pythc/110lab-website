@@ -9,11 +9,12 @@ import {createWorkspaceHttp} from '../server/workspace-http.mjs';
 import {fixtureConfig,fixtureIdentity} from './helpers/mail-fixtures.mjs';
 import {randomUUID} from 'node:crypto';
 
+const candidate={subject:'fictional_tenant:on_not_logged_in_yet',email:'',name:'虚构未登录成员'};
 const member={subject:'fictional_tenant:on_workspace_member',email:'workspace.member@110-lab.cn',name:'虚构成员'};
 const jar=r=>r.headers['set-cookie']?.[0]?.split(';')[0]||'';
 test('shared live lab roles, cookie contexts, CSRF, project lifecycle and recruitment concurrency',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'110lab-workspace-http-'));
-  const mail=await createMailHttp({enabled:true,directory,config:fixtureConfig,localTest:true,fetchIdentity:async(_,{code})=>code==='member'?member:fixtureIdentity});
+  const mail=await createMailHttp({enabled:true,directory,config:fixtureConfig,localTest:true,fetchIdentity:async(_,{code})=>code==='member'?member:fixtureIdentity,fetchDirectory:async()=>[fixtureIdentity,member,candidate]});
   const id=randomUUID(),recruitment={labInbox:()=>({state:'ready',items:[{id,name:'虚构候选人',group:'开发组',receivedAt:new Date().toISOString(),deliveryStatus:'SENT'}]})};
   const workspace=createWorkspaceHttp({mail,recruitment,localTest:true});
   const server=createServer(async(req,res)=>{const path=new URL(req.url,'http://localhost').pathname,host=req.headers.host.split(':')[0];if(!await mail.handle(req,res,path,host)&&!await workspace.handle(req,res,path,host)){res.writeHead(404);res.end();}});
@@ -32,11 +33,17 @@ test('shared live lab roles, cookie contexts, CSRF, project lifecycle and recrui
     const admin=await login('owner'),person=await login('member');
     for(const path of ['session','members','projects','todos','recruitment/history'])assert.equal((await call('/api/workspace/'+path)).status,401);
     assert.equal((await call('/api/workspace/projects',{actor:admin,host:'110-lab.cn'})).status,404);
-    const data={name:'虚构视觉项目',summary:'测试用项目',members:[{...member,name:'伪造名称'}],links:{repository:'https://github.com/example/repo',docs:'',demo:'',requirements:''}};
+    const directoryReply=await call('/api/workspace/members',{actor:admin});
+    assert.equal(directoryReply.value.source,'feishu');
+    assert.ok(directoryReply.value.members.some(m=>m.subject===candidate.subject));
+    const data={name:'虚构视觉项目',summary:'测试用项目',members:[{...member,name:'伪造名称'}, {...candidate,name:'另一伪造名称',email:'forged@110-lab.cn'}],links:{repository:'https://github.com/example/repo',docs:'',demo:'',requirements:''}};
     assert.equal((await call('/api/workspace/projects',{actor:admin,body:data,origin:'https://evil.example'})).status,403);
     assert.equal((await call('/api/workspace/projects',{actor:admin,body:data,csrf:'invalid'})).status,403);
     const created=await call('/api/workspace/projects',{actor:admin,body:data});assert.equal(created.status,201);let project=created.value;
     assert.equal(project.members[0].name,member.name);
+    assert.equal(project.members[1].name,candidate.name);assert.equal(project.members[1].email,'');
+    assert.equal((await call('/api/mail/members',{actor:admin})).value.members.some(m=>m.subject===candidate.subject),false);
+    assert.equal((await call('/api/workspace/projects',{actor:admin,body:{...data,members:[{subject:'fictional_tenant:on_attacker_identity',name:'fake',email:''}]}})).status,400);
     const base='/api/workspace/projects/'+project.id;
     assert.equal((await call(base+'/update',{actor:person,body:{...data,revision:1}})).status,403);
     let response=await call(base+'/milestones',{actor:admin,body:{title:'虚构里程碑',assignee:person.subject,dueAt:'2026-10-10T15:59:59.000Z'}});assert.equal(response.status,200);project=response.value;

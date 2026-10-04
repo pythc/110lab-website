@@ -163,7 +163,9 @@ const memberSchema = z
   .object({
     subject: subjectSchema,
     name: nameSchema,
-    email: emailSchema,
+    // Directory candidates may lack the optional enterprise mailbox field.
+    // Authorization always uses subject, never email. Login actors stay strict.
+    email: z.union([emailSchema,z.literal('')]),
   })
   .strict();
 

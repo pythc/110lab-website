@@ -7,6 +7,7 @@ import {openMailAccessStore,MailAccessError} from './mail-access-store.mjs';
 import {ADMIN_FRAME_ANCESTORS} from './admin-http.mjs';
 import {escapeHTML} from './render.mjs';
 import {openMailOAuth,mailAuthChallenge} from './mail-oauth.mjs';
+import {createWorkspaceDirectory} from './workspace-directory.mjs';
 import {openMailMembershipState} from './mail-membership-state.mjs';
 
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
@@ -27,7 +28,7 @@ function page(res,html,{head=false,embedded=false,status=200}={}){
   const ancestors=embedded?"'self' "+ADMIN_FRAME_ANCESTORS.join(' '):"'none'";
   res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(head?undefined:html);
 }
-export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',notifyEnabled=process.env.PORTAL_MAIL_NOTIFY_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
+export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',notifyEnabled=process.env.PORTAL_MAIL_NOTIFY_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,fetchDirectory,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
   const html=await readFile(new URL('../dist/mail.html',import.meta.url),'utf8');
   if(trustedProxies.some(p=>!isIP(p)))throw new Error('Invalid mail trusted proxy');
   const proxies=new Set(trustedProxies);let auth,access,oauth,membership;
@@ -35,6 +36,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
   if(enabled){if(!directory||(!config&&!configPath))throw new Error('Mail login requires private configuration');config=config?parseMailConfig(config):readMailConfig(configPath);auth=openMailAuth({directory,config,now,localTest,fetchIdentity});try{access=openMailAccessStore({filename:join(directory,'mail-access.sqlite'),bootstrapOwner:bootstrapMailOwner(config),now});}catch(e){auth.close();throw e;}}
   if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies});}catch(e){auth.close();access.close();throw e;}}
   if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
+  const projectDirectory=enabled?(fetchDirectory?{list:fetchDirectory}:localTest?null:createWorkspaceDirectory({config,now})):null;
   return {enabled,workspaceDirectory:directory?join(directory,'workspace'):null,
     // Trusted in-process adapter. Every request re-reads the current lab role.
     identity(req,{embedded=false,write=false}={}) {
@@ -44,6 +46,14 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
       return {...access.me(session.subject),csrf:session.csrf,expiresAt:session.expiresAt};
     },
     members(subject){return access.listLabMembers(subject);},
+    async projectMembers(subject){
+      const known=access.listLabMembers(subject);
+      if(!projectDirectory)return {members:known,source:'registered',unavailable:false};
+      try{
+        const members=await projectDirectory.list(),verified=new Map(known.map(m=>[m.subject,m]));
+        return {members:members.map(m=>({...m,email:verified.get(m.subject)?.email||m.email})),source:'feishu',unavailable:false};
+      }catch{return {members:known,source:'registered',unavailable:true};}
+    },
     hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){membership?.close();oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
     if(oauth?.handle(req,res,path,host))return true;
     if(!['/mail','/mail/','/mail/embedded','/mail/auth/launch','/mail/auth/callback'].includes(path)&&!path.startsWith('/api/mail/'))return false;

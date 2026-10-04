@@ -1,6 +1,12 @@
 // 110lab workspace frontend. Entry: initWorkspace(). No deps, textContent only.
-const EMBEDDED = typeof location !== 'undefined' && (location.pathname === '/workbench/embedded' || location.pathname.endsWith('/workbench/embedded'));
+const PATHNAME = typeof location !== 'undefined' ? String(location.pathname || '') : '';
+const PROJECTS_PAGE = PATHNAME === '/projects/' || PATHNAME === '/projects' || PATHNAME === '/projects/embedded'
+  || PATHNAME.endsWith('/projects') || PATHNAME.endsWith('/projects/embedded');
+const EMBEDDED = PATHNAME === '/workbench/embedded' || PATHNAME.endsWith('/workbench/embedded')
+  || PATHNAME === '/projects/embedded' || PATHNAME.endsWith('/projects/embedded');
 const MAIL_PREFIX = '/api/mail/' + (EMBEDDED ? 'embedded/' : '');
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (value) => typeof value === 'string' && UUID_RE.test(value);
 const DELIVERY_LABEL={RECEIVED:'已接收',SENDING:'发送中',RETRYING:'重试中',SENT:'已发送',FAILED:'发送失败',UNKNOWN:'发送结果待核实',EXPIRED:'文件已到保留期限'};
 const PREFIX = '/api/workspace/' + (EMBEDDED ? 'embedded/' : '');
 const ROLE_LABEL = { super_admin: '实验室超级管理员', admin: '实验室管理员', member: '实验室成员' };
@@ -16,7 +22,13 @@ const state = {
   todoFilter: 'all', projectFilter: 'active',
   selectedTodoKey: null, selectedProjectId: null,
   generation: 0, busy: false, dialogOpen: false, reqRequestId: null, reqTimer: null,
+  // Enterprise directory metadata. Preserved across searches and refreshes so a
+  // transient directory failure never clears the already picked members list.
+  membersSource: '', membersUnavailable: false, membersLoaded: false, membersLoading: false, membersError: '',
+  pendingProjectId: null,
 };
+// Picker local state for the currently open project dialog.
+const projectPicker = { profiles:new Map(), selected: new Set(), search: '', ownerSubject: '' };
 let activeDialog = null, activeDialogContext = null;
 
 const $ = (id) => document.getElementById(id);
@@ -105,6 +117,24 @@ function openApp(id) {
     'public-mail':'https://internal.110-lab.cn/mail',assessment:'https://47.109.176.127',requirements:'https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x'
   }[id]);
 }
+// Navigate to a project by id. Projects now live on their own application page
+// so the standalone workbench and embedded host both route through /projects.
+function navigateToProject(projectId) {
+  if (!isUuid(projectId)) return;
+  if (PROJECTS_PAGE) {
+    // On the project page we only need to switch selection to the requested id
+    // after the project list has loaded.
+    if (state.projects.some((p) => p.id === projectId)) {
+      state.selectedProjectId = projectId; state.pendingProjectId = null;
+      renderProjects(); renderProjectSide();
+    } else {
+      state.pendingProjectId = projectId;
+    }
+    return;
+  }
+  if (EMBEDDED) { postToParent({ type: '110lab-workspace-open-app', id: 'projects', projectId }); return; }
+  try { location.assign('/projects?project=' + encodeURIComponent(projectId)); } catch { /* ignore */ }
+}
 
 function toastError(err) {
   if (!err) return;
@@ -131,21 +161,34 @@ function selectTab(id) {
 }
 
 function renderShell() {
+  if($('ws-title'))$('ws-title').textContent=PROJECTS_PAGE?'项目立项':'工作台';
   setHidden($('ws-recruit-history'),!isAdminLike());
   const greet = $('ws-greeting'), chip = $('ws-role-chip'), login = $('ws-login'), logout = $('ws-logout');
   const admin = $('ws-admin-settings'), needed = $('ws-login-needed'), perms = $('ws-permissions-hint');
   const tabs = $('ws-tabs'), newBtn = $('ws-project-new');
   const reviewsChip = document.querySelector('[data-todo-filter="reviews"]');
   const recruitChip = document.querySelector('[data-todo-filter="recruitment"]');
+  const loginHint = $('ws-login-hint');
   if (!state.profile) {
-    if (greet) greet.textContent = '你的项目与协作';
+    if (greet) greet.textContent = PROJECTS_PAGE ? '项目立项' : '你的项目与协作';
     setHidden(chip, true); setHidden(login, false); setHidden(logout, true); setHidden(admin, true);
     setHidden(needed, false); setHidden(perms, true); setHidden(tabs, true); setHidden(newBtn, true);
     setHidden($('ws-panel-todos'), true); setHidden($('ws-panel-projects'), true);
-    setHidden(reviewsChip, true); setHidden(recruitChip, true); return;
+    setHidden(reviewsChip, true); setHidden(recruitChip, true);
+    if (loginHint) {
+      loginHint.textContent = PROJECTS_PAGE
+        ? '登录后可查看、创建和维护实验室项目。'
+        : '登录后可同步你的待办、里程碑和项目变更。';
+      loginHint.hidden = false;
+    }
+    const neededTitle = needed?.querySelector?.('p');
+    if (neededTitle) neededTitle.textContent = PROJECTS_PAGE
+      ? '通过飞书登录 查看和维护实验室项目'
+      : '通过飞书登录 查看个人待办和项目空间';
+    return;
   }
   const name = state.profile.name || state.profile.email || '成员';
-  if (greet) greet.textContent = name+'的工作台';
+  if (greet) greet.textContent = PROJECTS_PAGE ? '项目立项' : name+'的工作台';
   if (chip) { chip.textContent = ROLE_LABEL[state.profile.role] || '成员'; chip.dataset.role = state.profile.role || 'member'; chip.hidden = false; }
   setHidden(login, true); setHidden(logout, false); setHidden(admin, !isSuperAdmin()); setHidden(needed, true);
   if (perms) {
@@ -154,11 +197,22 @@ function renderShell() {
       : '实验室成员：可创建并维护自己负责的项目。';
     perms.hidden = true;
   }
-  setHidden(tabs, false); setHidden(newBtn, false);
-  setHidden(reviewsChip, !isAdminLike()); setHidden(recruitChip, !isAdminLike());
-  const activeTab = currentTab();
-  setHidden($('ws-panel-todos'), activeTab !== 'todos');
-  setHidden($('ws-panel-projects'), activeTab !== 'projects');
+  // Tabs only make sense on the workbench. The projects page shows a single panel.
+  setHidden(tabs, PROJECTS_PAGE);
+  setHidden(reviewsChip, !isAdminLike());
+  setHidden(recruitChip, !isAdminLike());
+  if (PROJECTS_PAGE) {
+    setHidden($('ws-panel-todos'), true);
+    setHidden($('ws-panel-projects'), false);
+    setHidden(newBtn, false);
+  } else {
+    // Workbench no longer shows the project tab or panel; everything project
+    // related moved to the standalone projects page.
+    setHidden($('ws-tab-projects'), true);
+    setHidden($('ws-panel-projects'), true);
+    setHidden($('ws-panel-todos'), false);
+    setHidden(newBtn, true);
+  }
 }
 
 function updateCounts() {
@@ -306,8 +360,8 @@ function renderMilestoneDetail(side, item) {
   const project = state.projects.find(p => p.id === item.projectId);
   const actions = el('div', 'ws-side-actions');
   const openBtn = el('button', 'ws-btn ws-btn-ghost', '查看项目');
-  openBtn.type = 'button'; openBtn.disabled = !project;
-  openBtn.onclick = () => { if (project) { selectTab('projects'); state.selectedProjectId = project.id; renderProjects(); renderProjectSide(); } };
+  openBtn.type = 'button'; openBtn.disabled = !isUuid(item.projectId);
+  openBtn.onclick = () => navigateToProject(item.projectId);
   actions.append(openBtn);
   if (item.milestoneId && project) {
     const ms = (project.milestones || []).find(m => m.id === item.milestoneId);
@@ -323,11 +377,10 @@ function renderMilestoneDetail(side, item) {
 }
 
 function renderProjectTodoDetail(side, item) {
-  const project = state.projects.find(p => p.id === item.projectId);
   const actions = el('div', 'ws-side-actions');
   const openBtn = el('button', 'ws-btn ws-btn-primary', '打开项目');
-  openBtn.type = 'button'; openBtn.disabled = !project;
-  openBtn.onclick = () => { if (project) { selectTab('projects'); state.selectedProjectId = project.id; renderProjects(); renderProjectSide(); } };
+  openBtn.type = 'button'; openBtn.disabled = !isUuid(item.projectId);
+  openBtn.onclick = () => navigateToProject(item.projectId);
   actions.append(openBtn);
   side.append(actions);
 }
@@ -482,17 +535,95 @@ function setFormBusy(form, busy) {
   for (const node of form.querySelectorAll('input, textarea, select, button')) node.disabled = !!busy;
 }
 
-function populateMembersSelect(select, selectedSubjects, ownerSubject) {
-  if (!select) return; clear(select);
-  const selected = new Set(selectedSubjects || []);
-  for (const m of state.members) {
-    if (m.subject === ownerSubject) continue;
-    const opt = document.createElement('option');
-    opt.value = m.subject;
-    opt.textContent = (m.name || m.email) + ' · ' + (m.email || '');
-    if (selected.has(m.subject)) opt.selected = true;
-    select.append(opt);
+// Member picker — searchable checkbox list that is resilient to directory
+// failures. Already selected members are kept visible even when the directory
+// is unavailable so a hiccup never silently discards saved choices.
+function memberSearchMatches(member, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return (
+    String(member.name || '').toLowerCase().includes(q) ||
+    String(member.email || '').toLowerCase().includes(q) ||
+    String(member.subject || '').toLowerCase().includes(q)
+  );
+}
+
+function renderMemberPicker() {
+  const list = $('ws-field-members-list'); if (!list) return;
+  clear(list);
+  const owner = projectPicker.ownerSubject;
+  const selected = projectPicker.selected;
+  const query = projectPicker.search || '';
+  // Known universe: directory entries plus any already picked subjects so
+  // picks persist even when the directory is unavailable or filtered out.
+  const byId = new Map();
+  for (const m of state.members || []) if (m && m.subject && m.subject !== owner) byId.set(m.subject, m);
+  for (const subject of selected) {
+    if (subject === owner || byId.has(subject)) continue;
+    byId.set(subject, projectPicker.profiles.get(subject)||{ subject, name: '', email: '' });
   }
+  const all = Array.from(byId.values());
+  const visible = all.filter((m) => selected.has(m.subject) || memberSearchMatches(m, query));
+  visible.sort((a, b) => {
+    const sa = selected.has(a.subject), sb = selected.has(b.subject);
+    if (sa !== sb) return sa ? -1 : 1;
+    return String(a.name || a.email || a.subject).localeCompare(String(b.name || b.email || b.subject), 'zh-CN');
+  });
+
+  const summary = $('ws-field-members-summary');
+  if (summary) {
+    const parts = ['已选 ' + selected.size + ' 人'];
+    if (state.membersLoading && !state.membersLoaded) parts.push('目录加载中…');
+    else if (state.membersUnavailable) parts.push('企业目录暂不可用');
+    else if (state.membersSource) parts.push('来源：' + (state.membersSource === 'feishu' ? '飞书通讯录' : '已登录成员'));
+    summary.textContent = parts.join(' · ');
+  }
+  const status = $('ws-field-members-status');
+  if (status) {
+    let text = '';
+    if (state.membersLoading && !state.membersLoaded) text = '正在加载企业目录…';
+    else if (state.membersUnavailable) text = '企业目录暂时无法读取，已保留当前选择。可点击刷新重试。';
+    else if (state.membersError) text = state.membersError;
+    status.textContent = text; status.hidden = !text;
+  }
+
+  if (visible.length === 0) {
+    const empty = el('p', 'ws-member-empty');
+    empty.textContent = query ? '没有匹配的成员。' : (state.membersUnavailable ? '企业目录暂不可用。' : '目录中暂无其他成员。');
+    list.append(empty);
+    return;
+  }
+
+  for (const m of visible) {
+    const row = el('label', 'ws-member-row');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = m.subject;
+    cb.checked = selected.has(m.subject);
+    cb.addEventListener('change', () => {
+      if (cb.checked) {selected.add(m.subject);projectPicker.profiles.set(m.subject,m);} else selected.delete(m.subject);
+      renderMemberPicker();
+    });
+    const text = el('span', 'ws-member-text');
+    const name = el('span', 'ws-member-name', m.name || m.email || m.subject);
+    text.append(name);
+    const emailValue = m.email ? String(m.email) : '';
+    if (emailValue) text.append(el('span', 'ws-member-email', emailValue));
+    if (!byId.get(m.subject)?.name && !byId.get(m.subject)?.email) {
+      text.append(el('span', 'ws-member-email', '（已选成员，未在当前目录命中）'));
+    }
+    row.append(cb, text);
+    list.append(row);
+  }
+}
+
+function refreshMemberPicker() { renderMemberPicker(); updateMemberPickerSaveState(); }
+
+function updateMemberPickerSaveState() {
+  const submit = $('ws-form-project-submit'); if (!submit) return;
+  // Disable save while the directory is still being loaded for the first time
+  // so the user never submits before seeing the picker populate.
+  if (state.membersLoading && !state.membersLoaded) { submit.disabled = true; return; }
+  if (!state.busy) submit.disabled = false;
 }
 
 function populateAssigneeSelect(select, project) {
@@ -517,22 +648,36 @@ function openProjectDialog(project) {
   $('ws-form-project-title').textContent = project ? '编辑项目' : '新建项目';
   $('ws-field-name').value = project ? (project.name || '') : '';
   $('ws-field-summary').value = project ? (project.summary || '') : '';
-  const members = project && Array.isArray(project.members) ? project.members.map(m => m.subject) : [];
-  populateMembersSelect($('ws-field-members'), members, project?.ownerSubject||state.profile?.subject);
+  // Reset the picker local state so stale selections never leak between opens.
+  projectPicker.selected = new Set(
+    project && Array.isArray(project.members)
+      ? project.members.map((m) => m && m.subject).filter(Boolean)
+      : []
+  );
+  projectPicker.profiles=new Map((project?.members||[]).map(m=>[m.subject,m]));
+  projectPicker.search = '';
+  projectPicker.ownerSubject = (project && project.ownerSubject) || state.profile?.subject || '';
+  const searchInput = $('ws-field-members-search'); if (searchInput) searchInput.value = '';
   const links = (project && project.links) || {};
   $('ws-field-link-repo').value = links.repository || '';
   $('ws-field-link-req').value = links.requirements || '';
   $('ws-field-link-docs').value = links.docs || '';
   $('ws-field-link-demo').value = links.demo || '';
   openDialog('ws-dialog-project', { project });
+  // Ensure the enterprise directory is loaded (or refreshed) on every open so
+  // long-lived dialogs see new teammates.
+  void loadMembers({ refresh: true });
+  refreshMemberPicker();
 }
 
 function collectProjectForm() {
   const name = String($('ws-field-name').value || '').trim();
   const summary = String($('ws-field-summary').value || '').trim();
-  const subjects = Array.from($('ws-field-members').selectedOptions).map(o => o.value);
-  const members = subjects.map(s => state.members.find(m => m.subject === s)).filter(Boolean)
-    .map(m => ({ subject: m.subject, name: m.name, email: m.email }));
+  // Send plain {subject} rows; the server rejects any subject that is not in
+  // its own enterprise directory, so arbitrary / stale ids cannot slip through.
+  const owner = projectPicker.ownerSubject;
+  const subjects = Array.from(projectPicker.selected).filter((s) => typeof s === 'string' && s && s !== owner);
+  const members = subjects.map((subject) => ({ subject }));
   const links = {
     repository: String($('ws-field-link-repo').value || '').trim(),
     requirements: String($('ws-field-link-req').value || '').trim(),
@@ -684,6 +829,9 @@ function submitRecruitForm(e) {
 function clearIdentity() {
   state.generation++;state.profile=null;state.csrf='';state.members=[];state.projects=[];state.todos=[];state.todoSources=null;state.requirements=null;
   state.selectedProjectId=null;state.selectedTodoKey=null;state.reqRequestId=null;state.todosReady=false;
+  state.membersSource=''; state.membersUnavailable=false; state.membersLoaded=false; state.membersLoading=false; state.membersError='';
+  state.pendingProjectId=null;
+  projectPicker.selected = new Set(); projectPicker.profiles.clear(); projectPicker.search = ''; projectPicker.ownerSubject = '';
   clearTimeout(state.reqTimer);finishLogin();
   for(const dlg of document.querySelectorAll('.ws-dialog')){closeDialog(dlg);dlg.querySelector('form')?.reset();}
   $('ws-history-list')?.replaceChildren();
@@ -699,9 +847,35 @@ async function loadSession() {
     if(epoch===state.generation&&state.profile)requestRequirements();
   }catch(e){if(epoch!==state.generation)return;if(e.status===401)clearIdentity();else setStatus(e.message,'error');}
 }
-async function loadMembers() {
-  const epoch=state.generation;
-  try{const r=await api('members');if(epoch===state.generation&&state.profile)state.members=r.members||[];}catch(e){if(epoch===state.generation)toastError(e);}
+// Read the enterprise directory. On transient failures we deliberately keep
+// state.members untouched so already-selected teammates and the owner picker
+// never silently disappear from an open dialog.
+let membersRead=0;
+async function loadMembers({ refresh = false } = {}) {
+  const epoch = state.generation,serial=++membersRead;
+  state.membersLoading = true; state.membersError = '';
+  if (refresh) refreshMemberPicker();
+  try {
+    const r = await api('members');
+    if (epoch !== state.generation || serial!==membersRead || !state.profile) return;
+    state.members = Array.isArray(r?.members) ? r.members.filter((m) => m && typeof m.subject === 'string') : [];
+    state.membersSource = typeof r?.source === 'string' ? r.source : '';
+    state.membersUnavailable = !!r?.unavailable;
+    state.membersLoaded = true;
+    state.membersError = state.membersUnavailable ? '企业目录暂时无法读取，已保留当前选择。' : '';
+  } catch (e) {
+    if (epoch !== state.generation||serial!==membersRead) return;
+    // Preserve previously known members; just surface a human readable error
+    // next to the picker. 401/403 continue to drive the shared login flow.
+    state.membersUnavailable = true;
+    state.membersError = e.status === 0 ? '企业目录当前不可访问（网络）。' : (e.message || '企业目录读取失败');
+    if (e.status === 401 || e.status === 403) toastError(e);
+  } finally {
+    if (epoch === state.generation&&serial===membersRead) {
+      state.membersLoading = false;
+      refreshMemberPicker();
+    }
+  }
 }
 let projectsRead=0,todosRead=0;
 async function loadProjects() {
@@ -709,7 +883,15 @@ async function loadProjects() {
   try{
     const r=await api('projects');if(epoch!==state.generation||serial!==projectsRead||!state.profile)return;
     state.projects=r.projects||[];
-    if(!filteredProjects().some(x=>x.id===state.selectedProjectId))state.selectedProjectId=filteredProjects()[0]?.id||null;
+    // If a specific project id was requested (via query string, parent host
+    // message, or todo navigation) prefer it as the active selection.
+    const requested = state.pendingProjectId;
+    if (requested && state.projects.some((p) => p.id === requested)) {
+      state.selectedProjectId = requested;
+      state.pendingProjectId = null;
+    } else if(!filteredProjects().some(x=>x.id===state.selectedProjectId)) {
+      state.selectedProjectId=filteredProjects()[0]?.id||null;
+    }
     renderProjects();renderProjectSide();
   }catch(e){if(epoch===state.generation&&serial===projectsRead)toastError(e);}
 }
@@ -768,6 +950,7 @@ async function handleParentMessage(ev) {
   if (!EMBEDDED || typeof window === 'undefined' || ev.source !== window.parent) return;
   const data = ev.data;
   if (!data || typeof data !== 'object') return;
+  if(data.type==='110lab-workspace-activated'){if(!state.busy&&!state.dialogOpen)await loadSession();return;}
   if(data.type==='110lab-mail-host-opened'&&data.state===state.loginFlow?.state){setStatus('请在飞书完成授权 返回后自动登录');return;}
   if(data.type==='110lab-mail-host-result'&&data.state===state.loginFlow?.state){
     const flow=state.loginFlow;
@@ -799,6 +982,18 @@ async function handleParentMessage(ev) {
     return;
   }
   if (data.type === '110lab-workspace-ready') { requestRequirements(); return; }
+  // Parent-driven project selection. Only accepts well-formed UUIDs from the
+  // real parent frame (checked above via ev.source === window.parent).
+  if (data.type === '110lab-workspace-select-project' && isUuid(data.projectId)) {
+    if (!PROJECTS_PAGE) return;
+    if (state.projects.some((p) => p.id === data.projectId)) {
+      state.selectedProjectId = data.projectId; state.pendingProjectId = null;
+      renderProjects(); renderProjectSide();
+    } else {
+      state.pendingProjectId = data.projectId;
+    }
+    return;
+  }
 }
 
 function finishLogin(){clearTimeout(state.loginTimer);state.loginFlow=null;state.busy=false;if($('ws-login'))$('ws-login').disabled=false;}
@@ -825,6 +1020,26 @@ async function doLogout(){
 function bindEvents() {
   $('ws-recruit-history').onclick=()=>showHistory();
   if (EMBEDDED && document && document.body) document.body.classList.add('is-workbench-embedded');
+  if (PROJECTS_PAGE && document && document.body) document.body.classList.add('is-workspace-projects');
+  // On the standalone projects page, honor ?project=<uuid> if it was supplied.
+  if (PROJECTS_PAGE && typeof location !== 'undefined' && typeof location.search === 'string') {
+    try {
+      const params = new URLSearchParams(location.search);
+      const requested = params.get('project');
+      if (isUuid(requested)) state.pendingProjectId = requested;
+    } catch { /* ignore */ }
+  }
+  // Member picker events — bound once, read picker state on each interaction.
+  const memberSearch = $('ws-field-members-search');
+  if (memberSearch) memberSearch.addEventListener('input', (e) => {
+    projectPicker.search = String(e.target.value || '');
+    renderMemberPicker();
+  });
+  const memberRefresh = $('ws-field-members-refresh');
+  if (memberRefresh) memberRefresh.addEventListener('click', () => {
+    if (state.membersLoading) return;
+    void loadMembers({ refresh: true });
+  });
   const loginBtn = $('ws-login'); if (loginBtn) loginBtn.onclick = () => { void doLogin(); };
   const logoutBtn = $('ws-logout'); if (logoutBtn) logoutBtn.onclick = () => { void doLogout(); };
   const adminBtn = $('ws-admin-settings'); if (adminBtn) adminBtn.onclick = () => { if (isSuperAdmin()) openApp('public-mail'); };
