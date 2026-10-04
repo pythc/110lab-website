@@ -432,7 +432,7 @@
 }
 .ws-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .ws-field label { font-size: 13px; font-weight: 600; color: var(--ws-slate); }
-.ws-field input,
+.ws-field input:not([type="checkbox"]):not([type="radio"]),
 .ws-field textarea,
 .ws-field select {
   width: 100%;
@@ -466,10 +466,12 @@
 .ws-member-controls input[type="search"]:focus { outline: 2px solid var(--ws-focus); outline-offset: 1px; border-color: var(--ws-focus); }
 .ws-member-controls .ws-btn { flex: 0 0 auto; }
 .ws-member-list { max-height: 180px; overflow: auto; border: 1px solid var(--ws-line); border-radius: 8px; background: var(--ws-surface); padding: 4px; display: flex; flex-direction: column; gap: 2px; min-height: 56px; }
-.ws-member-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.ws-member-row { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 6px; cursor: pointer; min-width: 0; flex-shrink: 0; }
 .ws-member-row:hover { background: var(--ws-surface-soft); }
-.ws-member-row input[type="checkbox"] { margin: 0; flex: 0 0 auto; }
-.ws-member-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 13px; line-height: 1.4; }
+.ws-member-row:has(input:checked) { background: var(--ws-indigo-soft); }
+.ws-field input[type="checkbox"],
+.ws-field input[type="radio"] { width: 16px; height: 16px; padding: 0; margin: 0; flex: 0 0 16px; accent-color: var(--ws-indigo); }
+.ws-member-text { display: flex; flex: 1; flex-direction: column; gap: 1px; min-width: 0; font-size: 13px; line-height: 1.4; }
 .ws-member-name { color: var(--ws-ink); font-weight: 600; overflow-wrap: anywhere; }
 .ws-member-email { color: var(--ws-muted); font-size: 11px; overflow-wrap: anywhere; }
 .ws-member-empty { color: var(--ws-muted); font-size: 12px; padding: 10px 8px; text-align: center; }
@@ -492,6 +494,16 @@
   margin-top: 4px;
   flex-wrap: wrap;
 }
+
+/* Keep the project actions reachable inside short plugin frames. Only the
+   fields scroll; resizing the summary cannot push the footer off screen. */
+#ws-dialog-project { max-height: calc(100dvh - 24px); overflow: hidden; }
+#ws-form-project { padding: 0; gap: 0; max-height: calc(100dvh - 26px); }
+#ws-form-project > .ws-dialog-title { padding: 16px 18px; flex: none; border-bottom: 1px solid var(--ws-line); }
+#ws-form-project > .ws-form-error { margin: 10px 18px 0; flex: none; }
+.ws-project-fields { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.ws-project-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#ws-form-project > .ws-dialog-actions { flex: none; margin: 0; padding: 12px 18px; border-top: 1px solid var(--ws-line); background: var(--ws-surface); }
 
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
   .ws-btn, .ws-chip, .ws-item, .ws-ms-done-btn { transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease; }
@@ -517,6 +529,7 @@ body.is-workbench-embedded main.shell { padding-top: 10px; }
   .ws-panel-head { align-items: stretch; }
   .ws-side { position: static; max-height: none; }
   .ws-dialog, .ws-dialog-small, .ws-dialog-wide { width: calc(100% - 16px); }
+  .ws-project-links { grid-template-columns: 1fr; }
 }
 
 /* Keep a single compact header when hosted in the plugin. */
