@@ -6,22 +6,28 @@ import {ListToolsRequestSchema,CallToolRequestSchema,ListResourcesRequestSchema,
 import {createMailLoginClient,portalFetch,RESOURCE} from './local-portal-client.mjs';
 import {fileURLToPath} from 'node:url';
 import {realpathSync} from 'node:fs';
+import {createRequirementTodos} from './local-requirement-todos.mjs';
 
-export function createLocalPortalBridge({fetchImpl=portalFetch,mail=createMailLoginClient({fetchImpl})}={}){
-  const upstream=new Client({name:'110lab-local-workbench',version:'0.8.7'});
+export function createLocalPortalBridge({fetchImpl=portalFetch,mail=createMailLoginClient({fetchImpl}),requirementTodos=createRequirementTodos()}={}){
+  const upstream=new Client({name:'110lab-local-workbench',version:'0.9.0'});
   const transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{fetch:fetchImpl});
   let connecting;const ready=()=>connecting ||= upstream.connect(transport).catch(e=>{connecting=null;throw e;});
-  const server=new Server({name:'110lab',version:'0.8.7'},{capabilities:{tools:{},resources:{}}});
+  const server=new Server({name:'110lab',version:'0.9.0'},{capabilities:{tools:{},resources:{}}});
   const privateMeta={securitySchemes:[{type:'noauth'}],ui:{visibility:['app']},'openai/widgetAccessible':true,'openai/visibility':'private'};
   server.setRequestHandler(ListToolsRequestSchema,async()=>{
     await ready();const result=await upstream.listTools();
     result.tools=result.tools.map(tool=>tool.name==='connect_110lab_mail'?{...tool,securitySchemes:privateMeta.securitySchemes,_meta:privateMeta}:{...tool,securitySchemes:tool._meta?.securitySchemes});
-    result.tools.push({name:'complete_110lab_mail_login',description:'等待或取消本机 OAuth 回调 仅供发起登录的插件界面调用',inputSchema:{type:'object',properties:{state:{type:'string',pattern:'^[\\w-]{43}$'},cancel:{type:'boolean'}},required:['state'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false},securitySchemes:privateMeta.securitySchemes,_meta:privateMeta});return result;
+    result.tools.push({name:'complete_110lab_mail_login',description:'等待或取消本机 OAuth 回调 仅供发起登录的插件界面调用',inputSchema:{type:'object',properties:{state:{type:'string',pattern:'^[\\w-]{43}$'},cancel:{type:'boolean'}},required:['state'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false},securitySchemes:privateMeta.securitySchemes,_meta:privateMeta});
+    result.tools.push({name:'get_my_110lab_requirement_todos',description:'读取本机已连接需求账号的当前处理事项及待评审 PR 仅供工作台显示',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false},securitySchemes:privateMeta.securitySchemes,_meta:privateMeta});return result;
   });
   server.setRequestHandler(CallToolRequestSchema,async request=>{
     const {name,arguments:args}=request.params;
     if(name==='connect_110lab_mail')return mail.start(args);
     if(name==='complete_110lab_mail_login')return mail.finish(args);
+    if(name==='get_my_110lab_requirement_todos'){
+      if(args&&Object.keys(args).length)throw new Error('Invalid arguments');
+      return {content:[{type:'text',text:'个人需求待办已读取'}],_meta:{requirementTodos:await requirementTodos()}};
+    }
     if(!['open_110lab','search_110lab_projects'].includes(name))throw new Error('Unknown tool');
     await ready();return upstream.callTool({name,arguments:args});
   });

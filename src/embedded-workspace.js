@@ -58,6 +58,23 @@ export async function handleMailExternalRequest(event,{frame,openExternal,callTo
   return false;
 }
 
+const WORKBENCH_PAGE=Object.freeze({title:'工作台',url:'https://internal.110-lab.cn/workbench/embedded'});
+
+export async function handleWorkspaceRequest(event,{frame,openExternal,callTool,show}) {
+  if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame?.contentWindow)return false;
+  const m=event.data;
+  if(m?.type==='110lab-workspace-open-app'&&Object.hasOwn(EMBEDDED_APPS,m.id)){show(m.id);return true;}
+  if(m?.type==='110lab-workspace-open-link'&&typeof m.url==='string'&&m.url.length<=2000){
+    try{const url=new URL(m.url);if(url.protocol==='https:'&&!url.username&&!url.password)await openExternal?.(url.href);}catch{}return true;
+  }
+  if(m?.type==='110lab-workspace-requirements'&&/^[a-f0-9-]{36}$/.test(m.requestId||'')){
+    let result={state:'unavailable',items:[]};
+    try{const r=await callTool?.({name:'get_my_110lab_requirement_todos',arguments:{}});if(!r?.isError&&r?._meta?.requirementTodos)result=r._meta.requirementTodos;}catch{}
+    frame.contentWindow.postMessage({type:'110lab-workspace-requirements-result',requestId:m.requestId,result},'https://internal.110-lab.cn');return true;
+  }
+  return false;
+}
+
 export function initEmbeddedWorkspace() {
   const main = document.querySelector('main.shell');
   const footer = document.querySelector('.wb-footer');
@@ -87,7 +104,7 @@ export function initEmbeddedWorkspace() {
   document.querySelector('.masthead-inner')?.append(actions);
 
   function createPage(id) {
-    const app = EMBEDDED_APPS[id];
+    const app = id==='workbench'?WORKBENCH_PAGE:EMBEDDED_APPS[id];
     const page = document.createElement('section');
     page.className = 'embedded-page';
     page.tabIndex = -1;
@@ -106,12 +123,12 @@ export function initEmbeddedWorkspace() {
 
   function show(id) {
     if (id !== 'workbench' && !Object.hasOwn(EMBEDDED_APPS, id)) return;
-    if (id !== 'workbench' && !pages.has(id)) createPage(id);
+    if (!pages.has(id)) createPage(id);
     currentId=id;actions.hidden=id==='workbench';
     if(id!=='workbench'){external.href=EMBEDDED_APPS[id].externalUrl||EMBEDDED_APPS[id].url;external.setAttribute('aria-label','独立打开'+EMBEDDED_APPS[id].title);retry.hidden=id!=='requirements';}
-    main.hidden = id !== 'workbench';
-    if (footer) footer.hidden = id !== 'workbench';
-    outlet.hidden = id === 'workbench';
+    main.hidden = true;
+    if (footer) footer.hidden = true;
+    outlet.hidden = false;
     for (const [key, page] of pages) page.hidden = key !== id;
     for (const [key, control] of controls) {
       control.setAttribute('aria-current', key === id ? 'page' : 'false');
@@ -141,12 +158,15 @@ export function initEmbeddedWorkspace() {
   }, {capture: true});
   show('workbench');
   window.addEventListener('message',async event=>{
-    const page=pages.get('public-mail');
-    if(!page||page.hidden)return;
+    const page=pages.get(currentId);
+    if(!page||page.hidden||!['public-mail','workbench'].includes(currentId))return;
+    const frame=page.querySelector('iframe');
+    if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame.contentWindow)return;
+    if(currentId==='workbench'&&await handleWorkspaceRequest(event,{frame,openExternal:externalOpener,callTool:toolCaller,show}))return;
     if(event.data?.type==='110lab-mail-host-login'){
       if(loginPending)return;loginPending=true;
       try{await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});}finally{loginPending=false;}
     }else await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});
   });
-  return {show,setExternalOpener(opener){externalOpener=opener;},setToolCaller(caller){toolCaller=caller;}};
+  return {show,setExternalOpener(opener){externalOpener=opener;},setToolCaller(caller){toolCaller=caller;pages.get('workbench')?.querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-ready'},'https://internal.110-lab.cn');}};
 }

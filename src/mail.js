@@ -1,6 +1,6 @@
 const embedded=location.pathname==='/mail/embedded',prefix='/api/mail/'+(embedded?'embedded/':'');
 let csrf='',revision=null,profile=null,flow=null,busy=false,generation=0,action=null,hostPending=false,lastHostRequest=0,hostTimer;
-const $=id=>document.getElementById(id),labels={super_admin:'超级管理员',admin:'普通管理员',member:'普通成员'};
+const $=id=>document.getElementById(id),labels={super_admin:'超级管理员',admin:'实验室管理员',member:'普通成员'};
 function message(text=''){ $('message').textContent=text;$('message').hidden=!text; }
 function resetNotify(text='请先登录'){$('open-notify').hidden=true;$('notify-account-hint').hidden=true;$('notify-status').textContent=text;}
 async function loadNotify(epoch){
@@ -16,7 +16,7 @@ async function api(path,{method='GET',data}={}){
 }
 function tab(id){for(const name of ['mailboxes','administrators','audit'])$(name).hidden=name!==id;document.querySelectorAll('[data-tab]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===id)));}
 function clearIdentity(){profile=null;csrf='';revision=null;resetNotify();$('identity').textContent='未登录';$('login').hidden=false;$('logout').hidden=true;$('admin-list').replaceChildren();$('audit-list').replaceChildren();$('member').replaceChildren(new Option('选择成员',''));document.querySelectorAll('[data-tab]:not([data-tab="mailboxes"])').forEach(b=>b.hidden=true);tab('mailboxes');}
-function ask(kind,email){action={kind,email,revision};$('confirm-title').textContent={grant:'添加管理员',revoke:'移除管理员',transfer:'转让超级管理员'}[kind];$('confirm-text').textContent=email;$('transfer-warning').hidden=kind!=='transfer';$('confirmation').showModal();}
+function ask(kind,email){action={kind,email,revision};$('confirm-title').textContent={grant:'添加实验室管理员',revoke:'移除实验室管理员',transfer:'转让超级管理员'}[kind];$('confirm-text').textContent=email+(kind==='grant'?' 将可处理项目立项、招新待办并收发通知邮箱':kind==='revoke'?' 将失去项目审批、招新管理及通知邮箱权限':'');$('transfer-warning').hidden=kind!=='transfer';$('confirmation').showModal();}
 function renderAdministrators(list,members){
   revision=list.revision;$('admin-list').replaceChildren();$('member').replaceChildren(new Option('选择成员',''));
   for(const a of list.administrators){const row=document.createElement('li'),info=document.createElement('div'),name=document.createElement('strong'),detail=document.createElement('small');info.className='admin-info';name.textContent=a.name||a.email;detail.textContent=a.email;info.append(name,detail);row.append(info);
@@ -26,7 +26,7 @@ function renderAdministrators(list,members){
   }
   const existing=new Set(list.administrators.map(a=>a.email));for(const m of members)if(!existing.has(m.email))$('member').append(new Option(m.name+' · '+m.email,m.email));
 }
-function renderAudit(events){$('audit-list').replaceChildren();for(const e of events){const row=document.createElement('li'),info=document.createElement('div'),text=document.createElement('p'),time=document.createElement('small');info.className='audit-info';text.textContent=({grant:'添加管理员',revoke:'移除管理员',transfer:'转让超级管理员',bootstrap:'初始化超级管理员'}[e.action]||e.action)+' · '+(e.targetEmail||'');const date=e.at;time.textContent=(date?new Date(date).toLocaleString('zh-CN'):'')+' · '+(e.actorEmail||'');info.append(text,time);row.append(info);$('audit-list').append(row);}}
+function renderAudit(events){$('audit-list').replaceChildren();for(const e of events){const row=document.createElement('li'),info=document.createElement('div'),text=document.createElement('p'),time=document.createElement('small');info.className='audit-info';text.textContent=({grant:'添加实验室管理员',revoke:'移除实验室管理员',transfer:'转让超级管理员',bootstrap:'初始化超级管理员'}[e.action]||e.action)+' · '+(e.targetEmail||'');const date=e.at;time.textContent=(date?new Date(date).toLocaleString('zh-CN'):'')+' · '+(e.actorEmail||'');info.append(text,time);row.append(info);$('audit-list').append(row);}}
 async function load(){
   const epoch=++generation;
   try{const me=await api('session');if(epoch!==generation)return;profile=me;csrf=me.csrf;$('identity').textContent=me.name+' · '+labels[me.role];$('login').hidden=true;$('logout').hidden=false;$('handoff').hidden=true;

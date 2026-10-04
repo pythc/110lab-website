@@ -28,6 +28,20 @@ try{
   assert.equal((await call('/api/mail/administrators/transfer',{email:member.email,revision:updated.body.revision,confirmed:true},a)).status,200);
   assert.equal((await call('/api/mail/administrators',undefined,a)).status,403);
   assert.equal((await call('/api/mail/session',undefined,b)).body.role,'super_admin');
+  const transferred=await call('/api/mail/administrators',undefined,b);
+  assert.equal((await call('/api/mail/administrators/revoke',{email:owner.email,revision:transferred.body.revision,confirmed:true},b)).status,200);
+  assert.equal((await call('/api/workspace/session')).status,401);
+  assert.equal((await call('/api/workspace/session',undefined,a)).body.role,'member');
+  const created=await call('/api/workspace/projects',{name:'虚构发布验证项目',summary:'验证打包后的立项流程',members:[],links:{repository:'',requirements:'',docs:'',demo:''}},a);
+  assert.equal(created.status,201);
+  const projectPath='/api/workspace/projects/'+created.body.id;
+  const applied=await call(projectPath+'/apply',{revision:created.body.revision,application:'虚构资料 申请共同开发'},a);
+  assert.equal(applied.status,200);
+  const review={revision:applied.body.revision,decision:'approve',note:'虚构发布验证'};
+  assert.equal((await call(projectPath+'/review',review,a)).status,403);
+  assert.equal((await call(projectPath+'/review',review,b)).body.phase,'active');
+  assert.equal((await call('/api/workspace/projects',undefined,{...b,Host:'110-lab.cn'})).status,404);
+  assert.equal((await call('/workbench/embedded')).status,200);
   assert.equal((await call('/mail',undefined,{Host:'110-lab.cn'})).status,404);
   assert.equal((await call('/api/mail/send',{},b)).status,404);
   const issuer='https://internal.110-lab.cn',resource=issuer+'/mcp/workbench-v6-1',verifier='v'.repeat(43),redirect='http://127.0.0.1:49111/callback/fixture_client';
@@ -41,5 +55,7 @@ try{
   const started=await call('/api/mail/embedded/auth/start',{}),handoff=await call('/mcp/workbench-v6-1',{jsonrpc:'2.0',id:7,method:'tools/call',params:{name:'connect_110lab_mail',arguments:{state:started.body.state}}},{Authorization:'Bearer '+tokens.body.access_token,Accept:'application/json, text/event-stream'});assert.equal(handoff.status,200);
   const embedded=await call('/api/mail/embedded/auth/redeem',{state:started.body.state,ticket:handoff.body.result._meta.mailHandoff.ticket},{Cookie:cookie(started)});assert.equal(embedded.status,200);
   assert.equal((await call('/api/mail/embedded/session',undefined,{Cookie:cookie(embedded)})).body.role,'super_admin');
-  console.log(JSON.stringify({isolatedHostOAuthToIframe:true,isolatedMailBundle:true,fictionalLogin:true,roleTransfer:true,oldSessionDenied:true,publicHostDenied:true,manualSendingClosed:true,externalCalls:false}));
+  assert.equal((await call('/api/workspace/embedded/projects',undefined,{Cookie:cookie(embedded)})).body.projects.length,1);
+  assert.equal((await call('/api/workspace/projects',undefined,{Cookie:cookie(embedded)})).status,401);
+  console.log(JSON.stringify({isolatedHostOAuthToIframe:true,isolatedMailBundle:true,fictionalLogin:true,roleTransfer:true,oldSessionDenied:true,publicHostDenied:true,manualSendingClosed:true,workspaceLifecycle:true,sharedRoles:true,externalCalls:false}));
 }finally{if(server)await new Promise(r=>{server.close(r);server.closeAllConnections();});rmSync(root,{recursive:true,force:true});}

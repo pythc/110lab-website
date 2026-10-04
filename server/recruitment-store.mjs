@@ -64,6 +64,10 @@ export function openRecruitmentStore(directory,{now=Date.now,maxStoredBytes=512*
   };
   return {
     root,hash,now,
+    // Used only behind the lab-admin boundary; never exposes receipt keys/files.
+    listForLab() {
+      return db.prepare('SELECT id,name,group_name,created_at,status FROM submissions WHERE created_at>? ORDER BY created_at,id LIMIT 3100').all(now()-30*DAY).map(r=>({id:r.id,name:r.name,group:r.group_name,receivedAt:new Date(r.created_at).toISOString(),deliveryStatus:r.status}));
+    },
     beginUpload(ip){consume('upload-start',hash(ip),30,10*60000);},
     workerReady(){const row=db.prepare('SELECT heartbeat FROM worker_health WHERE id=1').get();return !!row&&now()-row.heartbeat<120000;},
     heartbeat(){db.prepare('INSERT INTO worker_health VALUES(1,?) ON CONFLICT(id) DO UPDATE SET heartbeat=excluded.heartbeat').run(now());},

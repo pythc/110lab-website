@@ -1,0 +1,221 @@
+<section class="ws-region" id="ws-root" aria-labelledby="ws-title">
+  <header class="ws-topbar">
+    <div class="ws-topbar-main">
+      <h2 class="ws-title visually-hidden" id="ws-title">工作台</h2>
+      <p class="ws-greeting" id="ws-greeting">加载中…</p>
+    </div>
+    <div class="ws-topbar-side">
+      <span class="ws-role-chip" id="ws-role-chip" hidden></span>
+      <button type="button" class="ws-btn ws-btn-ghost" id="ws-admin-settings" hidden>管理员设置</button>
+      <button type="button" class="ws-btn ws-btn-primary" id="ws-login" hidden>飞书登录</button>
+      <button type="button" class="ws-btn ws-btn-ghost" id="ws-logout" hidden>退出</button>
+    </div>
+  </header>
+
+  <p class="ws-status" id="ws-status" role="status" aria-live="polite" aria-atomic="true" hidden></p>
+
+  <div class="ws-login-needed" id="ws-login-needed" hidden>
+    <p>通过飞书登录 查看个人待办和项目空间</p>
+    <p class="ws-login-hint" id="ws-login-hint" hidden></p>
+  </div>
+
+  <div class="ws-permissions-hint" id="ws-permissions-hint" hidden></div>
+
+  <div class="ws-tabs" role="tablist" id="ws-tabs" hidden>
+    <button type="button" role="tab" class="ws-tab" id="ws-tab-todos" aria-selected="true" aria-controls="ws-panel-todos">我的待办 <span class="ws-tab-count" id="ws-tab-todos-count" hidden></span></button>
+    <button type="button" role="tab" class="ws-tab" id="ws-tab-projects" aria-selected="false" aria-controls="ws-panel-projects">项目空间 <span class="ws-tab-count" id="ws-tab-projects-count" hidden></span></button>
+  </div>
+
+  <div class="ws-panel" id="ws-panel-todos" role="tabpanel" aria-labelledby="ws-tab-todos" hidden>
+    <div class="ws-panel-head">
+      <div class="ws-filters" role="group" aria-label="待办筛选">
+        <button type="button" class="ws-chip" data-todo-filter="all" aria-pressed="true">全部</button>
+        <button type="button" class="ws-chip" data-todo-filter="assigned" aria-pressed="false">我负责</button>
+        <button type="button" class="ws-chip" data-todo-filter="reviews" aria-pressed="false" hidden>待审核</button>
+        <button type="button" class="ws-chip" data-todo-filter="recruitment" aria-pressed="false" hidden>招新</button>
+      </div>
+      <div class="ws-panel-actions"><button type="button" class="ws-btn ws-btn-ghost" id="ws-recruit-history" hidden>招新处理记录</button><button type="button" class="ws-btn ws-btn-ghost ws-refresh" id="ws-todos-refresh" aria-label="刷新待办">刷新</button></div>
+    </div>
+    <p class="ws-source-line" id="ws-req-source" hidden></p>
+    <div class="ws-grid-split">
+      <div class="ws-list-wrap">
+        <ul class="ws-list" id="ws-todo-list" aria-label="待办列表"></ul>
+        <p class="ws-empty" id="ws-todo-empty" hidden>当前没有待办。</p>
+      </div>
+      <aside class="ws-side" id="ws-todo-side" aria-live="polite">
+        <p class="ws-side-hint">选择左侧条目查看详情。</p>
+      </aside>
+    </div>
+  </div>
+
+  <div class="ws-panel" id="ws-panel-projects" role="tabpanel" aria-labelledby="ws-tab-projects" hidden>
+    <div class="ws-panel-head">
+      <div class="ws-filters" role="group" aria-label="项目筛选">
+        <button type="button" class="ws-chip" data-project-filter="active" aria-pressed="true">进行中</button>
+        <button type="button" class="ws-chip" data-project-filter="mine" aria-pressed="false">我的项目</button>
+        <button type="button" class="ws-chip" data-project-filter="archived" aria-pressed="false">已归档</button>
+      </div>
+      <div class="ws-panel-actions">
+        <button type="button" class="ws-btn ws-btn-ghost ws-refresh" id="ws-projects-refresh" aria-label="刷新项目">刷新</button>
+        <button type="button" class="ws-btn ws-btn-primary" id="ws-project-new" hidden>新建项目</button>
+      </div>
+    </div>
+    <div class="ws-grid-split">
+      <div class="ws-list-wrap">
+        <ul class="ws-list" id="ws-project-list" aria-label="项目列表"></ul>
+        <p class="ws-empty" id="ws-project-empty" hidden>还没有项目。</p>
+      </div>
+      <aside class="ws-side" id="ws-project-side" aria-live="polite">
+        <p class="ws-side-hint">选择左侧项目查看详情。</p>
+      </aside>
+    </div>
+  </div>
+
+  <dialog class="ws-dialog" id="ws-dialog-history" aria-labelledby="ws-history-title"><h3 id="ws-history-title">操作记录</h3><ul id="ws-history-list" class="ws-list"></ul><div class="ws-dialog-actions"><button type="button" class="ws-btn ws-btn-ghost" data-ws-close>关闭</button></div></dialog>
+  <dialog class="ws-dialog ws-dialog-wide" id="ws-dialog-project" aria-labelledby="ws-form-project-title">
+    <form method="dialog" id="ws-form-project" novalidate>
+      <h3 class="ws-dialog-title" id="ws-form-project-title">新建项目</h3>
+      <p class="ws-form-error" id="ws-form-project-error" role="alert" hidden></p>
+      <div class="ws-field">
+        <label for="ws-field-name">名称</label>
+        <input type="text" id="ws-field-name" name="name" required maxlength="80" autocomplete="off">
+      </div>
+      <div class="ws-field">
+        <label for="ws-field-summary">简介</label>
+        <textarea id="ws-field-summary" name="summary" required maxlength="800" rows="3"></textarea>
+      </div>
+      <div class="ws-field">
+        <label for="ws-field-members">成员（可多选）</label>
+        <select id="ws-field-members" name="members" multiple size="5"></select>
+        <p class="ws-field-hint">按住 Ctrl / Command 多选。负责人自动包含。</p>
+      </div>
+      <fieldset class="ws-fieldset">
+        <legend>链接（可留空）</legend>
+        <div class="ws-field">
+          <label for="ws-field-link-repo">代码仓库（GitHub）</label>
+          <input type="url" id="ws-field-link-repo" name="repository" maxlength="2000" placeholder="https://github.com/owner/repo">
+        </div>
+        <div class="ws-field">
+          <label for="ws-field-link-req">需求</label>
+          <input type="url" id="ws-field-link-req" name="requirements" maxlength="2000" placeholder="https://">
+        </div>
+        <div class="ws-field">
+          <label for="ws-field-link-docs">文档</label>
+          <input type="url" id="ws-field-link-docs" name="docs" maxlength="2000" placeholder="https://">
+        </div>
+        <div class="ws-field">
+          <label for="ws-field-link-demo">演示</label>
+          <input type="url" id="ws-field-link-demo" name="demo" maxlength="2000" placeholder="https://">
+        </div>
+      </fieldset>
+      <div class="ws-dialog-actions">
+        <button type="button" class="ws-btn ws-btn-ghost" data-ws-close>取消</button>
+        <button type="submit" class="ws-btn ws-btn-primary" id="ws-form-project-submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="ws-dialog" id="ws-dialog-apply">
+    <form method="dialog" id="ws-form-apply" novalidate>
+      <h3 class="ws-dialog-title">提交项目立项申请</h3>
+      <p class="ws-form-hint" id="ws-form-apply-project"></p>
+      <p class="ws-form-error" id="ws-form-apply-error" role="alert" hidden></p>
+      <div class="ws-field">
+        <label for="ws-field-application">立项说明（必填）</label>
+        <textarea id="ws-field-application" name="application" required maxlength="2000" rows="6"></textarea>
+      </div>
+      <div class="ws-dialog-actions">
+        <button type="button" class="ws-btn ws-btn-ghost" data-ws-close>取消</button>
+        <button type="submit" class="ws-btn ws-btn-primary">提交申请</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="ws-dialog" id="ws-dialog-review">
+    <form method="dialog" id="ws-form-review" novalidate>
+      <h3 class="ws-dialog-title">审核项目</h3>
+      <p class="ws-form-hint" id="ws-form-review-project"></p>
+      <p class="ws-form-error" id="ws-form-review-error" role="alert" hidden></p>
+      <div class="ws-field">
+        <label>决定</label>
+        <div class="ws-radio-group">
+          <label class="ws-radio"><input type="radio" name="decision" value="approve" required> 通过</label>
+          <label class="ws-radio"><input type="radio" name="decision" value="return" required> 退回修改</label>
+        </div>
+      </div>
+      <div class="ws-field">
+        <label for="ws-field-review-note">备注（退回必填，通过可选）</label>
+        <textarea id="ws-field-review-note" name="note" maxlength="1000" rows="4"></textarea>
+      </div>
+      <div class="ws-dialog-actions">
+        <button type="button" class="ws-btn ws-btn-ghost" data-ws-close>取消</button>
+        <button type="submit" class="ws-btn ws-btn-primary">提交</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="ws-dialog ws-dialog-small" id="ws-dialog-archive">
+    <form method="dialog" id="ws-form-archive">
+      <h3 class="ws-dialog-title" id="ws-form-archive-title">归档项目</h3>
+      <p class="ws-form-hint" id="ws-form-archive-project"></p>
+      <p class="ws-form-error" id="ws-form-archive-error" role="alert" hidden></p>
+      <div class="ws-dialog-actions">
+        <button type="button" class="ws-btn ws-btn-ghost" data-ws-close>取消</button>
+        <button type="submit" class="ws-btn ws-btn-primary" id="ws-form-archive-submit">确认</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="ws-dialog" id="ws-dialog-milestone">
+    <form method="dialog" id="ws-form-milestone" novalidate>
+      <h3 class="ws-dialog-title">新建里程碑</h3>
+      <p class="ws-form-hint" id="ws-form-milestone-project"></p>
+      <p class="ws-form-error" id="ws-form-milestone-error" role="alert" hidden></p>
+      <div class="ws-field">
+        <label for="ws-field-ms-title">标题</label>
+        <input type="text" id="ws-field-ms-title" name="title" required maxlength="160" autocomplete="off">
+      </div>
+      <div class="ws-field">
+        <label for="ws-field-ms-assignee">负责人</label>
+        <select id="ws-field-ms-assignee" name="assignee" required></select>
+      </div>
+      <div class="ws-field">
+        <label for="ws-field-ms-due">截止日期（可选）</label>
+        <input type="date" id="ws-field-ms-due" name="dueAt">
+        <p class="ws-field-hint">按本地日期的 23:59 为截止时间。</p>
+      </div>
+      <div class="ws-dialog-actions">
+        <button type="button" class="ws-btn ws-btn-ghost" data-ws-close>取消</button>
+        <button type="submit" class="ws-btn ws-btn-primary">新建</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="ws-dialog ws-dialog-small" id="ws-dialog-ms-done">
+    <form method="dialog" id="ws-form-ms-done">
+      <h3 class="ws-dialog-title">完成里程碑</h3>
+      <p class="ws-form-hint" id="ws-form-ms-done-text"></p>
+      <p class="ws-form-error" id="ws-form-ms-done-error" role="alert" hidden></p>
+      <div class="ws-dialog-actions">
+        <button type="button" class="ws-btn ws-btn-ghost" data-ws-close>取消</button>
+        <button type="submit" class="ws-btn ws-btn-primary">确认完成</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="ws-dialog" id="ws-dialog-recruit">
+    <form method="dialog" id="ws-form-recruit" novalidate>
+      <h3 class="ws-dialog-title">标记招新待办为已处理</h3>
+      <p class="ws-form-hint" id="ws-form-recruit-text"></p>
+      <p class="ws-form-error" id="ws-form-recruit-error" role="alert" hidden></p>
+      <div class="ws-field">
+        <label for="ws-field-recruit-note">处理说明（必填）</label>
+        <textarea id="ws-field-recruit-note" name="note" required maxlength="1000" rows="4"></textarea>
+      </div>
+      <div class="ws-dialog-actions">
+        <button type="button" class="ws-btn ws-btn-ghost" data-ws-close>取消</button>
+        <button type="submit" class="ws-btn ws-btn-primary">记录</button>
+      </div>
+    </form>
+  </dialog>
+</section>

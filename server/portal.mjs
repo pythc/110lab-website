@@ -6,6 +6,7 @@ import {z} from 'zod';
 import {ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
 import {MAIL_HOST_SCOPE,mailAuthChallenge} from './mail-oauth.mjs';
 
+// Keep the established resource identity to preserve embedded login partitions.
 export const UI_URI='ui://110lab/workbench/v0.8.7';
 export const PREVIOUS_UI_URI='ui://110lab/workbench/v0.8.6';
 export const LEGACY_UI_URI='ui://110lab/home';
@@ -33,7 +34,7 @@ export async function createPortalServer({mailHandoff}={}){
     readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))
   ]);
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
-  const server=new McpServer({name:'110lab',version:'0.8.7'});
+  const server=new McpServer({name:'110lab',version:'0.9.0'});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
     uri,mimeType:RESOURCE_MIME_TYPE,text:html,

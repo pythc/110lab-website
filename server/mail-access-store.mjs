@@ -543,6 +543,11 @@ function createApi(db, path, now) {
       return readTransaction(() => ({revision: revision(), subjects: listAdmins.all().map(row => row.subject).sort()}));
     },
     registerIdentity,
+    // Tenant-verified identities only, without role grants or mailbox membership.
+    listLabMembers(subject) {
+      me(subject);
+      return db.prepare('SELECT subject,email,name FROM identities ORDER BY name,email LIMIT 1000').all();
+    },
     me,
     listAdministrators,
     listMembers,
