@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "110lab",
-  "version": "0.11.0",
-  "description": "110 实验室工作台：项目空间、个人待办、招新流程测试、团队应用和实验室管理员协作。",
+  "version": "0.12.0",
+  "description": "110 实验室工作台：项目立项、奖项荣誉、个人待办、招新管理与团队应用。",
   "author": {
     "name": "110 实验室"
   },
@@ -11,7 +11,7 @@
       "interface": {
         "displayName": "110lab",
         "shortDescription": "110 实验室的应用工作台",
-        "longDescription": "从侧边栏查看项目空间和个人待办，提交项目立项并由实验室管理员共同处理。提供独立招新流程测试，管理员可管理虚构候选人、审核模拟通知并记录决策。保留考核、需求平台和公共邮箱；个人需求及 PR 待办通过本机已有连接只读同步。内网应用需要校园网络或 VPN。",
+        "longDescription": "从侧边栏使用考核、需求平台、招新管理和公共邮箱。成员登记奖项、上传证书，由实验室管理员审核后内部展示。个人需求与 PR 待办通过本机已有连接只读同步。内网应用需要校园网络或 VPN。",
         "developerName": "110 实验室",
         "category": "Productivity",
         "capabilities": [

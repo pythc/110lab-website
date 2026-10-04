@@ -1,6 +1,7 @@
 // Only these owned applications can become embedded pages. Never accept a
 // frame URL from tool results, query parameters, messages or local storage.
 export const EMBEDDED_APPS = Object.freeze({
+  honors:Object.freeze({title:'奖项荣誉',url:'https://internal.110-lab.cn/honors/embedded',externalUrl:'https://internal.110-lab.cn/honors',nav:false}),
   'recruitment-test':Object.freeze({title:'招新管理',url:'https://internal.110-lab.cn/recruitment/embedded',externalUrl:'https://internal.110-lab.cn/recruitment',nav:false}),
   projects:Object.freeze({title:'项目立项',url:'https://internal.110-lab.cn/projects/embedded',externalUrl:'https://internal.110-lab.cn/projects',nav:false}),
   'public-mail': Object.freeze({title:'公共邮箱管理',url:'https://internal.110-lab.cn/mail/embedded',externalUrl:'https://internal.110-lab.cn/mail',nav:false}),
@@ -67,7 +68,8 @@ export async function handleWorkspaceRequest(event,{frame,openExternal,callTool,
   const m=event.data;
   if(m?.type==='110lab-workspace-open-app'&&(m.id==='workbench'||Object.hasOwn(EMBEDDED_APPS,m.id))){
     const projectId=m.id==='projects'&&typeof m.projectId==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(m.projectId)?m.projectId:null;
-    if(projectId)show(m.id,projectId);else show(m.id);return true;
+    const honorId=m.id==='honors'&&typeof m.honorId==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(m.honorId)?m.honorId:null;
+    if(projectId||honorId)show(m.id,projectId||honorId);else show(m.id);return true;
   }
   if(m?.type==='110lab-workspace-open-link'&&typeof m.url==='string'&&m.url.length<=2000){
     try{const url=new URL(m.url);if(url.protocol==='https:'&&!url.username&&!url.password)await openExternal?.(url.href);}catch{}return true;
@@ -97,7 +99,7 @@ export function initEmbeddedWorkspace() {
   actions.className='workspace-actions';actions.hidden=true;
   const external=document.createElement('a');external.target='_blank';external.rel='noopener noreferrer';external.textContent='独立打开';
   const retry=document.createElement('button');retry.type='button';retry.textContent='重新加载';
-  let currentId='workbench',selectedProjectId=null;
+  let currentId='workbench',selectedProjectId=null,selectedHonorId=null;
   external.addEventListener('click',async event=>{if(!externalOpener)return;event.preventDefault();try{await externalOpener(external.href);}catch{}});
   retry.addEventListener('click',()=>{const page=pages.get(currentId);if(page)page.querySelector('iframe').src=EMBEDDED_APPS[currentId].url;});
   actions.append(external,retry);
@@ -117,7 +119,7 @@ export function initEmbeddedWorkspace() {
     const frame = document.createElement('iframe');
     frame.title = app.title;
     frame.referrerPolicy = 'no-referrer';
-    frame.src = app.url;
+    frame.src = app.url+(id==='honors'&&selectedHonorId?'?record='+encodeURIComponent(selectedHonorId):'');
     frame.addEventListener('load',()=>{if(id==='projects'&&selectedProjectId)frame.contentWindow.postMessage({type:'110lab-workspace-select-project',projectId:selectedProjectId},'https://internal.110-lab.cn');});
     // Each app keeps its own login boundary. The parent never reads credentials,
     // session storage or page contents, and never executes business operations.
@@ -130,9 +132,10 @@ export function initEmbeddedWorkspace() {
   function show(id,projectId=null) {
     if (id !== 'workbench' && !Object.hasOwn(EMBEDDED_APPS, id)) return;
     if(id==='projects'){selectedProjectId=projectId;if(pages.has(id)&&projectId)pages.get(id).querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-select-project',projectId},'https://internal.110-lab.cn');}
+    if(id==='honors'){selectedHonorId=projectId;if(pages.has(id)&&projectId)pages.get(id).querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-select-honor',honorId:projectId},'https://internal.110-lab.cn');}
     const mounted=pages.has(id);
     if (!mounted) createPage(id);
-    else if(['workbench','projects','recruitment-test'].includes(id))pages.get(id).querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-activated'},'https://internal.110-lab.cn');
+    else if(['workbench','projects','recruitment-test','honors'].includes(id))pages.get(id).querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-activated'},'https://internal.110-lab.cn');
     currentId=id;actions.hidden=id==='workbench';
     if(id!=='workbench'){external.href=EMBEDDED_APPS[id].externalUrl||EMBEDDED_APPS[id].url;external.setAttribute('aria-label','独立打开'+EMBEDDED_APPS[id].title);retry.hidden=id!=='requirements';}
     main.hidden = true;
@@ -168,10 +171,10 @@ export function initEmbeddedWorkspace() {
   show('workbench');
   window.addEventListener('message',async event=>{
     const page=pages.get(currentId);
-    if(!page||page.hidden||!['public-mail','workbench','projects','recruitment-test'].includes(currentId))return;
+    if(!page||page.hidden||!['public-mail','workbench','projects','recruitment-test','honors'].includes(currentId))return;
     const frame=page.querySelector('iframe');
     if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame.contentWindow)return;
-    if(['workbench','projects','recruitment-test'].includes(currentId)&&await handleWorkspaceRequest(event,{frame,openExternal:externalOpener,callTool:toolCaller,show}))return;
+    if(['workbench','projects','recruitment-test','honors'].includes(currentId)&&await handleWorkspaceRequest(event,{frame,openExternal:externalOpener,callTool:toolCaller,show}))return;
     if(event.data?.type==='110lab-mail-host-login'){
       if(loginPending)return;loginPending=true;
       try{await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});}finally{loginPending=false;}

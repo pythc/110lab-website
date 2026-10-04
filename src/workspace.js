@@ -14,7 +14,7 @@ const PHASE_LABEL = { exploring: '探索中', pending: '审核中', active: '进
 const PHASE_BADGE = { exploring: 'ws-badge-indigo', pending: 'ws-badge-amber', active: 'ws-badge-teal', needs_changes: 'ws-badge-rose' };
 const PROJECT_FILTERS = { active: 1, mine: 1, archived: 1 };
 const TODO_FILTERS = { all: 1, assigned: 1, reviews: 1, recruitment: 1 };
-const TODO_KIND_LABEL = { milestone: '里程碑', project_review: '项目审核', project_revision: '项目修改', recruitment: '招新', requirement: '需求' };
+const TODO_KIND_LABEL = { honor:'荣誉审核', milestone: '里程碑', project_review: '项目审核', project_revision: '项目修改', recruitment: '招新', requirement: '需求' };
 
 const state = {
   profile: null, csrf: '', members: [], projects: [], todos: [], todoSources: null,
@@ -233,7 +233,7 @@ function filteredTodos() {
   })));
   let list;
   if (state.todoFilter === 'assigned') list = all.filter(x => x.kind === 'milestone' || x.kind === 'requirement');
-  else if (state.todoFilter === 'reviews') list = all.filter(x => x.kind === 'project_review' || x.kind === 'project_revision');
+  else if (state.todoFilter === 'reviews') list = all.filter(x => x.kind === 'project_review' || x.kind === 'project_revision' || x.kind === 'honor');
   else if (state.todoFilter === 'recruitment') list = all.filter(x => x.kind === 'recruitment');
   else list = all;
   list.sort((a, b) => {
@@ -276,6 +276,7 @@ function renderTodos() {
     li.append(row);
     const meta = el('div', 'ws-item-meta');
     meta.append(el('span', 'ws-badge ws-badge-indigo', TODO_KIND_LABEL[item.kind] || '待办'));
+    if (item.status&&['honor','requirement'].includes(item.kind))meta.append(el('span','ws-badge',item.status));
     if (item.projectName) meta.append(el('span', '', '· ' + item.projectName));
     if (item.dueAt) {
       const overdue = isOverdue(item.dueAt);
@@ -318,7 +319,8 @@ function renderTodoSide() {
   side.append(meta);
   if (current.projectName) side.append(sideRow('项目', current.projectName));
   if (current.status) side.append(sideRow('状态', ({open:'待处理',done:'已完成'})[current.status]||String(current.status)));
-  if (current.kind === 'recruitment') renderRecruitmentDetail(side, current);
+  if(current.kind==='honor'){const btn=el('button','ws-btn ws-btn-primary','打开荣誉登记');btn.type='button';btn.onclick=()=>{if(EMBEDDED)postToParent({type:'110lab-workspace-open-app',id:'honors',honorId:current.honorId});else location.assign('/honors?record='+encodeURIComponent(current.honorId));};side.append(btn);}
+  else if (current.kind === 'recruitment') renderRecruitmentDetail(side, current);
   else if (current.kind === 'requirement') renderRequirementDetail(side, current);
   else if (current.kind === 'milestone') renderMilestoneDetail(side, current);
   else if (current.kind === 'project_review' || current.kind === 'project_revision') renderProjectTodoDetail(side, current);
@@ -927,8 +929,9 @@ function renderRequirementsSource() {
   if (r.state === 'not_configured') { node.append(document.createTextNode('需求平台尚未配置。')); node.hidden = false; return; }
   if (r.state === 'unavailable') { node.append(document.createTextNode('需求平台暂时不可用。')); node.hidden = false; return; }
   node.append(document.createTextNode('需求平台 · ' + (r.accountName || '')));
-  if (r.stale) { node.append(document.createTextNode(' · PR 缓存已过期')); node.dataset.stale = 'true'; }
-  if (r.partial) { node.append(document.createTextNode(' · 已达来源 100 条上限 仅显示部分数据')); node.dataset.partial = 'true'; }
+  if (r.stale) { node.append(document.createTextNode(' · 来源缓存待刷新')); node.dataset.stale = 'true'; }
+  if(r.reviewState==='unavailable')node.append(document.createTextNode(' · PR 评审暂时无法同步'));
+  if (r.partial) { node.append(document.createTextNode(' · 来源仅返回部分记录')); node.dataset.partial = 'true'; }
   node.hidden = false;
 }
 
@@ -979,7 +982,7 @@ async function handleParentMessage(ev) {
       dueAt: typeof x.dueAt === 'string' ? x.dueAt : null,
       projectName: typeof x.projectName === 'string' ? x.projectName : '',
     })).filter(x => x.id && x.title) : [];
-    state.requirements = { state: stateValue, accountName, stale, partial, items };
+    state.requirements = { state: stateValue, accountName, stale, partial, reviewState:r.reviewState, items };
     if (state.reqTimer) { clearTimeout(state.reqTimer); state.reqTimer = null; }
     renderRequirementsSource(); renderTodos(); renderTodoSide();
     return;

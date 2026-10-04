@@ -14,7 +14,7 @@ try{
   const manifest=JSON.parse(readFileSync('release.json'));
   for(const path of Object.keys(manifest.files)){mkdirSync(dirname(join(root,path)),{recursive:true});copyFileSync(path,join(root,path));}
   const {createHttpServer}=await import(pathToFileURL(join(root,'server/runtime.mjs')));
-  server=await createHttpServer({recruitmentWorkflow:{enabled:true},mail:{enabled:true,directory:join(root,'private'),localTest:true,config:{appId:'cli_fixture12345',appSecret:'fictional-app-secret-2026',tenantKey:'fixture_tenant',bootstrapUnionId:'on_fixture_owner_2026',bootstrapEmail:owner.email,bootstrapName:owner.name},fetchIdentity:async(_,{code})=>code==='member'?member:owner}});
+  server=await createHttpServer({recruitmentWorkflow:{enabled:true},mail:{enabled:true,directory:join(root,'private'),localTest:true,config:{appId:'cli_fixture12345',appSecret:'fictional-app-secret-2026',tenantKey:'fixture_tenant',bootstrapUnionId:'on_fixture_owner_2026',bootstrapEmail:owner.email,bootstrapName:owner.name},fetchDirectory:async()=>[owner,member],fetchIdentity:async(_,{code})=>code==='member'?member:owner}});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const call=(path,data,headers={})=>new Promise((resolve,reject)=>{const req=request({hostname:'127.0.0.1',port:server.address().port,path,method:data===undefined?'GET':'POST',headers:{Host:'internal.110-lab.cn',...(data===undefined?{}:{Origin:'https://internal.110-lab.cn','Content-Type':typeof data==='string'?'application/x-www-form-urlencoded':'application/json'}),...headers}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>{const text=Buffer.concat(chunks).toString();let body;try{body=JSON.parse(text);}catch{}resolve({status:res.statusCode,headers:res.headers,text,body});});});req.on('error',reject);req.end(data===undefined?undefined:typeof data==='string'?data:JSON.stringify(data));});
   assert.equal((await call('/healthz')).body.version,manifest.version);
@@ -42,6 +42,17 @@ try{
   assert.equal((await call(projectPath+'/review',review,b)).body.phase,'active');
   assert.equal((await call('/api/workspace/projects',undefined,{...b,Host:'110-lab.cn'})).status,404);
   assert.equal((await call('/workbench/embedded')).status,200);
+  assert.equal((await call('/honors/embedded')).status,200);
+  assert.equal((await call('/api/honors/records')).status,401);
+  const honor=await call('/api/honors/records',{requestId:randomUUID(),fields:{name:'虚构荣誉发布验证',organizer:'本地测试',level:'校级',levelNote:'',prize:'一等奖',awardedAt:'2026-10-01',projectId:created.body.id,projectName:'forged',members:[{subject:owner.subject,name:'forged'}],description:'仅用于打包验证'}},a);
+  assert.equal(honor.status,201);assert.equal(honor.body.members[0].name,owner.name);assert.equal(honor.body.projectName,'虚构发布验证项目');
+  const honorPath='/api/honors/records/'+honor.body.id;
+  const pendingHonor=await call(honorPath+'/actions',{requestId:randomUUID(),revision:honor.body.revision,action:'submit'},a);
+  assert.equal(pendingHonor.status,200);
+  assert.ok((await call('/api/workspace/todos',undefined,b)).body.items.some(x=>x.kind==='honor'&&x.honorId===honor.body.id));
+  assert.equal((await call(honorPath+'/actions',{requestId:randomUUID(),revision:pendingHonor.body.revision,action:'approve'},a)).status,403);
+  assert.equal((await call(honorPath+'/actions',{requestId:randomUUID(),revision:pendingHonor.body.revision,action:'approve'},b)).body.status,'approved');
+
   assert.equal((await call('/mail',undefined,{Host:'110-lab.cn'})).status,404);
   assert.equal((await call('/api/mail/send',{},b)).status,404);
   const issuer='https://internal.110-lab.cn',resource=issuer+'/mcp/workbench-v6-1',verifier='v'.repeat(43),redirect='http://127.0.0.1:49111/callback/fixture_client';
@@ -96,5 +107,5 @@ try{
   for(let n=0;n<20;n++){const r=await call(managed+'candidates/'+managedCandidate.id,undefined,recruiter);managedCandidate=r.body;if(managedCandidate.notification.status==='simulated')break;await new Promise(r=>setTimeout(r,50));}
   assert.equal(managedCandidate.notification.status,'simulated');
   assert.equal(managedCandidate.deliveries[0].mode,'dry-run');
-  console.log(JSON.stringify({isolatedHostOAuthToIframe:true,isolatedMailBundle:true,fictionalLogin:true,roleTransfer:true,oldSessionDenied:true,publicHostDenied:true,manualSendingClosed:true,workspaceLifecycle:true,recruitmentWorkflow:true,sharedRoles:true,externalCalls:false}));
+  console.log(JSON.stringify({isolatedHostOAuthToIframe:true,isolatedMailBundle:true,fictionalLogin:true,roleTransfer:true,oldSessionDenied:true,publicHostDenied:true,manualSendingClosed:true,workspaceLifecycle:true,honorsWorkflow:true,recruitmentWorkflow:true,sharedRoles:true,externalCalls:false}));
 }finally{if(server)await new Promise(r=>{server.close(r);server.closeAllConnections();});rmSync(root,{recursive:true,force:true});}

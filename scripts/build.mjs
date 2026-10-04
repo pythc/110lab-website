@@ -31,6 +31,8 @@ const uppyCSS=(await Promise.all(['node_modules/@uppy/core/dist/style.min.css','
 await writeFile(resolve(root,'dist/recruitment-test.html'),recruitmentTestHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentTestJS));
 const [recruitmentHTML,recruitmentJS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js')]);
 await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
+const [honorsHTML,honorsCSS,honorsJS]=await Promise.all([readFile(resolve(root,'src/honors.html'),'utf8'),readFile(resolve(root,'src/honors.css'),'utf8'),bundle('src/honors.js')]);
+await writeFile(resolve(root,'dist/honors.html'),honorsHTML.replace('/* HONORS_CSS */',()=>honorsCSS).replace('/* HONORS_SCRIPT */',()=>honorsJS));
 await rm(resolve(root,'dist/assets'),{recursive:true,force:true});
 await cp(resolve(root,'src/assets'),resolve(root,'dist/assets'),{recursive:true});
 const localBridge=await build({entryPoints:[resolve(root,'server/local-portal-bridge.mjs')],outfile:resolve(root,'plugin/110lab/mcp/portal-bridge.mjs'),bundle:true,metafile:true,format:'esm',platform:'node',target:'node20',minify:true,banner:{js:'import {createRequire as __createRequire} from "node:module";const require=__createRequire(import.meta.url);'}});

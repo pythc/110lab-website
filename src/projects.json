@@ -49,6 +49,15 @@
       "edition": "项目协作"
     },
     {
+      "id": "honors",
+      "title": "奖项荣誉",
+      "description": "登记获奖成果 关联项目与成员 提交管理员审核",
+      "url": "https://internal.110-lab.cn/honors",
+      "status": "available",
+      "icon": "honors",
+      "edition": "成果登记"
+    },
+    {
       "id": "recruitment-test",
       "title": "招新管理",
       "description": "官网简历、初筛、面试安排与模板邮件",
