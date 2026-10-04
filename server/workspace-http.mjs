@@ -21,7 +21,7 @@ async function body(req){
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new WorkspaceError(400,'请求格式无效');}
 }
 
-export function createWorkspaceHttp({mail,recruitment,localTest=false,now=Date.now,directory=mail?.workspaceDirectory}={}){
+export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTest=false,now=Date.now,directory=mail?.workspaceDirectory}={}){
   const enabled=!!mail?.enabled&&!!directory;
   const store=enabled?openWorkspaceStore({directory,now}):null;
   let inbox;try{inbox=enabled?openWorkspaceRecruitment({directory,source:()=>recruitment.labInbox(),now}):null;}catch(e){store?.close();throw e;}
@@ -40,7 +40,7 @@ export function createWorkspaceHttp({mail,recruitment,localTest=false,now=Date.n
     for(const member of existing)if(!directory.has(member.subject))directory.set(member.subject,member);
     return {...input,members:input.members.map(value=>{const member=directory.get(value?.subject);if(!member)throw new WorkspaceError(400,'请选择列表中的实验室成员');return member;})};
   }
-  return {enabled,close(){inbox?.close();store?.close();},async handle(req,res,path,host){
+  return {enabled,projects:actor=>store?.list(actor).projects||[],close(){inbox?.close();store?.close();},async handle(req,res,path,host){
     if(!path.startsWith('/api/workspace/'))return false;
     try{
       if(host!=='internal.110-lab.cn'&&!(localTest&&['localhost','127.0.0.1'].includes(host)))throw new WorkspaceError(404,'Not found');
@@ -56,7 +56,7 @@ export function createWorkspaceHttp({mail,recruitment,localTest=false,now=Date.n
         else if(route==='projects')json(res,200,store.list(actor));
         else if(route==='todos'){
           const admin=['admin','super_admin'].includes(actor.role),recruit=admin?inbox.list(actor):{state:'restricted',items:[],partial:false};
-          json(res,200,{items:[...store.listTodos(actor).items,...recruit.items],sources:{recruitment:{state:recruit.state,partial:recruit.partial},assessment:{state:'external'}}});
+          json(res,200,{items:[...store.listTodos(actor).items,...recruit.items,...honorsTodos(actor)],sources:{recruitment:{state:recruit.state,partial:recruit.partial},assessment:{state:'external'}}});
         }else if(route==='recruitment/history')json(res,200,inbox.history(actor));
         else{const match=/^projects\/([\w-]+)(\/audit)?$/.exec(route);if(!match)throw new WorkspaceError(404,'Not found');
           json(res,200,match[2]?{events:store.audit(actor,match[1])}:store.get(actor,match[1]));}

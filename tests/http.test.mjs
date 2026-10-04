@@ -23,9 +23,9 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
     const publicHTML=await (await fetch(base)).text();assert.doesNotMatch(publicHTML,/internal\.110-lab\.cn|暂停动效|管理首页/);
     assert.match(publicHTML,/陇ICP备2026009447号/);
     const workbench=await (await fetch(base+'/workbench')).text();assert.match(workbench,/批改系统内网版/);assert.doesNotMatch(workbench,/管理首页|首页内容/);
-    for(const path of ['/projects','/projects/','/projects/embedded']){
+    for(const path of ['/projects','/projects/','/projects/embedded','/honors','/honors/','/honors/embedded']){
       const response=await fetch(base+path);assert.equal(response.status,200);
-      assert.match(await response.text(),/项目立项/);
+      assert.match(await response.text(),path.startsWith('/honors')?/奖项荣誉/:/项目立项/);
       if(path.endsWith('/embedded'))assert.match(response.headers.get('content-security-policy'),/codex-sandbox:/);
       const status=await new Promise((resolve,reject)=>{const r=request(base+path,{headers:{Host:'110-lab.cn'}},res=>{res.resume();resolve(res.statusCode);});r.on('error',reject);r.end();});
       assert.equal(status,404);

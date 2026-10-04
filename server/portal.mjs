@@ -1,3 +1,4 @@
+import packageInfo from '../package.json' with {type:'json'};
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {registerAppResource,registerAppTool,RESOURCE_MIME_TYPE} from '@modelcontextprotocol/ext-apps/server';
 import {OpenAIExtensions} from '@openai/mcp-extensions/server';
@@ -34,7 +35,7 @@ export async function createPortalServer({mailHandoff}={}){
     readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))
   ]);
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
-  const server=new McpServer({name:'110lab',version:'0.10.0'});
+  const server=new McpServer({name:'110lab',version:packageInfo.version});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
     uri,mimeType:RESOURCE_MIME_TYPE,text:html,
