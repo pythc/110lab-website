@@ -11,6 +11,10 @@ for(const value of [...Object.values(config.systems),...config.apps.map(p=>p.url
 }
 const bundle=async entry=>(await build({entryPoints:[resolve(root,entry)],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',minify:true})).outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
 await mkdir(resolve(root,'dist'),{recursive:true});
+const confirmScript=await bundle('src/mcp-confirm.js');
+await writeFile(resolve(root,'dist/mcp-confirm.html'),(await readFile(resolve(root,'src/mcp-confirm.html'),'utf8')).replace('/* MCP_CONFIRM_SCRIPT */',()=>confirmScript));
+const ssoScript=await bundle('src/assessment-sso.js');
+await writeFile(resolve(root,'dist/assessment-sso.html'),(await readFile(resolve(root,'src/assessment-sso.html'),'utf8')).replace('/* SSO_SCRIPT */',()=>ssoScript));
 const [template,baseCSS,motionCSS,homepageCSS,redesignCSS,polishCSS,colorCSS,refinementCSS,js]=await Promise.all(['src/index.html','src/portal.css','src/motion.css','src/homepage-v5.css','src/homepage-v6.css','src/homepage-polish.css','src/homepage-colors.css','src/homepage-refinement.css'].map(p=>readFile(resolve(root,p),'utf8')).concat(bundle('src/standalone.js')));
 const homepageMotionCSS=await readFile(resolve(root,'src/homepage-motion.css'),'utf8');
 const recruitmentCSS=(await Promise.all(['node_modules/@uppy/core/dist/style.min.css','node_modules/@uppy/dashboard/dist/style.min.css','src/recruitment.css'].map(p=>readFile(resolve(root,p),'utf8')))).join('\n');

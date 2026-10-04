@@ -1,0 +1,470 @@
+--- a/client/src/views/auth/LoginView.vue
++++ b/client/src/views/auth/LoginView.vue
+@@ -1,6 +1,6 @@
+ <script setup lang="ts">
+ import { NButton, NInput } from 'naive-ui'
+-import { ref } from 'vue'
++import { onMounted, ref } from 'vue'
+ import { useRoute, useRouter } from 'vue-router'
+ import { login } from '../../api/auth'
+ import { messageOf } from '../../api/http'
+@@ -17,6 +17,11 @@
+ const passwordError = ref('')
+ const formError = ref('')
+ const pending = ref(false)
++const feishuAvailable = ref(false)
++onMounted(async () => {
++  try { const response=await fetch('/api/auth/feishu/config',{cache:'no-store'});if(response.ok)feishuAvailable.value=(await response.json()).enabled===true } catch {}
++})
++function feishuLogin():void { window.location.assign('/api/auth/feishu/start'+(window.parent!==window?'?embedded=1':'')) }
+ const notice = route.query.notice === 'reset' ? '密码已重置，请重新登录。' : ''
+ 
+ async function submit(): Promise<void> {
+@@ -41,6 +46,7 @@
+ <template>
+   <AuthLayout title="登录">
+     <form class="form-grid" @submit.prevent="submit">
++      <n-button v-if="feishuAvailable" @click="feishuLogin">实验室管理员 · 飞书登录</n-button>
+       <p v-if="notice" class="banner ok">{{ notice }}</p>
+       <p v-if="formError" class="banner danger" role="alert">{{ formError }}</p>
+       <Field label="邮箱或学号" for-id="account" :error="accountError">
+--- a/runtime.mjs
++++ b/runtime.mjs
+@@ -24,7 +24,11 @@
+   if(res.headersSent)return;
+   res.status(error.status===404?404:500).json({message:error.status===404?'文件不存在':'服务暂时不可用'});
+ });
+-const stopWorkers=startWorkers(ctx);
++// Blue/green HTTP instances share the DB while the old instance retains the
++// single worker loop. Explicit false is the only way to disable that loop.
++const workersEnabled=process.env.ASSESSMENT_WORKERS_ENABLED!=='false';
++const stopWorkers=workersEnabled?startWorkers(ctx):()=>{};
++console.log(JSON.stringify({event:'assessment-workers',enabled:workersEnabled}));
+ const server=app.listen(ctx.config.port,ctx.config.nodeEnv==='production'?'0.0.0.0':'127.0.0.1',()=>console.log(JSON.stringify({event:'assessment-ready',port:ctx.config.port})));
+ server.requestTimeout=60_000;
+ server.headersTimeout=15_000;
+--- /dev/null
++++ b/server/migrations/007_lab_sso.sql
+@@ -0,0 +1,19 @@
++-- Additive migration: existing accounts, candidate sessions and MCP grants are unchanged.
++CREATE TABLE lab_sso_flows (
++  state_hash TEXT PRIMARY KEY,
++  binding_hash TEXT NOT NULL,
++  verifier TEXT NOT NULL,
++  embedded BOOLEAN NOT NULL,
++  expires_at TIMESTAMPTZ NOT NULL
++);
++CREATE INDEX lab_sso_flows_expiry ON lab_sso_flows(expires_at);
++CREATE TABLE lab_sso_identities (
++  subject TEXT PRIMARY KEY,
++  user_id UUID NOT NULL UNIQUE REFERENCES users(id),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
++);
++CREATE TABLE lab_sso_sessions (
++  session_id UUID PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
++  subject TEXT NOT NULL REFERENCES lab_sso_identities(subject),
++  sealed_grant TEXT NOT NULL
++);
+--- a/server/src/app.ts
++++ b/server/src/app.ts
+@@ -6,6 +6,7 @@
+ import { apiRouter } from './routes.js';
+ import { registerOAuthPublic, oauthBrowserRouter } from './oauth.js';
+ import { registerMaterialUploads } from './uploads.js';
++import { registerLabSso } from './labSso.js';
+ import { registerMcp } from './mcp.js';
+ 
+ export function createApp(ctx: AppContext): Express {
+@@ -38,6 +39,7 @@
+   if (ctx.config.trustProxy) app.set('trust proxy', 1);
+   app.use(securityHeaders(ctx));
+   registerOAuthPublic(app, ctx);
++  registerLabSso(app, ctx);
+   registerMcp(app, ctx);
+   registerMaterialUploads(app, ctx);
+   app.use(cors(ctx));
+--- a/server/src/auth.ts
++++ b/server/src/auth.ts
+@@ -1,3 +1,4 @@
++import {verifyLabSession} from './labSso.js';
+ import { randomBytes, randomInt } from 'node:crypto';
+ import type { PoolClient } from 'pg';
+ import type { Request, Response } from 'express';
+@@ -332,9 +333,9 @@
+     [isEmail ? account.toLowerCase() : account],
+   );
+   const row = found.rows[0];
+-  const hash = row?.password_hash ?? (await dummyPasswordHash());
++  const hash = row?.password_hash === 'LAB_SSO_ONLY' ? await dummyPasswordHash() : row?.password_hash ?? (await dummyPasswordHash());
+   const ok = await verifyPassword(body.password, hash);
+-  if (!row || !ok) throw new HttpError(401, '账号或密码错误', 'BAD_CREDENTIALS');
++  if (!row || !ok || row.password_hash === 'LAB_SSO_ONLY') throw new HttpError(401, '账号或密码错误', 'BAD_CREDENTIALS');
+   const session = await openSession(ctx, row.id);
+   await withTx(ctx.pool, async (client) => {
+     await insertAudit(client, { actorId: row.id, actorName: row.name, action: 'LOGIN' });
+@@ -356,7 +357,7 @@
+     });
+     if (!accepted) return false;
+     const user = await client.query<{ id: string; name: string }>(
+-      'SELECT id, name FROM users WHERE email = $1 FOR UPDATE',
++      "SELECT id, name FROM users WHERE email = $1 AND password_hash <> 'LAB_SSO_ONLY' FOR UPDATE",
+       [email],
+     );
+     const row = user.rows[0];
+@@ -392,6 +393,12 @@
+   );
+   const row = result.rows[0];
+   if (!row) return null;
++  const sso=await ctx.pool.query<{subject:string;sealed_grant:string}>('SELECT subject,sealed_grant FROM lab_sso_sessions WHERE session_id=$1',[row.session_id]);
++  const grant=sso.rows[0];
++  if(grant){
++    try{const identity=await verifyLabSession(ctx,row.session_id,grant.subject,grant.sealed_grant);row.email=identity.email;row.name=identity.name;}
++    catch(error){if(error instanceof HttpError&&[401,403].includes(error.status)){await ctx.pool.query('DELETE FROM sessions WHERE id=$1',[row.session_id]);return null;}throw error;}
++  }
+   return { sessionId: row.session_id, csrfToken: row.csrf_token, user: toPublicUser(row) };
+ }
+ 
+--- a/server/src/config.ts
++++ b/server/src/config.ts
+@@ -21,6 +21,9 @@
+   dbSchema: string;
+   cookieSecure: boolean;
+   embeddingOrigins?: string[];
++  labSsoEnabled?: boolean;
++  /** Operator-owned sentinel file; freezes only SSO during a live rollback. */
++  labSsoFreezeFile?: string;
+   trustProxy: boolean;
+   mailTestSink: boolean;
+   seedDemo: boolean;
+@@ -160,6 +163,9 @@
+     ? flag(env.COOKIE_SECURE)
+     : publicBaseUrl.startsWith('https://');
+   const embeddingOrigins = parseEmbeddingOrigins(env.EMBEDDING_ORIGINS);
++  if (flag(env.LAB_SSO_ENABLED) && (!cookieSecure || !appOrigin.startsWith('https://'))) {
++    throw new Error('Laboratory SSO requires HTTPS and secure cookies');
++  }
+   if (embeddingOrigins.length && (!cookieSecure || !appOrigin.startsWith('https://'))) {
+     throw new Error('Embedding requires HTTPS and secure cookies');
+   }
+@@ -174,6 +180,8 @@
+     dbSchema,
+     cookieSecure,
+     embeddingOrigins,
++    labSsoEnabled: flag(env.LAB_SSO_ENABLED),
++    labSsoFreezeFile: env.LAB_SSO_FREEZE_FILE?.trim() || undefined,
+     trustProxy: flag(env.TRUST_PROXY),
+     mailTestSink,
+     seedDemo,
+--- a/server/src/context.ts
++++ b/server/src/context.ts
+@@ -20,6 +20,8 @@
+   config: AppConfig;
+   /** Test-only override. Ignored when nodeEnv is production. */
+   repoFetcher?: RepoFetcher;
++  /** Test-only transport for the laboratory identity service. */
++  labSsoFetch?: typeof fetch;
+ };
+ 
+ export async function createContext(): Promise<AppContext> {
+--- a/server/src/db.ts
++++ b/server/src/db.ts
+@@ -44,7 +44,7 @@
+   const client = await pool.connect();
+   try {
+     await client.query('SELECT pg_advisory_lock(hashtext($1))', [`110lab-migrate-${schema}`]);
+-    for (const id of ['001_init', '002_oauth', '003_direct_upload', '004_admin_deletion', '005_exam_duration', '006_registration_protection']) {
++    for (const id of ['001_init', '002_oauth', '003_direct_upload', '004_admin_deletion', '005_exam_duration', '006_registration_protection', '007_lab_sso']) {
+       const reg = await client.query<{ name: string | null }>('SELECT to_regclass($1) AS name', [`${schema}.schema_migrations`]);
+       if (reg.rows[0]?.name) {
+         const done = await client.query('SELECT 1 FROM schema_migrations WHERE id = $1', [id]);
+@@ -53,6 +53,9 @@
+       const sql = await readFile(new URL(`../migrations/${id}.sql`, import.meta.url), 'utf8');
+       await client.query('BEGIN');
+       try {
++        // A busy live database must abort the additive SSO migration quickly,
++        // instead of queuing new candidate writes behind a schema lock.
++        if (id === '007_lab_sso') await client.query("SET LOCAL lock_timeout = '2s'");
+         await client.query(sql);
+         await client.query('INSERT INTO schema_migrations (id) VALUES ($1)', [id]);
+         await client.query('COMMIT');
+--- /dev/null
++++ b/server/src/labSso.test.ts
+@@ -0,0 +1,112 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {createServer} from 'node:http';
++import {once} from 'node:events';
++import {Pool} from 'pg';
++import {mkdtemp,rm,writeFile} from 'node:fs/promises';
++import {tmpdir} from 'node:os';
++import {join} from 'node:path';
++import {randomBytes,createHash} from 'node:crypto';
++import {loadConfig} from './config.js';
++import {createPool,migrate} from './db.js';
++import {createApp} from './app.js';
++import {sealSsoGrant,unsealSsoGrant} from './labSso.js';
++import {bootstrapAdmin} from './bootstrap.js';
++import type {AppContext} from './context.js';
++
++test('SSO grant ciphertext is bound to the application session',()=>{
++  assert.throws(()=>loadConfig({DATABASE_URL:'postgres://fixture',APP_ORIGIN:'http://localhost',LAB_SSO_ENABLED:'true'}),/requires HTTPS/);
++  const ctx={config:{sessionSecret:'fictional-only-key-with-32-characters'}} as AppContext;
++  const token=randomBytes(32).toString('base64url'),sealed=sealSsoGrant(ctx,token,'session-a');
++  assert.equal(unsealSsoGrant(ctx,sealed,'session-a'),token);
++  assert.throws(()=>unsealSsoGrant(ctx,sealed,'session-b'));
++  assert.equal(sealed.includes(token),false);
++});
++
++test('real DB SSO callback, browser binding, revocation and candidate password isolation',
++  {skip:!process.env.TEST_DATABASE_URL&&'needs a disposable PostgreSQL database'},async()=>{
++  const databaseUrl=process.env.TEST_DATABASE_URL!,schema='assessment_sso_'+process.pid;
++  const storage=await mkdtemp(join(tmpdir(),'assessment-sso-'));
++  const config=loadConfig({DATABASE_URL:databaseUrl,NODE_ENV:'test',APP_ORIGIN:'https://exam.110-lab.cn',COOKIE_SECURE:'true',EMBEDDING_ORIGINS:'https://internal.110-lab.cn',STORAGE_DIR:storage,SESSION_SECRET:'fictional-only-secret-with-32-characters',LAB_SSO_ENABLED:'true'}).config;
++  config.labSsoFreezeFile=join(storage,'sso-frozen');
++  const pool=createPool(databaseUrl,schema);await migrate(pool,schema);
++  let active=true,unavailable=false,challenge='',calls=0;
++  const profile={issuer:'https://internal.110-lab.cn',audience:'assessment',subject:'fictional_tenant:on_fixture_admin_2026',name:'虚构管理员',email:'fictional-admin@110-lab.cn',role:'admin',expiresAt:new Date(Date.now()+3600000).toISOString()};
++  const ctx:AppContext={pool,config,labSsoFetch:async(url,options)=>{
++    calls++;const body=JSON.parse(String(options?.body));
++    assert.match(String(url),/^https:\/\/internal\.110-lab\.cn\/api\/mail\/sso\/(exchange|inspect)$/);
++    if(unavailable)throw new Error('fixture outage');
++    if(!active)return new Response('{}',{status:403});
++    if(String(url).endsWith('/exchange')){
++      assert.equal(createHash('sha256').update(body.verifier).digest('base64url'),challenge);
++      assert.equal(body.redirectUri,'https://exam.110-lab.cn/api/auth/feishu/callback');
++      return Response.json({...profile,token:'t'.repeat(43)});
++    }
++    assert.equal(body.token,'t'.repeat(43));return Response.json(profile);
++  }};
++  await bootstrapAdmin(pool,{databaseUrl,adminEmail:'local-fixture@example.test',adminPassword:'Fictional-pass-2026',adminName:'旧管理员'});
++  const server=createServer(createApp(ctx));server.listen(0,'127.0.0.1');await once(server,'listening');
++  const address=server.address();assert.ok(address&&typeof address!=='string');const base='http://127.0.0.1:'+address.port;
++  const request=(path:string,init:RequestInit={})=>fetch(base+path,{redirect:'manual',...init});
++  const pair=(response:Response,name:string)=>response.headers.getSetCookie().find(c=>c.startsWith(name+'='))!.split(';')[0]!;
++  try{
++    assert.equal((await (await request('/api/auth/feishu/config')).json()).enabled,true);
++    const start=await request('/api/auth/feishu/start?embedded=1');assert.equal(start.status,303);
++    const cookie=pair(start,'__Host-lab_sso_flow_embedded'),location=new URL(start.headers.get('location')!);
++    assert.equal(location.pathname,'/sso/assessment/embedded');challenge=location.searchParams.get('code_challenge')!;
++    const callback='/api/auth/feishu/callback?embedded=1&state='+location.searchParams.get('state')+'&code='+'c'.repeat(43);
++    assert.equal((await request(callback)).status,401);assert.equal(calls,0);
++    assert.equal((await request(callback.replace('embedded=1','embedded=0'),{headers:{cookie}})).status,400);
++    const completed=await request(callback,{headers:{cookie}});assert.equal(completed.status,303,await completed.text());
++    const sessionCookie=pair(completed,'lab_embedded_session');assert.match(completed.headers.getSetCookie().find(c=>c.startsWith('lab_embedded_session='))!,/SameSite=None.*Secure; Partitioned/);
++    assert.equal((await request(callback,{headers:{cookie}})).status,401);
++    const headers={cookie:sessionCookie,'x-lab-embedded':'1'};
++    let me=await request('/api/auth/me',{headers});assert.equal(me.status,200);const identity=await me.json();assert.equal(identity.user.email,profile.email);assert.equal(identity.user.role,'ADMIN');
++    assert.equal((await request('/api/admin/overview',{headers})).status,200);
++    assert.equal((await request('/api/auth/me',{headers:{cookie:sessionCookie}})).status,401);
++    const passwordLogin=await request('/api/auth/login',{method:'POST',headers:{'content-type':'application/json',origin:config.appOrigin},body:JSON.stringify({account:'local-fixture@example.test',password:'Fictional-pass-2026'})});assert.equal(passwordLogin.status,200);
++    const localCookie=pair(passwordLogin,'lab_session');
++    // A callback already waiting for the issuance lock must not recreate an
++    // administrator session behind the live rollback's revocation step.
++    const pendingStart=await request('/api/auth/feishu/start');
++    const pendingLocation=new URL(pendingStart.headers.get('location')!);
++    challenge=pendingLocation.searchParams.get('code_challenge')!;
++    const pendingCookie=pair(pendingStart,'__Host-lab_sso_flow');
++    const lock=await pool.connect();
++    let pending:Promise<Response>|undefined;
++    try{
++      await lock.query('BEGIN');await lock.query("SELECT pg_advisory_xact_lock(hashtext('lab-sso-issuance'))");
++      pending=request('/api/auth/feishu/callback?state='+pendingLocation.searchParams.get('state')+'&code='+'d'.repeat(43),{headers:{cookie:pendingCookie}});
++      let waiting=false;
++      for(let i=0;i<100;i++){
++        const wait=await pool.query("SELECT 1 FROM pg_locks WHERE locktype='advisory' AND NOT granted AND objid=hashtext('lab-sso-issuance')::oid");
++        if(wait.rowCount){waiting=true;break;}
++        await new Promise(r=>setTimeout(r,20));
++      }
++      assert.ok(waiting,'callback reached issuance lock');
++      await writeFile(config.labSsoFreezeFile,'rollback');
++      await lock.query('DELETE FROM sessions USING lab_sso_sessions WHERE sessions.id=lab_sso_sessions.session_id');
++      await lock.query('COMMIT');
++      assert.equal((await pending).status,503);
++      assert.equal((await pool.query('SELECT count(*)::int AS n FROM lab_sso_sessions')).rows[0].n,0);
++      assert.equal((await request('/api/auth/feishu/config').then(r=>r.json())).enabled,false);
++      assert.equal((await request('/api/admin/overview',{headers:{cookie:localCookie}})).status,200);
++    }finally{
++      await lock.query('ROLLBACK');lock.release();if(pending)await pending;
++      await rm(config.labSsoFreezeFile,{force:true});
++    }
++    // Reconnect after the fixture rollback to verify ordinary revocation too.
++    const renewedStart=await request('/api/auth/feishu/start?embedded=1');
++    const renewedLocation=new URL(renewedStart.headers.get('location')!);challenge=renewedLocation.searchParams.get('code_challenge')!;
++    const renewed=await request('/api/auth/feishu/callback?embedded=1&state='+renewedLocation.searchParams.get('state')+'&code='+'e'.repeat(43),{headers:{cookie:pair(renewedStart,'__Host-lab_sso_flow_embedded')}});
++    assert.equal(renewed.status,303);headers.cookie=pair(renewed,'lab_embedded_session');
++    unavailable=true;assert.equal((await request('/api/admin/overview',{headers})).status,503);
++    assert.equal((await request('/api/admin/overview',{headers:{cookie:localCookie}})).status,200);
++    unavailable=false;active=false;assert.equal((await request('/api/admin/overview',{headers})).status,401);
++    assert.equal((await pool.query('SELECT count(*)::int AS n FROM lab_sso_sessions')).rows[0].n,0);
++    assert.equal((await request('/api/admin/overview',{headers:{cookie:localCookie}})).status,200);
++  }finally{
++    server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await pool.end();
++    const cleanup=new Pool({connectionString:databaseUrl});try{await cleanup.query(`DROP SCHEMA ${schema} CASCADE`);}finally{await cleanup.end();await rm(storage,{recursive:true,force:true});}
++  }
++});
+--- /dev/null
++++ b/server/src/labSso.ts
+@@ -0,0 +1,113 @@
++import {createHash,randomBytes,randomUUID,createCipheriv,createDecipheriv} from 'node:crypto';
++import {existsSync} from 'node:fs';
++import type {Express,Response as ExpressResponse} from 'express';
++import {z} from 'zod';
++import type {AppContext} from './context.js';
++import {HttpError} from './errors.js';
++import {asyncHandler,readCookie} from './http.js';
++import {setSessionCookie} from './auth.js';
++import {withTx} from './db.js';
++import {insertAudit} from './audit.js';
++import {assertRateLimit} from './rateLimit.js';
++
++const ISSUER='https://internal.110-lab.cn';
++const CALLBACK='https://exam.110-lab.cn/api/auth/feishu/callback';
++const nonce=()=>randomBytes(32).toString('base64url');
++const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
++const opaque=z.string().regex(/^[\w-]{43}$/);
++const identitySchema=z.object({
++  issuer:z.literal(ISSUER),audience:z.literal('assessment'),
++  subject:z.string().regex(/^[A-Za-z0-9_-]{4,80}:on_[A-Za-z0-9_-]{10,100}$/),name:z.string().min(1).max(80),
++  email:z.string().email().max(254).regex(/@110-lab\.cn$/i),
++  role:z.enum(['admin','super_admin']),expiresAt:z.string().datetime(),
++  token:opaque.optional(),
++});
++type Identity=z.infer<typeof identitySchema>;
++export function labSsoAvailable(ctx:AppContext):boolean{
++  return !!ctx.config.labSsoEnabled && !(ctx.config.labSsoFreezeFile && existsSync(ctx.config.labSsoFreezeFile));
++}
++
++export function sealSsoGrant(ctx:AppContext,token:string,sessionId:string):string{
++  const iv=randomBytes(12),key=createHash('sha256').update('lab-sso:'+ctx.config.sessionSecret).digest();
++  const cipher=createCipheriv('aes-256-gcm',key,iv);cipher.setAAD(Buffer.from(sessionId));
++  return [iv.toString('base64url'),Buffer.concat([cipher.update(token,'utf8'),cipher.final()]).toString('base64url'),cipher.getAuthTag().toString('base64url')].join('.');
++}
++export function unsealSsoGrant(ctx:AppContext,value:string,sessionId:string):string{
++  const [iv,body,tag]=value.split('.');if(!iv||!body||!tag)throw new Error('Invalid sealed grant');
++  const key=createHash('sha256').update('lab-sso:'+ctx.config.sessionSecret).digest();
++  const decipher=createDecipheriv('aes-256-gcm',key,Buffer.from(iv,'base64url'));decipher.setAAD(Buffer.from(sessionId));decipher.setAuthTag(Buffer.from(tag,'base64url'));
++  return Buffer.concat([decipher.update(Buffer.from(body,'base64url')),decipher.final()]).toString('utf8');
++}
++async function exchange(ctx:AppContext,endpoint:'exchange'|'inspect',payload:Record<string,string>):Promise<Identity>{
++  const request=ctx.config.nodeEnv==='test'&&ctx.labSsoFetch?ctx.labSsoFetch:fetch;
++  let response:globalThis.Response;
++  try{response=await request(ISSUER+'/api/mail/sso/'+endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),redirect:'error',signal:AbortSignal.timeout(5000)});}
++  catch{throw new HttpError(503,'暂时无法确认实验室身份 请稍后重试','LAB_SSO_UNAVAILABLE');}
++  const r=response;
++  if(!r.ok)throw new HttpError(r.status===403?403:r.status===401?401:503,'实验室登录已失效或没有管理员权限','LAB_SSO_DENIED');
++  const text=await r.text();if(text.length>8192)throw new HttpError(502,'实验室身份响应无效','LAB_SSO_INVALID');
++  let value:unknown;try{value=JSON.parse(text);}catch{throw new HttpError(502,'实验室身份响应无效','LAB_SSO_INVALID');}
++  const parsed=identitySchema.safeParse(value);
++  if(!parsed.success||Date.parse(parsed.data.expiresAt)<=Date.now()||Date.parse(parsed.data.expiresAt)>Date.now()+8*3600000+5000)throw new HttpError(401,'实验室身份已失效','LAB_SSO_INVALID');
++  if(endpoint==='exchange'&&!parsed.data.token)throw new HttpError(502,'实验室登录凭证缺失','LAB_SSO_INVALID');
++  return parsed.data;
++}
++export async function verifyLabSession(ctx:AppContext,sessionId:string,subject:string,sealed:string):Promise<Identity>{
++  if(!labSsoAvailable(ctx))throw new HttpError(401,'实验室登录已停用','LAB_SSO_DISABLED');
++  let token:string;try{token=unsealSsoGrant(ctx,sealed,sessionId);}catch{throw new HttpError(401,'实验室登录已失效','LAB_SSO_INVALID');}
++  const profile=await exchange(ctx,'inspect',{token});
++  if(!labSsoAvailable(ctx))throw new HttpError(401,'实验室登录已停用','LAB_SSO_DISABLED');
++  if(profile.subject!==subject)throw new HttpError(401,'实验室身份不一致','LAB_SSO_INVALID');
++  return profile;
++}
++function flowCookie(ctx:AppContext,res:ExpressResponse,value:string,embedded:boolean,maxAge=300){
++  res.append('Set-Cookie',`${embedded?'__Host-lab_sso_flow_embedded':'__Host-lab_sso_flow'}=${value}; Path=/; HttpOnly; SameSite=${embedded?'None':'Lax'}; Max-Age=${maxAge}${ctx.config.cookieSecure?'; Secure':''}${embedded?'; Partitioned':''}`);
++}
++export function registerLabSso(app:Express,ctx:AppContext):void{
++  app.get('/api/auth/feishu/config',(_req,res)=>res.json({enabled:labSsoAvailable(ctx)}));
++  app.get('/api/auth/feishu/start',asyncHandler(async(req,res)=>{
++    if(!labSsoAvailable(ctx))throw new HttpError(503,'考核飞书登录尚未启用','LAB_SSO_DISABLED');
++    // Move legacy-IP entry points to the canonical host before setting cookies.
++    if(ctx.config.nodeEnv!=='test'&&ctx.config.appOrigin!=='https://exam.110-lab.cn'){res.redirect(303,'https://exam.110-lab.cn/api/auth/feishu/start'+(req.query.embedded==='1'?'?embedded=1':''));return;}
++    const embedded=req.query.embedded==='1';
++    if(embedded&&(!ctx.config.embeddingOrigins?.length||!ctx.config.cookieSecure))throw new HttpError(403,'插件内登录尚未启用','EMBEDDING_DISABLED');
++    await assertRateLimit(ctx,ctx.pool,'lab-sso-start',req.ip||'unknown',30,900);
++    await ctx.pool.query('DELETE FROM lab_sso_flows WHERE expires_at<=now()');
++    const state=nonce(),binding=nonce(),verifier=nonce();
++    await ctx.pool.query("INSERT INTO lab_sso_flows VALUES($1,$2,$3,$4,now()+interval '5 minutes')",[hash(state),hash(binding),verifier,embedded]);
++    flowCookie(ctx,res,binding,embedded);
++    const url=new URL(ISSUER+'/sso/assessment'+(embedded?'/embedded':''));url.searchParams.set('state',state);url.searchParams.set('code_challenge',createHash('sha256').update(verifier).digest('base64url'));
++    res.redirect(303,url.href);
++  }));
++  app.get('/api/auth/feishu/callback',asyncHandler(async(req,res)=>{
++    if(!labSsoAvailable(ctx))throw new HttpError(503,'考核飞书登录尚未启用','LAB_SSO_DISABLED');
++    const input=z.object({state:opaque,code:opaque,embedded:z.literal('1').optional()}).strict().safeParse(req.query);
++    if(!input.success)throw new HttpError(400,'登录回调无效','LAB_SSO_INVALID');
++    const {state,code}=input.data,embedded=input.data.embedded==='1',binding=readCookie(req,embedded?'__Host-lab_sso_flow_embedded':'__Host-lab_sso_flow');
++    if(!opaque.safeParse(binding).success)throw new HttpError(401,'请在发起登录的页面完成操作','LAB_SSO_BINDING');
++    const result=await ctx.pool.query<{verifier:string}>('DELETE FROM lab_sso_flows WHERE state_hash=$1 AND binding_hash=$2 AND embedded=$3 AND expires_at>now() RETURNING verifier',[hash(state),hash(binding!),embedded]);
++    const flow=result.rows[0];if(!flow)throw new HttpError(401,'登录链接已失效 请重新登录','LAB_SSO_BINDING');
++    const profile=await exchange(ctx,'exchange',{code,state,verifier:flow.verifier,redirectUri:CALLBACK});
++    const session=await withTx(ctx.pool,async client=>{
++      // Rollback takes this same lock after creating the freeze file, then
++      // deletes only SSO sessions. No callback may create one behind it.
++      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['lab-sso-issuance']);
++      if(!labSsoAvailable(ctx))throw new HttpError(503,'考核飞书登录暂不可用','LAB_SSO_DISABLED');
++      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',['lab-sso:'+profile.subject]);
++      let userId=(await client.query<{user_id:string}>('SELECT user_id FROM lab_sso_identities WHERE subject=$1',[profile.subject])).rows[0]?.user_id;
++      if(!userId){
++        // Separate service identity: never promote or merge a candidate by email.
++        const email='sso-'+hash(profile.subject)+'@identity.110-lab.cn';
++        const user=await client.query<{id:string}>("INSERT INTO users(role,name,email,password_hash) VALUES('ADMIN',$1,$2,'LAB_SSO_ONLY') RETURNING id",[profile.name,email]);userId=user.rows[0]!.id;
++        await client.query('INSERT INTO lab_sso_identities(subject,user_id) VALUES($1,$2)',[profile.subject,userId]);
++      }
++      const sessionId=randomUUID();
++      await client.query('UPDATE users SET name=$2 WHERE id=$1',[userId,profile.name]);
++      await client.query('INSERT INTO sessions(id,user_id,csrf_token,expires_at) VALUES($1,$2,$3,$4)',[sessionId,userId,nonce(),profile.expiresAt]);
++      await client.query('INSERT INTO lab_sso_sessions VALUES($1,$2,$3)',[sessionId,profile.subject,sealSsoGrant(ctx,profile.token!,sessionId)]);
++      await insertAudit(client,{actorId:userId,actorName:profile.name,action:'LAB_SSO_LOGIN'});
++      return sessionId;
++    });
++    flowCookie(ctx,res,'',embedded,0);setSessionCookie(res,ctx,session,embedded);res.redirect(303,'/admin');
++  }));
++}
+--- a/server/src/registrationProtection.test.ts
++++ b/server/src/registrationProtection.test.ts
+@@ -157,7 +157,7 @@
+       const pool = createPool(databaseUrl, schema);
+       const client = await pool.connect();
+       try {
+-        for (const id of ['001_init', '002_oauth', '003_direct_upload', '004_admin_deletion', '005_exam_duration', '006_registration_protection']) {
++        for (const id of ['001_init', '002_oauth', '003_direct_upload', '004_admin_deletion', '005_exam_duration', '006_registration_protection', '007_lab_sso']) {
+           const url = new URL(`../migrations/${id}.sql`, import.meta.url);
+           try {
+             await access(url);
+--- /dev/null
++++ b/server/src/rollingMigration.test.ts
+@@ -0,0 +1,36 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {readFile} from 'node:fs/promises';
++import {Pool} from 'pg';
++import {createPool,migrate} from './db.js';
++
++test('rolling migration aborts on a busy legacy table, then retries without changing old sessions',
++ {skip:!process.env.TEST_DATABASE_URL&&'needs a disposable PostgreSQL database'},async()=>{
++  const url=process.env.TEST_DATABASE_URL!,schema='assessment_rolling_'+process.pid;
++  const pool=createPool(url,schema);let blocker;
++  try{
++   await pool.query(`CREATE SCHEMA ${schema}`);
++   for(const id of ['001_init','002_oauth','003_direct_upload','004_admin_deletion','005_exam_duration','006_registration_protection']){
++    await pool.query(await readFile(new URL('../migrations/'+id+'.sql',import.meta.url),'utf8'));
++    await pool.query('INSERT INTO schema_migrations(id) VALUES($1)',[id]);
++   }
++   const user=(await pool.query("INSERT INTO users(role,name,email,password_hash) VALUES('CANDIDATE','虚构考生','fixture@example.test','fixture') RETURNING id")).rows[0];
++   await pool.query("INSERT INTO sessions(user_id,csrf_token,expires_at) VALUES($1,'fixture',now()+interval '1 hour')",[user.id]);
++   const before=await pool.query('SELECT row_to_json(s) AS value FROM sessions s');
++   blocker=await pool.connect();await blocker.query('BEGIN');await blocker.query('LOCK TABLE users IN ROW EXCLUSIVE MODE');
++   const started=Date.now();
++   await assert.rejects(()=>migrate(pool,schema),(error:unknown)=>(error as {code?:string}).code==='55P03');
++   assert.ok(Date.now()-started<6000,'busy migration fails before candidate request timeout');
++   assert.equal((await pool.query("SELECT to_regclass($1) AS name",[schema+'.lab_sso_flows'])).rows[0].name,null,'failed migration is atomic');
++   assert.equal((await pool.query("SELECT 1 FROM schema_migrations WHERE id='007_lab_sso'")).rowCount,0);
++   assert.deepEqual((await pool.query('SELECT row_to_json(s) AS value FROM sessions s')).rows,before.rows);
++   await blocker.query('COMMIT');blocker.release();blocker=undefined;
++   await migrate(pool,schema);
++   assert.equal((await pool.query("SELECT 1 FROM schema_migrations WHERE id='007_lab_sso'")).rowCount,1);
++   assert.deepEqual((await pool.query('SELECT row_to_json(s) AS value FROM sessions s')).rows,before.rows);
++  }finally{
++   if(blocker){await blocker.query('ROLLBACK');blocker.release();}
++   await pool.end();const cleanup=new Pool({connectionString:url});
++   try{await cleanup.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);}finally{await cleanup.end();}
++  }
++ });

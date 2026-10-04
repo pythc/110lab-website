@@ -396,3 +396,5 @@ export function openHonorsStore({
     },
   };
 }
+
+export {fields as honorFields};

@@ -1,3 +1,4 @@
+import {extractAttachmentText} from '../server/attachment-text.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,writeFileSync,readFileSync,readdirSync,lstatSync} from 'node:fs';
@@ -202,4 +203,9 @@ test('10MiB attachment fits actual provider MIME limit; persistent quota and dai
   assert.throws(()=>accept(store,{fields:{...applicant,name:'达到每日上限的虚构候选人'}}),e=>e.status===429);
   const tiny=fixture(t,{maxStoredBytes:pdf.length-1});assert.throws(()=>accept(tiny),e=>e.code==='STORAGE_BUSY');assert.equal(readdirSync(join(tiny.root,'files')).length,0);
   assert.equal(store.inspect(receipt.id).status,'SENDING');
+});
+
+test('DOCX extraction preserves paragraphs without processing external actions',async()=>{
+  const result=await extractAttachmentText(zip(docxParts),'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  assert.equal(result.status,'EXTRACTED');assert.deepEqual(result.segments,[{paragraph:1,text:'虚构简历'}]);
 });

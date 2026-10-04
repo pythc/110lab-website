@@ -3,6 +3,7 @@ import {isIP} from 'node:net';
 import {z} from 'zod';
 import {AdminError,openAdminAuth} from './admin-auth.mjs';
 import {UpdateError} from './updates.mjs';
+import {MailAuthError} from './mail-auth.mjs';
 
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
 export const ADMIN_FRAME_ANCESTORS=Object.freeze([
@@ -28,13 +29,15 @@ async function body(req,limit=32768){
   });
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new AdminError(400,'请求格式无效');}
 }
-export async function createAdminHttp({updates,enabled=process.env.PORTAL_ADMIN_ENABLED==='true',directory=process.env.PORTAL_ADMIN_DATA,configPath=process.env.PORTAL_ADMIN_CONFIG,config,origins=['https://internal.110-lab.cn'],trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean),localTest=false}={}){
+export async function createAdminHttp({updates,mail,legacyPasswordEnabled=false,enabled=process.env.PORTAL_ADMIN_ENABLED==='true',directory=process.env.PORTAL_ADMIN_DATA,configPath=process.env.PORTAL_ADMIN_CONFIG,config,origins=['https://internal.110-lab.cn'],trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean),localTest=false}={}){
   if(!enabled)return {enabled:false,async handle(){return false;},close(){}};
-  if(!updates||!directory||(!configPath&&!config))throw new Error('Admin updates are not configured');
+  const shared=!!mail?.enabled;
+  if(!shared&&!legacyPasswordEnabled)throw new Error('Dynamic management requires laboratory Feishu authentication');
+  if(!updates||!shared&&(!directory||(!configPath&&!config)))throw new Error('Admin updates are not configured');
   if(origins.some(o=>{const u=new URL(o);return u.protocol!=='https:'&&!(localTest&&u.protocol==='http:'&&['127.0.0.1','localhost'].includes(u.hostname));}))throw new Error('Admin origin must use HTTPS');
   if(trustedProxies.some(ip=>!isIP(ip)))throw new Error('Invalid trusted proxy');
-  const auth=openAdminAuth({directory,configPath,config,localTest}),html=await readFile(new URL('../dist/admin.html',import.meta.url),'utf8'),allowed=new Set(origins),proxies=new Set(trustedProxies);
-  return {enabled:true,close(){auth.close();},
+  const auth=shared?null:openAdminAuth({directory,configPath,config,localTest}),html=await readFile(new URL('../dist/admin.html',import.meta.url),'utf8'),allowed=new Set(origins),proxies=new Set(trustedProxies);
+  return {enabled:true,close(){auth?.close();},
     async handle(req,res,path,host){
       const pagePath=['/admin','/admin/','/admin/embedded'].includes(path);
       if(!pagePath&&!path.startsWith('/api/admin/'))return false;
@@ -52,16 +55,18 @@ export async function createAdminHttp({updates,enabled=process.env.PORTAL_ADMIN_
           if(!allowed.has(req.headers.origin)||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))throw new AdminError(403,'请通过工作台操作');
         }
         if(path==='/api/admin/login'&&req.method==='POST'){
+          if(shared)throw new AdminError(410,'请使用实验室飞书身份登录');
           const value=z.object({username:z.string().min(1).max(40),password:z.string().min(1).max(256)}).strict().parse(await body(req,2048));
           if(Buffer.byteLength(value.password)>256)throw new AdminError(400,'请求格式无效');
           const remote=req.socket.remoteAddress||'unknown',forwarded=String(req.headers['x-forwarded-for']||'').split(',')[0].trim();
           const ip=proxies.has(remote)&&isIP(forwarded)?forwarded:remote;
           const result=await auth.login(value.username,value.password,ip,{embedded});res.setHeader('Set-Cookie',result.cookie);json(res,200,result.session);return true;
         }
-        const session=auth.session(req.headers.cookie,{embedded});
+        const session=shared?mail.identity(req,{embedded,write:req.method==='POST'}):auth.session(req.headers.cookie,{embedded});
+        if(shared&&!['admin','super_admin'].includes(session.role))throw new AdminError(403,'需要实验室管理员权限');
         if(path==='/api/admin/session'&&req.method==='GET'){const {key,embedded:context,...publicSession}=session;json(res,200,publicSession);return true;}
-        if(req.method==='POST')auth.csrf(session,req.headers['x-csrf-token']);
-        if(path==='/api/admin/logout'&&req.method==='POST'){z.object({}).strict().parse(await body(req,128));res.setHeader('Set-Cookie',auth.logout(session));json(res,200,{loggedOut:true});return true;}
+        if(req.method==='POST'&&!shared)auth.csrf(session,req.headers['x-csrf-token']);
+        if(path==='/api/admin/logout'&&req.method==='POST'){if(shared)throw new AdminError(410,'请退出实验室飞书身份');z.object({}).strict().parse(await body(req,128));res.setHeader('Set-Cookie',auth.logout(session));json(res,200,{loggedOut:true});return true;}
         if(path==='/api/admin/updates'){
           if(req.method==='GET'){json(res,200,{updates:updates.listDrafts()});return true;}
           const value=await body(req);json(res,201,updates.create(value));return true;
@@ -78,7 +83,7 @@ export async function createAdminHttp({updates,enabled=process.env.PORTAL_ADMIN_
         json(res,200,result);
       }catch(error){
         req.resume();if(res.headersSent||res.destroyed)return true;
-        if(error instanceof AdminError)json(res,error.status,{error:error.message});
+        if(error instanceof AdminError||error instanceof MailAuthError)json(res,error.status,{error:error.message});
         else if(error instanceof UpdateError)json(res,error.code==='NOT_FOUND'?404:409,{error:error.code==='CONFLICT'?'内容已被修改 请重新加载后操作':'请先确认此内容适合公开',code:error.code});
         else if(error instanceof z.ZodError)json(res,400,{error:'请检查标题、正文和链接格式'});
         else{console.error('Admin request failed',error.code||error.name);json(res,503,{error:'暂时无法完成操作 请稍后重试'});}

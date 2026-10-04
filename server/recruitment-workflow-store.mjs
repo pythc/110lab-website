@@ -275,6 +275,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       if(row.kind==='feishu'&&status==='SENT'&&result?.recordId)c.feishu={recordId:result.recordId,target:row.payload.target,at:stamp()};
       c.revision++;event(c,{subject:'system',name:'发送服务'},row.kind==='feishu'?'飞书联动结果':'邮件处理结果',({SENT:'服务商已接收',SIMULATED:'模拟完成 未对外发送',FAILED:'发送失败',RETRYING:'暂时失败 等待重试',UNKNOWN:'结果待核实 已停止自动重试'})[status]);put(c);return true;
     });},
+    commandCommitted(actor,requestId){requireRecruitmentAdmin(actor);return !!db.prepare('SELECT 1 FROM requests WHERE actor=? AND request_id=?').get(actor.subject,requestId);},
     inspectDelivery(actor,id){requireRecruitmentAdmin(actor);const row=db.prepare('SELECT * FROM deliveries WHERE id=?').get(id);if(!row)fail(404,'任务不存在');return deliveryView(row);},
     cleanup(){for(const name of readdirSync(join(directory,'tmp'))){if(!/^[a-f0-9-]{36}\.upload$/.test(name))continue;const path=join(directory,'tmp',name),st=lstatSync(path);if(st.isFile()&&!st.isSymbolicLink()&&st.mtimeMs<now()-86400000)unlinkSync(path);}
       db.prepare('DELETE FROM budgets WHERE (scope IN (\'accepted-email\',\'accepted-all\') AND bucket<?) OR (scope=\'accepted-ip\' AND bucket<?) OR (scope=\'upload\' AND bucket<?)').run(Math.floor(now()/86400000)-2,Math.floor(now()/3600000)-48,Math.floor(now()/600000)-12);},

@@ -1,0 +1,61 @@
+{
+  "run": "sso-rehearsal-639a27ac",
+  "productionSwitched": false,
+  "candidateImage": "sha256:ff99ec7457c482b353f25a82f267fa0a8e0835f6ba9407d80ba6de6a5bd632d4",
+  "rollbackImage": "sha256:e06948597fb83a3d93e5d35f8df650216fe517478e563ddc803075a03c4a6c6e",
+  "seed": {
+    "seeded": true,
+    "migrations": [
+      "001_init",
+      "002_oauth",
+      "003_direct_upload",
+      "004_admin_deletion",
+      "005_exam_duration",
+      "006_registration_protection"
+    ]
+  },
+  "exercise": {
+    "exercisePassed": true
+  },
+  "workersDisabledOnNewHttp": true,
+  "forwardInflightSurvived": true,
+  "rollbackInflightSurvived": true,
+  "sessionPreserved": true,
+  "deadlineAndQuestionPreserved": true,
+  "oldAssets": 97,
+  "rollbackAssets": 138,
+  "resumedUploadBytes": 2097181,
+  "finalizedAfterRollback": true,
+  "ssoSessionRevoked": true,
+  "realMessagesSent": 0,
+  "continuousRequests": {
+    "samples": 185,
+    "failures": [],
+    "maxLatencyMs": 105
+  },
+  "passed": true,
+  "productionProcessesUnchanged": true,
+  "productionGatewayUnchanged": true,
+  "date": "2026-10-05",
+  "testEnvironment": "isolated internal Docker network; fictional data only",
+  "applicationPatchSha256": "b1d37f146d2e3d8c49ba6ecdb92b668dab86199a7a194caf1f62782e050a4e71",
+  "sourceManifestSha256": "975e319fc02ddb638eb30c83c173a3bdc2750a3383b77a4b5ff4d3c2cfce19c4",
+  "fixtureSha256": "3bf08872a44c0cea2253e8a288fe6aaf0be4014df68131c0cd344abccc120751",
+  "preparedArchiveSha256": "e736343fe263b022091632db9c68868120c9b5b763adab7eebd9fb977fdd13e5",
+  "finalProductionPreflight": {
+    "activeAssessments": 2,
+    "ssoMigrationApplied": false,
+    "assessmentId": "9ef9e975430c6f878f833fc9bc8a4f7cddcabf8eb427a11e0d130b5bccb99156",
+    "assessmentStarted": "2026-10-04T15:02:47.728782485Z",
+    "assessmentHealthy": true,
+    "gatewaySha256": "1887b1c7ec2dc17fe9cdcaadc32857dc91f7e8b8b91c3c3acacec4111afcfcb8",
+    "removedFailedTestImages": 0,
+    "testContainersRemaining": 0,
+    "publicHttp": {
+      "https://exam.110-lab.cn/api/health": 200,
+      "https://exam.110-lab.cn/": 200,
+      "https://internal.110-lab.cn/healthz": 200,
+      "https://110-lab.cn/": 200
+    }
+  }
+}

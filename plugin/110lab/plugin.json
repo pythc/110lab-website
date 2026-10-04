@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "110lab",
-  "version": "0.12.0",
-  "description": "110 实验室工作台：项目立项、奖项荣誉、个人待办、招新管理与团队应用。",
+  "version": "0.14.0",
+  "description": "110 实验室工作台：项目、荣誉、招新、公共邮箱和官网动态的业务 MCP。",
   "author": {
     "name": "110 实验室"
   },

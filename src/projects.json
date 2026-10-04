@@ -1,6 +1,6 @@
 {
   "systems": {
-    "assessment": "https://47.109.176.127",
+    "assessment": "https://exam.110-lab.cn",
     "requirements": "https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x"
   },
   "projects": [
@@ -12,7 +12,7 @@
       "description": "从真实项目实践出发，连接报名、作答、提交与评审。",
       "tags": "产品方向 / 开发与测试",
       "art": "assessment",
-      "url": "https://47.109.176.127",
+      "url": "https://exam.110-lab.cn",
       "span": 2
     },
     {
@@ -88,7 +88,7 @@
       "id": "assessment",
       "title": "考核系统",
       "description": "招新报名、项目作答、提交与评审。",
-      "url": "https://47.109.176.127",
+      "url": "https://exam.110-lab.cn/api/auth/feishu/start",
       "status": "available",
       "icon": "assessment",
       "edition": "招新考核"

@@ -40,7 +40,7 @@ export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTe
     for(const member of existing)if(!directory.has(member.subject))directory.set(member.subject,member);
     return {...input,members:input.members.map(value=>{const member=directory.get(value?.subject);if(!member)throw new WorkspaceError(400,'请选择列表中的实验室成员');return member;})};
   }
-  return {enabled,projects:actor=>store?.list(actor).projects||[],close(){inbox?.close();store?.close();},async handle(req,res,path,host){
+  return {enabled,store,canonicalMembers,projects:actor=>store?.list(actor).projects||[],close(){inbox?.close();store?.close();},async handle(req,res,path,host){
     if(!path.startsWith('/api/workspace/'))return false;
     try{
       if(host!=='internal.110-lab.cn'&&!(localTest&&['localhost','127.0.0.1'].includes(host)))throw new WorkspaceError(404,'Not found');

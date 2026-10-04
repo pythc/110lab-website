@@ -23,3 +23,5 @@ scripts/verify-live.mjs
 server/mail-membership-worker-runtime.mjs
 
 server/recruitment-workflow-worker-runtime.mjs
+
+server/attachment-text-worker-runtime.mjs

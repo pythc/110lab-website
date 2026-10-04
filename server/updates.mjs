@@ -1,3 +1,4 @@
+import {commandJournal} from './durable-command.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync,chmodSync,lstatSync} from 'node:fs';
 import {dirname,resolve} from 'node:path';
@@ -38,6 +39,7 @@ export function openUpdatesStore(filename=':memory:'){
     return present(row(id));
   };
   return {
+    durable:commandJournal(db),
     create(value){
       const draft=input.parse(value),id=randomUUID(),now=new Date().toISOString();
       db.prepare('INSERT INTO public_updates (id,draft,revision,created_at,updated_at) VALUES (?,?,1,?,?)').run(id,JSON.stringify(draft),now,now);
@@ -63,3 +65,5 @@ export function openUpdatesStore(filename=':memory:'){
     close:()=>db.close()
   };
 }
+
+export {input as updateContentSchema};

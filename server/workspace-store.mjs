@@ -8,6 +8,7 @@
 // layer. The store never trusts a role baked into stored data: the actor's
 // role is always what the live role store (upstream) said at request time.
 
+import {commandJournal} from './durable-command.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {
   lstatSync,
@@ -573,14 +574,14 @@ export function openWorkspaceStore({directory, now = Date.now}) {
   }
 
   function tx(fn) {
-    db.exec('BEGIN IMMEDIATE');
+    db.exec('SAVEPOINT workspace_mutation');
     try {
       const result = fn();
-      db.exec('COMMIT');
+      db.exec('RELEASE workspace_mutation');
       return result;
     } catch (e) {
       try {
-        db.exec('ROLLBACK');
+        db.exec('ROLLBACK TO workspace_mutation; RELEASE workspace_mutation');
       } catch {
         /* ignore */
       }
@@ -972,6 +973,7 @@ export function openWorkspaceStore({directory, now = Date.now}) {
   }
 
   return {
+    durable: commandJournal(db),
     list: wrapInternal(list),
     get: wrapInternal(get),
     create: wrapInternal(create),
@@ -986,3 +988,5 @@ export function openWorkspaceStore({directory, now = Date.now}) {
     close,
   };
 }
+
+export {createInputSchema as projectCreateSchema,applyInputSchema as projectApplySchema,reviewInputSchema as projectReviewSchema,addMilestoneInputSchema as milestoneCreateSchema};
