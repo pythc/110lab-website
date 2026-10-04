@@ -1114,6 +1114,16 @@ body {
   min-height: 32px;
 }
 
+@media (max-width: 900px) {
+  .rt-app .rt-table { min-width: 640px; }
+  .rt-app .rt-table th,
+  .rt-app .rt-table td { padding-right: 14px; padding-left: 14px; }
+  .rt-app .rt-table th:nth-child(5),
+  .rt-app .rt-table .rt-updated { display: none; }
+  .rt-app .rt-person-cell { min-width: 180px; }
+  .rt-app .rt-group-cell { min-width: 100px; }
+}
+
 @media (max-width: 720px) {
   .rt-app .rt-header {
     height: auto;
