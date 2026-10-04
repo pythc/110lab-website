@@ -14,7 +14,7 @@ try{
   const manifest=JSON.parse(readFileSync('release.json'));
   for(const path of Object.keys(manifest.files)){mkdirSync(dirname(join(root,path)),{recursive:true});copyFileSync(path,join(root,path));}
   const {createHttpServer}=await import(pathToFileURL(join(root,'server/runtime.mjs')));
-  server=await createHttpServer({mail:{enabled:true,directory:join(root,'private'),localTest:true,config:{appId:'cli_fixture12345',appSecret:'fictional-app-secret-2026',tenantKey:'fixture_tenant',bootstrapUnionId:'on_fixture_owner_2026',bootstrapEmail:owner.email,bootstrapName:owner.name},fetchIdentity:async(_,{code})=>code==='member'?member:owner}});
+  server=await createHttpServer({recruitmentWorkflow:{enabled:true},mail:{enabled:true,directory:join(root,'private'),localTest:true,config:{appId:'cli_fixture12345',appSecret:'fictional-app-secret-2026',tenantKey:'fixture_tenant',bootstrapUnionId:'on_fixture_owner_2026',bootstrapEmail:owner.email,bootstrapName:owner.name},fetchIdentity:async(_,{code})=>code==='member'?member:owner}});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const call=(path,data,headers={})=>new Promise((resolve,reject)=>{const req=request({hostname:'127.0.0.1',port:server.address().port,path,method:data===undefined?'GET':'POST',headers:{Host:'internal.110-lab.cn',...(data===undefined?{}:{Origin:'https://internal.110-lab.cn','Content-Type':typeof data==='string'?'application/x-www-form-urlencoded':'application/json'}),...headers}},res=>{const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>{const text=Buffer.concat(chunks).toString();let body;try{body=JSON.parse(text);}catch{}resolve({status:res.statusCode,headers:res.headers,text,body});});});req.on('error',reject);req.end(data===undefined?undefined:typeof data==='string'?data:JSON.stringify(data));});
   assert.equal((await call('/healthz')).body.version,manifest.version);
@@ -77,5 +77,24 @@ try{
   await advance('interview',{score:90,note:'测试面试'});await advance('accept',{note:'测试决策'});await advance('archive');
   assert.equal(candidate.archived,true);assert.equal(candidate.stage,'accepted');
   assert.equal((await call('/api/recruitment-test/candidates/'+candidate.id,undefined,recruiter)).status,401);
+  // Managed workflow uses the same real embedded login adapter in the bundle.
+  const managed='/api/recruitment-admin/embedded/';
+  assert.equal((await call('/recruitment/embedded')).status,200);
+  assert.equal((await call('/recruitment',undefined,{Host:'110-lab.cn'})).status,404);
+  assert.equal((await call('/api/recruitment-admin/candidates',undefined,recruiter)).status,401);
+  const config=await call('/api/recruitment/config',undefined,{Host:'110-lab.cn'});
+  assert.equal(config.body.workflow,true);assert.equal(config.body.recipient,'noreply@110-lab.cn');assert.equal(config.body.retention,'permanent');
+  let managedCandidate=(await call(managed+'candidates',{requestId:randomUUID(),name:'虚构正式流程验证',email:'managed@example.com',group:'开发组',summary:''},recruiter)).body;
+  const advanceManaged=async(action,args={})=>{const r=await call(managed+'candidates/'+managedCandidate.id+'/actions',{requestId:randomUUID(),revision:managedCandidate.revision,action,...args},recruiter);assert.equal(r.status,200);managedCandidate=r.body;};
+  await advanceManaged('screen',{assessmentRequired:false,note:''});
+  await advanceManaged('schedule',{at:new Date(Date.now()+86400000).toISOString(),interviewer:'虚构面试官',email:'interviewer@example.com',contact:'interviewer@example.com',location:'隔离发布验证'});
+  const template=(await call(managed+'templates',undefined,recruiter)).body.items[0];
+  await advanceManaged('prepare_notice',{templateId:template.id,templateRevision:template.revision,values:{}});
+  const preview=(await call(managed+'candidates/'+managedCandidate.id+'/preview-interview',undefined,recruiter)).body;
+  assert.equal(preview.payload.replyTo,'interviewer@example.com');
+  await advanceManaged('send_notice',{previewHash:preview.previewHash});
+  for(let n=0;n<20;n++){const r=await call(managed+'candidates/'+managedCandidate.id,undefined,recruiter);managedCandidate=r.body;if(managedCandidate.notification.status==='simulated')break;await new Promise(r=>setTimeout(r,50));}
+  assert.equal(managedCandidate.notification.status,'simulated');
+  assert.equal(managedCandidate.deliveries[0].mode,'dry-run');
   console.log(JSON.stringify({isolatedHostOAuthToIframe:true,isolatedMailBundle:true,fictionalLogin:true,roleTransfer:true,oldSessionDenied:true,publicHostDenied:true,manualSendingClosed:true,workspaceLifecycle:true,recruitmentWorkflow:true,sharedRoles:true,externalCalls:false}));
 }finally{if(server)await new Promise(r=>{server.close(r);server.closeAllConnections();});rmSync(root,{recursive:true,force:true});}

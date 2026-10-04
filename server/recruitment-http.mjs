@@ -1,7 +1,7 @@
 import {renameSync,unlinkSync,openSync,closeSync,fsyncSync} from 'node:fs';
 import {join} from 'node:path';
 import {isIP} from 'node:net';
-import {openRecruitmentStore,RecruitmentError,MAX_FILE_BYTES,GROUPS,keyHash} from './recruitment-store.mjs';
+import {openRecruitmentStore,RecruitmentError,MAX_FILE_BYTES,GROUPS,keyHash,RECIPIENT} from './recruitment-store.mjs';
 import {readApplication} from './recruitment-files.mjs';
 
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
@@ -31,6 +31,7 @@ export function createRecruitmentHttp({store,directory=process.env.PORTAL_RECRUI
   cleanup?.unref();
   return {
     get enabled(){return !!queue;},
+    legacyReceipt(id,authorization,retry=false){if(!queue)throw new RecruitmentError(404,'RECEIPT_NOT_FOUND','找不到此回执');return retry?queue.retry(id,authorization):queue.receipt(id,authorization);},
     labInbox(){return queue?{state:'ready',items:queue.listForLab()}:{state:'disabled',items:[]};},
     close(){clearInterval(cleanup);if(ownStore)queue.close();},
     async handle(req,res,path,host){
@@ -39,7 +40,7 @@ export function createRecruitmentHttp({store,directory=process.env.PORTAL_RECRUI
         const localHost=['localhost','127.0.0.1','[::1]'].includes(host)&&[...allowedOrigins].some(value=>{const origin=new URL(value);return origin.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(origin.hostname);});
         if(host!=='110-lab.cn'&&!localHost)throw new RecruitmentError(404,'NOT_FOUND','Not found');
         if(path==='/api/recruitment/config'&&req.method==='GET'){
-          json(res,200,{enabled:!!queue,available:!!queue&&queue.workerReady(),maxFileBytes:MAX_FILE_BYTES,groups:GROUPS});return true;
+          json(res,200,{enabled:!!queue,available:!!queue&&queue.workerReady(),maxFileBytes:MAX_FILE_BYTES,groups:GROUPS,recipient:RECIPIENT});return true;
         }
         if(!queue)throw new RecruitmentError(503,'RECRUITMENT_DISABLED','在线投递暂未开放 请使用下方邮箱投递');
         if(req.method!=='POST'||!['/api/recruitment/submissions','/api/recruitment/status','/api/recruitment/retry'].includes(path))throw new RecruitmentError(404,'NOT_FOUND','Not found');

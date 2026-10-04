@@ -1,0 +1,17 @@
+import {DatabaseSync} from 'node:sqlite';
+import {join} from 'node:path';
+import {createWorkflowSmtpProvider,readWorkflowProviderConfig,runWorkflowDeliveryOnce} from './recruitment-workflow-worker.mjs';
+import {createRecruitmentFeishuProvider} from './recruitment-feishu-provider.mjs';
+const directory=process.env.PORTAL_RECRUITMENT_WORKFLOW_DATA,mode=process.env.PORTAL_RECRUITMENT_WORKFLOW_MODE;
+const configPath=process.env.PORTAL_RECRUITMENT_WORKFLOW_PROVIDERS,mailDirectory=process.env.PORTAL_MAIL_DATA;
+if(mode!=='live'||!directory||!configPath||!mailDirectory)throw new Error('Live recruitment delivery is not explicitly configured');
+const config=readWorkflowProviderConfig(configPath),smtp=createWorkflowSmtpProvider(config.smtp||[]),feishu=config.feishu?createRecruitmentFeishuProvider(config.feishu):null;
+const {openRecruitmentWorkflowStore}=await import('./recruitment-workflow-store.mjs');
+const store=openRecruitmentWorkflowStore({directory,deliveryMode:'live',mailProfiles:smtp.profiles});
+const roles=new DatabaseSync(join(mailDirectory,'mail-access.sqlite'),{readOnly:true});
+const roleForSubject=subject=>roles.prepare('SELECT role FROM administrators WHERE subject=? AND active=1').get(subject)?.role||'member';
+let stopped=false,busy=false,running;
+const tick=async()=>{if(stopped||busy)return;busy=true;try{running=runWorkflowDeliveryOnce(store,{mode,smtp,feishu,roleForSubject});await running;}catch(e){console.error('Recruitment delivery failed',e.code||e.name);}finally{busy=false;}};
+const timer=setInterval(tick,5000);void tick();
+for(const signal of ['SIGINT','SIGTERM'])process.once(signal,async()=>{stopped=true;clearInterval(timer);await running;smtp.close();store.close();roles.close();process.exit(0);});
+console.log('Recruitment workflow delivery worker started');

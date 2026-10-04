@@ -13,7 +13,7 @@ export class RecruitmentTestError extends Error {constructor(status,message){sup
 const fail=(status,message)=>{throw new RecruitmentTestError(status,message);};
 export function requireRecruitmentAdmin(actor){
   if(!actor?.subject)fail(401,'请先通过飞书登录');
-  if(!['admin','super_admin'].includes(actor.role))fail(403,'仅实验室管理员可使用招新测试空间');
+  if(!['admin','super_admin'].includes(actor.role))fail(403,'仅实验室管理员可管理招新');
   return actor;
 }
 const text=(max,min=0)=>z.string().trim().min(min).max(max).refine(v=>!/[\u0000-\u0008\u000b-\u001f\u007f]/.test(v));

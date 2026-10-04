@@ -50,12 +50,12 @@
     },
     {
       "id": "recruitment-test",
-      "title": "招新流程测试",
-      "description": "初筛、考核、面试与决策 仅使用虚构资料",
-      "url": "https://internal.110-lab.cn/recruitment-test",
+      "title": "招新管理",
+      "description": "官网简历、初筛、面试安排与模板邮件",
+      "url": "https://internal.110-lab.cn/recruitment",
       "status": "available",
       "icon": "recruitment",
-      "edition": "独立测试空间"
+      "edition": "招新工作流"
     },
     {
       "id": "grading-internal",

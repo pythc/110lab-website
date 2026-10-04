@@ -1234,3 +1234,13 @@ body {
     animation: none;
   }
 }
+
+/* Management forms share the candidate list's spacing and controls. */
+.rt-config-row {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;margin:8px 0;border:1px solid #e1e5ed;border-radius:10px;align-items:center}
+.rt-config-row input:not([type=checkbox]) {width:100%;min-width:0;border:1px solid #dce2eb;border-radius:8px;padding:10px;font:inherit}
+.rt-config-row input[type=checkbox] {width:16px;height:16px;flex:none}
+.rt-delivery {border:1px solid #e1e5ed;border-radius:10px;padding:14px;margin:10px 0;overflow-wrap:anywhere}
+.rt-delivery summary {cursor:pointer;font-size:13px;color:#576376;margin:12px 0}
+.rt-delivery .rt-help {white-space:normal}
+.rt-form-intro {white-space:pre-line}
+@media(max-width:560px){.rt-config-row{grid-template-columns:minmax(0,1fr)}}

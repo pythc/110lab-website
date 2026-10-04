@@ -1,7 +1,7 @@
 // Shared laboratory identity, with the same embedded handoff as the workbench.
-export function createLabSession({onChange=()=>{},onStatus=()=>{}}={}){
+export function createLabSession({onChange=()=>{},onStatus=()=>{},apiRoot='/api/recruitment-test/'}={}){
   const embedded=location.pathname.endsWith('/embedded');
-  const suffix=embedded?'embedded/':'',prefix='/api/recruitment-test/'+suffix,mail='/api/mail/'+suffix;
+  const suffix=embedded?'embedded/':'',prefix=apiRoot+suffix,mail='/api/mail/'+suffix;
   let profile=null,flow=null,timer=null,popup=null,generation=0,poll=null;
   function clear(){generation++;profile=null;onChange(null);}
   function accept(value){if(value.subject!==profile?.subject||value.role!==profile?.role)generation++;profile=value;onChange(profile);}
