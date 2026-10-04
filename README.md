@@ -68,7 +68,7 @@ docker run --name 110lab-website --read-only --user 1000:1000 \
 
 ## 插件
 
-`plugin/110lab/` 保存插件清单。`open_110lab` 是侧边栏入口，其资源 URI 为 `ui://110lab/workbench/v0.8.7`，明确加载工作台；`search_110lab_projects` 为只读项目搜索。本次保持资源 URI，以保留已有嵌入登录分区；更新插件到 0.11.0 并重新打开工作台以加载新增应用入口。
+`plugin/110lab/` 保存插件清单。`open_110lab` 是侧边栏入口，其资源 URI 为 `ui://110lab/workbench/v0.8.7`，明确加载工作台；`search_110lab_projects` 为只读项目搜索。本次保持资源 URI，以保留已有嵌入登录分区；更新插件到 0.12.0 并重新打开工作台以加载新增应用入口。
 
 ## 素材与许可
 

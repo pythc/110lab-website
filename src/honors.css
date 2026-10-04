@@ -216,6 +216,7 @@ nav span {
   color: #8b94a3;
 }
 .table-wrap {
+  position: relative;
   overflow: auto;
   padding: 0 30px 24px;
 }
@@ -513,6 +514,7 @@ legend {
     min-width: 160px;
   }
   .table-wrap {
+  position: relative;
     padding: 0 15px 15px;
   }
   .form-grid {
