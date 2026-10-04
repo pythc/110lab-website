@@ -84,10 +84,16 @@
         <label for="ws-field-summary">简介</label>
         <textarea id="ws-field-summary" name="summary" required maxlength="800" rows="3"></textarea>
       </div>
-      <div class="ws-field">
-        <label for="ws-field-members">成员（可多选）</label>
-        <select id="ws-field-members" name="members" multiple size="5"></select>
-        <p class="ws-field-hint">按住 Ctrl / Command 多选。负责人自动包含。</p>
+      <div class="ws-field ws-member-picker">
+        <label for="ws-field-members-search">成员</label>
+        <div class="ws-member-controls">
+          <input type="search" id="ws-field-members-search" placeholder="搜索姓名或邮箱" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+          <button type="button" class="ws-btn ws-btn-ghost" id="ws-field-members-refresh">刷新目录</button>
+        </div>
+        <p class="ws-field-hint" id="ws-field-members-summary">已选 0 人</p>
+        <p class="ws-field-error" id="ws-field-members-status" role="status" aria-live="polite" hidden></p>
+        <div class="ws-member-list" id="ws-field-members-list" role="group" aria-label="成员选择列表"></div>
+        <p class="ws-field-hint">负责人自动包含，不出现在列表中。</p>
       </div>
       <fieldset class="ws-fieldset">
         <legend>链接（可留空）</legend>

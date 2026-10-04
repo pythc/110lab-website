@@ -31,11 +31,14 @@ export function createWorkspaceHttp({mail,recruitment,localTest=false,now=Date.n
     if(writes.size>2000)for(const [key,row] of writes)if(time-row.at>=60000)writes.delete(key);
     writes.set(actor.subject,v);
   }
-  function canonicalMembers(actor,input){
+  async function canonicalMembers(actor,input,existing=[]){
     if(!Array.isArray(input?.members))return input;
     if(input.members.length>100)throw new WorkspaceError(400,'项目成员过多');
-    const directory=new Map(mail.members(actor.subject).map(m=>[m.subject,m]));
-    return {...input,members:input.members.map(value=>{const member=directory.get(value?.subject);if(!member)throw new WorkspaceError(400,'请选择已通过飞书登录的实验室成员');return member;})};
+    const directory=new Map((await mail.projectMembers(actor.subject)).members.map(m=>[m.subject,m]));
+    // Existing project members can be retained during a directory outage. They
+    // cannot be invented by the client or borrowed from another project.
+    for(const member of existing)if(!directory.has(member.subject))directory.set(member.subject,member);
+    return {...input,members:input.members.map(value=>{const member=directory.get(value?.subject);if(!member)throw new WorkspaceError(400,'请选择列表中的实验室成员');return member;})};
   }
   return {enabled,close(){inbox?.close();store?.close();},async handle(req,res,path,host){
     if(!path.startsWith('/api/workspace/'))return false;
@@ -46,10 +49,10 @@ export function createWorkspaceHttp({mail,recruitment,localTest=false,now=Date.n
       const embedded=path.startsWith('/api/workspace/embedded/'),route=path.slice(embedded?24:15),write=req.method==='POST';
       if(write){const origin=req.headers.origin;const ok=origin==='https://internal.110-lab.cn'||localTest&&origin==='http://'+req.headers.host;
         if(!ok||req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin')throw new WorkspaceError(403,'请通过工作台操作');}
-      const actor=mail.identity(req,{embedded,write});
+      let actor=mail.identity(req,{embedded,write});
       if(!write){
         if(route==='session')json(res,200,actor);
-        else if(route==='members')json(res,200,{members:mail.members(actor.subject)});
+        else if(route==='members')json(res,200,await mail.projectMembers(actor.subject));
         else if(route==='projects')json(res,200,store.list(actor));
         else if(route==='todos'){
           const admin=['admin','super_admin'].includes(actor.role),recruit=admin?inbox.list(actor):{state:'restricted',items:[],partial:false};
@@ -59,14 +62,16 @@ export function createWorkspaceHttp({mail,recruitment,localTest=false,now=Date.n
           json(res,200,match[2]?{events:store.audit(actor,match[1])}:store.get(actor,match[1]));}
       }else{
         throttle(actor);const input=await body(req);
-        if(route==='projects'){json(res,201,store.create(actor,canonicalMembers(actor,input)));return true;}
+        if(route==='projects'){const canonical=await canonicalMembers(actor,input);actor=mail.identity(req,{embedded,write:true});json(res,201,store.create(actor,canonical));return true;}
         const handled=/^recruitment\/([\w-]+)\/handled$/.exec(route);
         if(handled){json(res,200,inbox.handle(actor,handled[1],input));return true;}
         const m=/^projects\/([\w-]+)\/(update|apply|review|archive|milestones)(?:\/([\w-]+))?$/.exec(route);
         if(!m||m[3]&&m[2]!=='milestones')throw new WorkspaceError(404,'Not found');
         const [,id,action,mid]=m;
+        const canonical=action==='update'?await canonicalMembers(actor,input,store.get(actor,id).members):input;
+        actor=mail.identity(req,{embedded,write:true});
         const value=action==='milestones'?(mid?store.setMilestone(actor,id,mid,input):store.addMilestone(actor,id,input)):
-          store[action](actor,id,action==='update'?canonicalMembers(actor,input):input);
+          store[action](actor,id,canonical);
         json(res,200,value);
       }
     }catch(e){

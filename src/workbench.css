@@ -468,3 +468,8 @@ a.app-card:focus-visible { outline-offset: -2px; }
 }
 
 @media(max-width:720px){body.is-mcp-workspace .masthead-inner{height:auto;min-height:44px;gap:6px}.workspace-nav{flex:0 1 auto;justify-content:flex-end;flex-wrap:nowrap}.workspace-nav button{padding:4px 7px}.workspace-actions{padding-left:8px;gap:8px}}
+
+.workspace-back { margin-left:auto; color:var(--muted,#596474); text-decoration:none; font-size:14px; font-weight:600; padding:8px 12px; border-radius:10px; }
+.workspace-back:hover { background:#fff; color:#1a1d23; }
+
+body.is-workbench-embedded > .skip-link { display:none; }

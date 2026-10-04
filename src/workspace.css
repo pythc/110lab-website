@@ -456,6 +456,23 @@
   border-color: var(--ws-focus);
 }
 .ws-field-hint { color: var(--ws-muted); font-size: 12px; line-height: 1.5; }
+.ws-field-error { color: #881337; background: var(--ws-rose-soft); padding: 6px 8px; border-radius: 6px; font-size: 12px; line-height: 1.5; }
+
+/* Member picker: search + checkbox list. Compact, scrollable, keeps already
+   selected members visible even while searching or when the directory fails. */
+.ws-member-picker { gap: 6px; }
+.ws-member-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ws-member-controls input[type="search"] { flex: 1 1 180px; min-width: 0; padding: 6px 10px; border: 1px solid var(--ws-line-strong); border-radius: 8px; font: inherit; font-size: 13px; background: var(--ws-surface); color: var(--ws-ink); }
+.ws-member-controls input[type="search"]:focus { outline: 2px solid var(--ws-focus); outline-offset: 1px; border-color: var(--ws-focus); }
+.ws-member-controls .ws-btn { flex: 0 0 auto; }
+.ws-member-list { max-height: 180px; overflow: auto; border: 1px solid var(--ws-line); border-radius: 8px; background: var(--ws-surface); padding: 4px; display: flex; flex-direction: column; gap: 2px; min-height: 56px; }
+.ws-member-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.ws-member-row:hover { background: var(--ws-surface-soft); }
+.ws-member-row input[type="checkbox"] { margin: 0; flex: 0 0 auto; }
+.ws-member-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 13px; line-height: 1.4; }
+.ws-member-name { color: var(--ws-ink); font-weight: 600; overflow-wrap: anywhere; }
+.ws-member-email { color: var(--ws-muted); font-size: 11px; overflow-wrap: anywhere; }
+.ws-member-empty { color: var(--ws-muted); font-size: 12px; padding: 10px 8px; text-align: center; }
 .ws-fieldset {
   padding: 10px 12px;
   border: 1px solid var(--ws-line);

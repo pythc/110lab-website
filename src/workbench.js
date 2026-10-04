@@ -54,6 +54,8 @@ function iconSvg(kind) {
       svgEl('circle', {cx: '5.5', cy: '12', r: '1', fill: 'currentColor', stroke: 'none'}),
       svgEl('circle', {cx: '5.5', cy: '17', r: '1', fill: 'currentColor', stroke: 'none'})
     );
+  } else if (kind === 'projects') {
+    svg.append(svgEl('rect',{x:'3',y:'5',width:'18',height:'15',rx:'2'}),svgEl('path',{d:'M8 5V3h8v2M3 11h18M12 9v4'}));
   } else if (kind === 'mail') {
     svg.append(svgEl('rect', {x:'3',y:'5',width:'18',height:'14',rx:'2'}),svgEl('path',{d:'m4 6 8 6 8-6'}));
   } else if (kind === 'home') {

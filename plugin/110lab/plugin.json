@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "110lab",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "110 实验室工作台：项目空间、个人待办、团队应用和实验室管理员协作。",
   "author": {
     "name": "110 实验室"

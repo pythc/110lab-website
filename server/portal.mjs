@@ -34,7 +34,7 @@ export async function createPortalServer({mailHandoff}={}){
     readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))
   ]);
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
-  const server=new McpServer({name:'110lab',version:'0.9.0'});
+  const server=new McpServer({name:'110lab',version:'0.9.1'});
   new OpenAIExtensions(server);
   const workbenchResource=uri=>({contents:[{
     uri,mimeType:RESOURCE_MIME_TYPE,text:html,

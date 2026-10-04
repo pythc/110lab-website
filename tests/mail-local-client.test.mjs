@@ -89,7 +89,7 @@ test('local MCP proxy retains workbench metadata and exposes the login bridge on
     for(const name of ['connect_110lab_mail','complete_110lab_mail_login']){const tool=tools.tools.find(t=>t.name===name);assert.deepEqual(tool._meta.ui.visibility,['app']);assert.deepEqual(tool._meta.securitySchemes,[{type:'noauth'}]);}
     const opener=tools.tools.find(t=>t.name==='open_110lab');assert.equal(opener._meta['openai/ui'].entrypoints[0].type,'global');assert.ok(opener.icons[0].src.startsWith('data:image/png'));
     const resource=await client.readResource({uri:opener._meta.ui.resourceUri});assert.equal(resource.contents[0]._meta.ui.domain,ISSUER);assert.match(resource.contents[0].text,/110lab/);
-    assert.equal((await client.callTool({name:'open_110lab',arguments:{}})).structuredContent.appCount,7);
+    assert.equal((await client.callTool({name:'open_110lab',arguments:{}})).structuredContent.appCount,8);
     const flow=await h.start(),started=await client.callTool({name:'connect_110lab_mail',arguments:{state:flow.state}});
     assert.ok((await client.callTool({name:'complete_110lab_mail_login',arguments:{state:flow.state}}))._meta.mailAuthorizationPending);
     const callback=await h.approve(started._meta.mailAuthorization.url);assert.equal((await fetch(callback)).status,200);
