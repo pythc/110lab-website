@@ -35,7 +35,16 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
   if(enabled){if(!directory||(!config&&!configPath))throw new Error('Mail login requires private configuration');config=config?parseMailConfig(config):readMailConfig(configPath);auth=openMailAuth({directory,config,now,localTest,fetchIdentity});try{access=openMailAccessStore({filename:join(directory,'mail-access.sqlite'),bootstrapOwner:bootstrapMailOwner(config),now});}catch(e){auth.close();throw e;}}
   if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies});}catch(e){auth.close();access.close();throw e;}}
   if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
-  return {enabled,hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){membership?.close();oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
+  return {enabled,workspaceDirectory:directory?join(directory,'workspace'):null,
+    // Trusted in-process adapter. Every request re-reads the current lab role.
+    identity(req,{embedded=false,write=false}={}) {
+      if(!enabled)throw new MailAuthError(503,'飞书登录尚未配置');
+      const session=auth.session(req.headers.cookie,{embedded});
+      if(write)auth.csrf(session,req.headers['x-csrf-token']);
+      return {...access.me(session.subject),csrf:session.csrf,expiresAt:session.expiresAt};
+    },
+    members(subject){return access.listLabMembers(subject);},
+    hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){membership?.close();oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
     if(oauth?.handle(req,res,path,host))return true;
     if(!['/mail','/mail/','/mail/embedded','/mail/auth/launch','/mail/auth/callback'].includes(path)&&!path.startsWith('/api/mail/'))return false;
     const embedded=path==='/mail/embedded'||path.startsWith('/api/mail/embedded/');
@@ -66,7 +75,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
         if(oauth.finishCallback(params.get('state'),pending.profile,req,res,()=>{pending.consumeForHost();access.registerIdentity(pending.profile);}))return true;
         access.registerIdentity(pending.profile);const result=pending.complete();res.setHeader('Set-Cookie',result.cookie);
         const script=JSON.stringify({type:'110lab-mail-login',state:result.state,ticket:result.ticket});
-        page(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>飞书登录完成 · 110lab</title><style>body{margin:0;padding:40px 24px;font:16px/1.6 system-ui;background:#f6f8fb;color:#20242c}main{max-width:520px;margin:auto;padding:24px;background:white;border-radius:16px}code{display:block;overflow-wrap:anywhere;padding:12px;background:#f2f5fa}a{color:#235fd5}</style><main><h1>已登录</h1><p>${escapeHTML(pending.profile.name)} · ${escapeHTML(pending.profile.email)}</p><p>返回公共邮箱管理。如果原窗口未自动登录，可输入下面的一次性登录码</p><code>${result.ticket}</code><p><a href="/mail">打开公共邮箱管理</a></p></main><script>const message=${script};if(window.opener)window.opener.postMessage(message,'https://internal.110-lab.cn');</script></html>`);return true;
+        page(res,`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>飞书登录完成 · 110lab</title><style>body{margin:0;padding:40px 24px;font:16px/1.6 system-ui;background:#f6f8fb;color:#20242c}main{max-width:520px;margin:auto;padding:24px;background:white;border-radius:16px}code{display:block;overflow-wrap:anywhere;padding:12px;background:#f2f5fa}a{color:#235fd5}</style><main><h1>已登录</h1><p>${escapeHTML(pending.profile.name)} · ${escapeHTML(pending.profile.email)}</p><p>返回工作台或公共邮箱管理。如果原窗口未自动登录，可输入下面的一次性登录码</p><code>${result.ticket}</code><p><a href="/workbench">返回工作台</a> · <a href="/mail">打开公共邮箱管理</a></p></main><script>const message=${script};if(window.opener)window.opener.postMessage(message,'https://internal.110-lab.cn');</script></html>`);return true;
       }
       if(route==='/api/mail/auth/redeem'&&req.method==='POST'){
         const v=z.object({state:z.string().regex(/^[\w-]{43}$/),ticket:z.string().regex(/^[\w-]{43}$/)}).strict().parse(await body(req));

@@ -18,7 +18,8 @@ await writeFile(resolve(root,'dist/index.html'),template.replaceAll('/* HERO_ASS
 const [workbenchHTML,workbenchCSS,workbenchJS,appJS]=await Promise.all([
  readFile(resolve(root,'src/workbench.html'),'utf8'),readFile(resolve(root,'src/workbench.css'),'utf8'),bundle('src/workbench-standalone.js'),bundle('src/app.js')
 ]);
-const workbenchTemplate=renderWorkbench(workbenchHTML,config).replace('/* WORKBENCH_CSS */',()=>workbenchCSS);
+const [workspaceMarkup,workspaceCSS]=await Promise.all(['src/workspace-markup.html','src/workspace.css'].map(p=>readFile(resolve(root,p),'utf8')));
+const workbenchTemplate=renderWorkbench(workbenchHTML.replace('<!-- WORKSPACE -->',()=>workspaceMarkup),config).replace('/* WORKBENCH_CSS */',()=>workbenchCSS+'\n'+workspaceCSS);
 await writeFile(resolve(root,'dist/workbench.html'),workbenchTemplate.replace('/* WORKBENCH_SCRIPT */',()=>workbenchJS));
 await writeFile(resolve(root,'dist/mcp-app.html'),workbenchTemplate.replace('/* WORKBENCH_SCRIPT */',()=>appJS));
 const [adminHTML,adminCSS,adminJS]=await Promise.all([readFile(resolve(root,'src/admin.html'),'utf8'),readFile(resolve(root,'src/admin.css'),'utf8'),bundle('src/admin.js')]);

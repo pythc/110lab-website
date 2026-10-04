@@ -31,6 +31,7 @@ export function createRecruitmentHttp({store,directory=process.env.PORTAL_RECRUI
   cleanup?.unref();
   return {
     get enabled(){return !!queue;},
+    labInbox(){return queue?{state:'ready',items:queue.listForLab()}:{state:'disabled',items:[]};},
     close(){clearInterval(cleanup);if(ownStore)queue.close();},
     async handle(req,res,path,host){
       if(!path.startsWith('/api/recruitment/'))return false;

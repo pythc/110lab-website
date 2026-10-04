@@ -85,7 +85,7 @@ test('local MCP proxy retains workbench metadata and exposes the login bridge on
   const h=await harness(),bridge=createLocalPortalBridge({fetchImpl:h.fetchImpl}),client=new Client({name:'fixture-plugin-host',version:'1'});
   const [host,server]=InMemoryTransport.createLinkedPair();await bridge.server.connect(server);await client.connect(host);
   try{
-    const tools=await client.listTools();assert.equal(tools.tools.length,4);
+    const tools=await client.listTools();assert.equal(tools.tools.length,5);
     for(const name of ['connect_110lab_mail','complete_110lab_mail_login']){const tool=tools.tools.find(t=>t.name===name);assert.deepEqual(tool._meta.ui.visibility,['app']);assert.deepEqual(tool._meta.securitySchemes,[{type:'noauth'}]);}
     const opener=tools.tools.find(t=>t.name==='open_110lab');assert.equal(opener._meta['openai/ui'].entrypoints[0].type,'global');assert.ok(opener.icons[0].src.startsWith('data:image/png'));
     const resource=await client.readResource({uri:opener._meta.ui.resourceUri});assert.equal(resource.contents[0]._meta.ui.domain,ISSUER);assert.match(resource.contents[0].text,/110lab/);
