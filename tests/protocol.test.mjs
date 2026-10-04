@@ -19,7 +19,7 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     assert.deepEqual(opener._meta['openai/ui'].entrypoints,[{type:'global'}]);
     const opened=await client.callTool({name:'open_110lab',arguments:{}});
     assert.equal(opened.structuredContent.appCount,10);
-    assert.equal(opened.structuredContent.systems.assessment,'https://47.109.176.127');
+    assert.equal(opened.structuredContent.systems.assessment,'https://exam.110-lab.cn');
     const resource=await client.readResource({uri:UI_URI});
     assert.equal(resource.contents[0].mimeType,'text/html;profile=mcp-app');
     assert.deepEqual(resource.contents[0]._meta['openai/ui'].availableDisplayModes,['fullscreen']);
@@ -30,7 +30,7 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     assert.deepEqual(resource.contents[0]._meta.ui.csp,{
       connectDomains:[],resourceDomains:[],frameDomains:[
         'https://internal.110-lab.cn',
-        'https://47.109.176.127',
+        'https://47.109.176.127','https://exam.110-lab.cn',
         'https://fcncvoyreb8p.feishuapp.com',
         'https://fcncvoyreb8p.aiforce.cloud',
         'https://open.feishu.cn',

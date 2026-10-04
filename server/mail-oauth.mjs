@@ -75,7 +75,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     async authorize(client,params,res){
       checkResource(params.resource);if(params.scopes?.some(v=>v!==MAIL_HOST_SCOPE))throw new InvalidScopeError('Unsupported scope');if(!secret(params.codeChallenge)||typeof params.state!=='string'||params.state.length<8||params.state.length>1024)throw new InvalidRequestError('PKCE and state are required');
       const id=nonce(),bind=nonce();db.prepare('INSERT INTO oauth_requests VALUES(?,?,?,?,?,?,NULL,NULL,NULL,?,?)').run(hash(id),hash(bind),client.client_id,params.redirectUri,params.state,params.codeChallenge,'created',now()+10*60000);
-      res.setHeader('Set-Cookie',cookie(bind));respond(res,'连接 110lab 公共邮箱',`<p>使用飞书企业身份登录插件<br>此连接仅用于公共邮箱身份验证 不授予发信权限</p>${form(id,'/mail/oauth/login','使用飞书继续')}`);
+      res.setHeader('Set-Cookie',cookie(bind));respond(res,'连接 110lab 实验室身份',`<p>使用飞书企业身份登录插件<br>此连接用于实验室身份验证 各应用操作仍按当前角色授权</p>${form(id,'/mail/oauth/login','使用飞书继续')}`);
     },
     skipLocalPkceValidation:true,
     async challengeForAuthorizationCode(){throw new InvalidGrantError('PKCE is verified atomically during exchange');},
@@ -109,7 +109,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   app.use(express.json({limit:'8kb'}),express.urlencoded({extended:false,limit:'8kb',parameterLimit:20}));
   const metadata={issuer:MAIL_ISSUER,authorization_response_iss_parameter_supported:true,authorization_endpoint:MAIL_ISSUER+'/authorize',token_endpoint:MAIL_ISSUER+'/token',registration_endpoint:MAIL_ISSUER+'/register',revocation_endpoint:MAIL_ISSUER+'/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none','client_secret_post'],revocation_endpoint_auth_methods_supported:['none','client_secret_post'],scopes_supported:[MAIL_HOST_SCOPE]};
   app.get('/.well-known/oauth-authorization-server',(_req,res)=>res.set('Access-Control-Allow-Origin','*').json(metadata));
-  app.get(['/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource/mcp/workbench-v6-1'],(_req,res)=>res.set('Access-Control-Allow-Origin','*').json({resource:MAIL_RESOURCE,authorization_servers:[MAIL_ISSUER],scopes_supported:[MAIL_HOST_SCOPE],resource_name:'110lab 公共邮箱登录'}));
+  app.get(['/.well-known/oauth-protected-resource','/.well-known/oauth-protected-resource/mcp','/.well-known/oauth-protected-resource/mcp/workbench-v6-1'],(_req,res)=>res.set('Access-Control-Allow-Origin','*').json({resource:MAIL_RESOURCE,authorization_servers:[MAIL_ISSUER],scopes_supported:[MAIL_HOST_SCOPE],resource_name:'110lab 实验室登录'}));
   // The SDK validates registered redirects before issuing protocol errors.
   // Add RFC 9207 issuer identification to both success and error redirects.
   app.use('/authorize',(req,res,next)=>{const redirect=res.redirect.bind(res);res.redirect=(status,url)=>{if(typeof status==='string'){url=status;status=302;}if(allowedMailRedirect(url.split('?')[0])){const u=new URL(url);u.searchParams.set('iss',MAIL_ISSUER);url=u.href;}return redirect(status,url);};next();},authorizationHandler({provider}));
@@ -141,7 +141,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
       if(db.prepare("UPDATE oauth_requests SET id=?,subject=?,authenticated=?,status='verified' WHERE id=? AND status='launched'").run(hash(id),profile.subject,now(),row.id).changes!==1){respond(res,'连接未完成','<p>授权已处理 请返回插件</p>',409);return true;}
       // Explicit consent prevents silent grants to a remotely initiated client.
       const destination=new URL(row.redirect).hostname==='chatgpt.com'?'ChatGPT':'此电脑上的 Codex';
-      respond(res,'确认连接',`<p>${escapeHTML(profile.name)}<br>${escapeHTML(profile.email)}</p><p>将此飞书身份用于${destination}的 110lab 公共邮箱管理</p>${form(id,'/mail/oauth/approve','连接并返回插件')}`);return true;
+      respond(res,'确认连接',`<p>${escapeHTML(profile.name)}<br>${escapeHTML(profile.email)}</p><p>将此飞书身份用于${destination}的 110lab 工作台</p>${form(id,'/mail/oauth/approve','连接并返回插件')}`);return true;
     },
     async handoff(header,state,{fresh=false}={}){
       try{const info=await hostIdentity(header,{fresh});access.me(info.extra.subject);const result=auth.completeForHost(state,info.extra);return {content:[{type:'text',text:'登录身份已验证'}],_meta:{mailHandoff:result}};

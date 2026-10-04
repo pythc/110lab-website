@@ -3,7 +3,7 @@
 <body>
 <header class="admin-header"><a class="brand" href="/">110<span>lab</span></a><span class="admin-label">动态管理</span><nav><a href="https://110-lab.cn/#updates" target="_blank" rel="noopener noreferrer">查看官网</a><button id="logout" hidden>退出登录</button></nav></header>
 <main>
-<section id="login-panel" class="login-panel" aria-labelledby="login-title"><p class="eyebrow">110 实验室</p><h1 id="login-title">管理员登录</h1><form id="login-form"><label>账号<input name="username" autocomplete="username" required maxlength="40"></label><label>密码<input name="password" type="password" autocomplete="current-password" required maxlength="256"></label><button class="primary" type="submit">登录</button></form></section>
+<section id="login-panel" class="login-panel" aria-labelledby="login-title"><p class="eyebrow">110 实验室</p><h1 id="login-title">管理员登录</h1><form id="login-form"><p>使用实验室管理员身份维护官网动态</p><button class="primary" type="submit">飞书登录</button></form></section>
 <section id="manager" class="manager" hidden>
 <aside class="updates-list"><div class="list-heading"><h1>实验室动态</h1><button id="new-update" class="small-primary">新建</button></div><p id="list-empty" class="muted" hidden>还没有动态 从第一条开始</p><ul id="draft-list"></ul></aside>
 <section class="editor-panel" aria-labelledby="editor-title"><div class="editor-heading"><h2 id="editor-title">新建动态</h2><span id="draft-state" class="state">未保存</span></div>

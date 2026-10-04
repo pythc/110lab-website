@@ -33,7 +33,7 @@ test('admin sessions persist, expire, revoke, and never store raw tokens',async(
 });
 test('admin HTTP requires host, origin, login and CSRF; drafts and public snapshots stay separate',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'110lab-admin-')),updates=openUpdatesStore(join(dir,'updates','updates.sqlite'));
- const http=await createHttpServer({updatesStore:updates,admin:{enabled:true,directory:join(dir,'auth'),config}});
+ const http=await createHttpServer({updatesStore:updates,admin:{enabled:true,legacyPasswordEnabled:true,directory:join(dir,'auth'),config}});
  await new Promise(r=>http.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+http.address().port;
  const call=(path,{host='internal.110-lab.cn',method='GET',data,headers={}}={})=>new Promise((resolve,reject)=>{
   const req=request(base+path,{method,headers:{Host:host,...(data===undefined?{}:{'Content-Type':'application/json',Origin:'https://internal.110-lab.cn'}),...headers}},res=>{
@@ -95,7 +95,7 @@ test('embedded admin sessions persist independently and cannot be relabelled acr
 });
 test('embedded admin preserves host, origin, CSRF, publication and shared login limits',async()=>{
  const dir=await mkdtemp(join(tmpdir(),'110lab-embedded-http-')),updates=openUpdatesStore(join(dir,'updates.sqlite'));
- const http=await createHttpServer({updatesStore:updates,admin:{enabled:true,directory:join(dir,'auth'),config}});
+ const http=await createHttpServer({updatesStore:updates,admin:{enabled:true,legacyPasswordEnabled:true,directory:join(dir,'auth'),config}});
  await new Promise(r=>http.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+http.address().port;
  const call=(path,{host='internal.110-lab.cn',method='GET',data,headers={}}={})=>new Promise((resolve,reject)=>{
   const req=request(base+path,{method,headers:{Host:host,...(data===undefined?{}:{'Content-Type':'application/json',Origin:'https://internal.110-lab.cn'}),...headers}},res=>{

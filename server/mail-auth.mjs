@@ -60,7 +60,13 @@ export function openMailAuth({directory,config,now=Date.now,localTest=false,fetc
   function flow(state){if(!/^[\w-]{43}$/.test(state||''))throw new MailAuthError(401,'登录链接已失效 请重新登录');const row=db.prepare('SELECT * FROM mail_flows WHERE state=? AND config_id=? AND expires>?').get(hash(state),configId,now());if(!row)throw new MailAuthError(401,'登录链接已失效 请重新登录');return row;}
   const budget=(scope,key,limit)=>{const bucket=Math.floor(now()/900000),count=db.prepare('INSERT INTO mail_login_budget VALUES(?,?,?,1) ON CONFLICT(scope,key,bucket) DO UPDATE SET count=count+1 RETURNING count').get(scope,key,bucket).count;if(count>limit)throw new MailAuthError(429,'登录尝试较多 请稍后再试');};
   function mint(subject,embedded,authenticatedAt=now()){const token=nonce(),csrf=nonce(),t=now(),expires=authenticatedAt+8*3600000;if(authenticatedAt>t||expires<=t)throw new MailAuthError(401,'请重新通过飞书登录');db.prepare('INSERT INTO mail_sessions VALUES(?,?,?,?,?,?,?,?)').run(hash(context(embedded)+':'+token),subject,csrf,context(embedded),authenticatedAt,t,expires,configId);return {cookie:cookie(names[context(embedded)],token,{embedded,age:Math.floor((expires-t)/1000)}),session:{subject,csrf,created:authenticatedAt,expiresAt:new Date(expires).toISOString()}};}
-  return {names,
+  function sessionByKey(key){
+    const row=db.prepare('SELECT * FROM mail_sessions WHERE key=? AND config_id=?').get(key,configId);
+    if(!row||row.expires<=now()||row.seen<now()-30*60000)throw new MailAuthError(401,'登录已过期 请重新登录');
+    if(now()-row.seen>=60000)db.prepare('UPDATE mail_sessions SET seen=? WHERE key=?').run(now(),key);
+    return {key,subject:row.subject,csrf:row.csrf,created:row.created,embedded:row.context==='embedded',expiresAt:new Date(row.expires).toISOString()};
+  }
+  return {names,sessionByKey,
     start(header,{embedded=false,ip='unknown',expectedSubject=null}={}){
       clean();budget('global','all',100);budget('ip',hash(ip),10);
       const state=nonce(),binding=nonce(),verifier=nonce();db.prepare('INSERT INTO mail_flows VALUES(?,?,?,?,?,NULL,?,NULL,?,?,NULL)').run(hash(state),hash(binding),context(embedded),verifier,expectedSubject,'created',now()+5*60000,configId);

@@ -39,8 +39,8 @@ export async function createHttpServer(options={}){
   const updates=options.updatesStore||openUpdatesStore(process.env.PORTAL_UPDATES_DATABASE||':memory:');
   const recruitment=createRecruitmentHttp(options.recruitment);
   if(process.env.PORTAL_ADMIN_ENABLED==='true'&&!process.env.PORTAL_UPDATES_DATABASE&&!options.updatesStore)throw new Error('Admin updates require a persistent database');
-  const admin=await createAdminHttp({...options.admin,updates});
-  let mail;try{mail=await createMailHttp(options.mail);}catch(e){admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
+  let mail;try{mail=await createMailHttp(options.mail);}catch(e){recruitment.close();if(!options.updatesStore)updates.close();throw e;}
+  let admin;try{admin=await createAdminHttp({...options.admin,updates,mail});}catch(e){mail.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   let recruitmentWorkflow;try{recruitmentWorkflow=createRecruitmentWorkflowHttp({mail,legacyReceipt:recruitment.legacyReceipt,...options.recruitmentWorkflow});}catch(e){mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   let honors;let workspace;try{workspace=createWorkspaceHttp({mail,honorsTodos:a=>honors?.todos(a).items||[],recruitment:recruitmentWorkflow.enabled?recruitmentWorkflow:recruitment,...options.workspace});}catch(e){await recruitmentWorkflow.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   try{honors=createHonorsHttp({mail,projects:a=>workspace.projects(a),...options.honors});}catch(e){await recruitmentWorkflow.close();workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}

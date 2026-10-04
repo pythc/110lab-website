@@ -13,7 +13,7 @@
     "defaultPrompt": "打开 110lab 工作台，使用考核系统或需求平台。"
   },
   "name": "110lab",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "110 实验室工作台：项目立项、奖项荣誉、个人待办、招新管理与团队应用。",
   "author": {
     "name": "110 实验室"

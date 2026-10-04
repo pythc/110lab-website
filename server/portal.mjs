@@ -14,7 +14,7 @@ export const LEGACY_UI_URI='ui://110lab/home';
 const WIDGET_DOMAIN='https://internal.110-lab.cn';
 const EMBED_FRAME_DOMAINS=Object.freeze([
   'https://internal.110-lab.cn',
-  'https://47.109.176.127',
+  'https://47.109.176.127','https://exam.110-lab.cn',
   'https://fcncvoyreb8p.feishuapp.com',
   'https://fcncvoyreb8p.aiforce.cloud',
   'https://open.feishu.cn',

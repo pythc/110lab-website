@@ -9,6 +9,7 @@ import {escapeHTML} from './render.mjs';
 import {openMailOAuth,mailAuthChallenge} from './mail-oauth.mjs';
 import {createWorkspaceDirectory} from './workspace-directory.mjs';
 import {openMailMembershipState} from './mail-membership-state.mjs';
+import {openLabSso} from './lab-sso.mjs';
 
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(value));};
 const revision=z.number().int().positive(),email=z.string().email().max(254);
@@ -28,7 +29,7 @@ function page(res,html,{head=false,embedded=false,status=200}={}){
   const ancestors=embedded?"'self' "+ADMIN_FRAME_ANCESTORS.join(' '):"'none'";
   res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','Content-Security-Policy':`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors ${ancestors}; form-action 'self'`});res.end(head?undefined:html);
 }
-export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',notifyEnabled=process.env.PORTAL_MAIL_NOTIFY_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,fetchDirectory,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
+export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED==='true',assessmentSsoEnabled=process.env.PORTAL_ASSESSMENT_SSO_ENABLED==='true',notifyEnabled=process.env.PORTAL_MAIL_NOTIFY_ENABLED==='true',directory=process.env.PORTAL_MAIL_DATA,configPath=process.env.PORTAL_MAIL_CONFIG,config,localTest=false,now=Date.now,fetchIdentity,fetchDirectory,trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean)}={}){
   const html=await readFile(new URL('../dist/mail.html',import.meta.url),'utf8');
   if(trustedProxies.some(p=>!isIP(p)))throw new Error('Invalid mail trusted proxy');
   const proxies=new Set(trustedProxies);let auth,access,oauth,membership;
@@ -37,6 +38,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
   if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies});}catch(e){auth.close();access.close();throw e;}}
   if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
   const projectDirectory=enabled?(fetchDirectory?{list:fetchDirectory}:localTest?null:createWorkspaceDirectory({config,now})):null;
+  const sso=assessmentSsoEnabled&&enabled?openLabSso({directory,auth,access,now}):null;
   return {enabled,workspaceDirectory:directory?join(directory,'workspace'):null,
     roleForSubject(subject){return access?.me(subject)?.role||'member';},
     // Trusted in-process adapter. Every request re-reads the current lab role.
@@ -55,17 +57,29 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
         return {members:members.map(m=>({...m,email:verified.get(m.subject)?.email||m.email})),source:'feishu',unavailable:false};
       }catch{return {members:known,source:'registered',unavailable:true};}
     },
-    hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){membership?.close();oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
+    hostAuthorized:(header,options)=>oauth?oauth.authorized(header,options):Promise.resolve(false),hostHandoff:(header,state,options)=>oauth?oauth.handoff(header,state,options):Promise.resolve(mailAuthChallenge()),close(){sso?.close();membership?.close();oauth?.close();auth?.close();access?.close();},async handle(req,res,path,host){
     if(oauth?.handle(req,res,path,host))return true;
-    if(!['/mail','/mail/','/mail/embedded','/mail/auth/launch','/mail/auth/callback'].includes(path)&&!path.startsWith('/api/mail/'))return false;
-    const embedded=path==='/mail/embedded'||path.startsWith('/api/mail/embedded/');
+    if(!['/mail','/mail/','/mail/embedded','/mail/auth/launch','/mail/auth/callback','/sso/assessment','/sso/assessment/embedded'].includes(path)&&!path.startsWith('/api/mail/'))return false;
+    const embedded=path.endsWith('/embedded')||path.startsWith('/api/mail/embedded/');
     const route=embedded&&path.startsWith('/api/mail/embedded/')?'/api/mail/'+path.slice('/api/mail/embedded/'.length):path;
     try{
       if(host!=='internal.110-lab.cn'&&!(localTest&&['127.0.0.1','localhost'].includes(host)))throw new MailAuthError(404,'Not found');
+      if(path.startsWith('/sso/assessment')&&req.method==='GET'){
+        if(!sso)throw new MailAuthError(503,'考核飞书登录尚未启用');
+        page(res,await readFile(new URL('../dist/assessment-sso.html',import.meta.url),'utf8'),{embedded});return true;
+      }
       if(['/mail','/mail/','/mail/embedded'].includes(path)&&['GET','HEAD'].includes(req.method)){page(res,embedded?html.replace('<body>','<body class="embedded">'):html,{head:req.method==='HEAD',embedded});return true;}
       if(route==='/api/mail/config'&&req.method==='GET'){json(res,200,{loginAvailable:enabled,notifyManualSend:notifyEnabled});return true;}
       if(!enabled)throw new MailAuthError(503,'飞书登录尚未配置');
       if(!['GET','POST'].includes(req.method))throw new MailAuthError(405,'请求方式无效');
+      if(['/api/mail/sso/exchange','/api/mail/sso/inspect'].includes(path)&&req.method==='POST'){
+        // Back-channel only. A browser Origin is never accepted as a service credential.
+        if(!sso||req.headers.origin||req.headers['sec-fetch-site'])throw new MailAuthError(403,'请求来源无效');
+        const value=await body(req);
+        if(path.endsWith('/exchange')){const v=z.object({code:z.string(),verifier:z.string(),state:z.string(),redirectUri:z.string()}).strict().parse(value);json(res,200,sso.exchange(v));}
+        else{const v=z.object({token:z.string()}).strict().parse(value);json(res,200,sso.inspect(v.token));}
+        return true;
+      }
       const originOK=req.headers.origin==='https://internal.110-lab.cn'||localTest&&req.headers.origin==='http://'+req.headers.host;
       if(req.method==='POST'&&(!originOK||req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))throw new MailAuthError(403,'请在公共邮箱管理页面操作');
       if(route==='/api/mail/auth/start'&&req.method==='POST'){
@@ -101,6 +115,12 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
         json(res,200,{...state,...(state.state==='ready'?{url:'https://www.feishu.cn/mail'}:{})});return true;
       }
       if(req.method==='POST')auth.csrf(session,req.headers['x-csrf-token']);
+      if(route==='/api/mail/sso/authorize'&&req.method==='POST'){
+        if(!sso)throw new MailAuthError(503,'考核飞书登录尚未启用');
+        const value=z.object({state:z.string(),challenge:z.string(),embedded:z.boolean()}).strict().parse(await body(req));
+        if(value.embedded!==embedded)throw new MailAuthError(400,'登录上下文不一致');
+        json(res,200,sso.authorize(session,value));return true;
+      }
       if(route==='/api/mail/logout'&&req.method==='POST'){z.object({}).strict().parse(await body(req));res.setHeader('Set-Cookie',auth.logout(session));json(res,200,{loggedOut:true});return true;}
       if(route==='/api/mail/administrators'&&req.method==='GET'){json(res,200,access.listAdministrators(session.subject));return true;}
       if(route==='/api/mail/members'&&req.method==='GET'){json(res,200,{members:access.listMembers(session.subject)});return true;}

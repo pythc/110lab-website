@@ -5,7 +5,7 @@ export const EMBEDDED_APPS = Object.freeze({
   'recruitment-test':Object.freeze({title:'招新管理',url:'https://internal.110-lab.cn/recruitment/embedded',externalUrl:'https://internal.110-lab.cn/recruitment',nav:false}),
   projects:Object.freeze({title:'项目立项',url:'https://internal.110-lab.cn/projects/embedded',externalUrl:'https://internal.110-lab.cn/projects',nav:false}),
   'public-mail': Object.freeze({title:'公共邮箱管理',url:'https://internal.110-lab.cn/mail/embedded',externalUrl:'https://internal.110-lab.cn/mail',nav:false}),
-  assessment: Object.freeze({title: '考核系统', url: 'https://47.109.176.127'}),
+  assessment: Object.freeze({title: '考核系统', url: 'https://exam.110-lab.cn/api/auth/feishu/start?embedded=1', externalUrl:'https://exam.110-lab.cn/api/auth/feishu/start'}),
   requirements: Object.freeze({title: '需求平台', url: 'https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x'}),
   'updates-admin': Object.freeze({
     title: '动态管理',
@@ -135,7 +135,7 @@ export function initEmbeddedWorkspace() {
     if(id==='honors'){selectedHonorId=projectId;if(pages.has(id)&&projectId)pages.get(id).querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-select-honor',honorId:projectId},'https://internal.110-lab.cn');}
     const mounted=pages.has(id);
     if (!mounted) createPage(id);
-    else if(['workbench','projects','recruitment-test','honors'].includes(id))pages.get(id).querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-activated'},'https://internal.110-lab.cn');
+    else if(['workbench','projects','recruitment-test','honors','updates-admin'].includes(id))pages.get(id).querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-activated'},'https://internal.110-lab.cn');
     currentId=id;actions.hidden=id==='workbench';
     if(id!=='workbench'){external.href=EMBEDDED_APPS[id].externalUrl||EMBEDDED_APPS[id].url;external.setAttribute('aria-label','独立打开'+EMBEDDED_APPS[id].title);retry.hidden=id!=='requirements';}
     main.hidden = true;
@@ -171,7 +171,7 @@ export function initEmbeddedWorkspace() {
   show('workbench');
   window.addEventListener('message',async event=>{
     const page=pages.get(currentId);
-    if(!page||page.hidden||!['public-mail','workbench','projects','recruitment-test','honors'].includes(currentId))return;
+    if(!page||page.hidden||!['public-mail','workbench','projects','recruitment-test','honors','updates-admin','assessment'].includes(currentId))return;
     const frame=page.querySelector('iframe');
     if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame.contentWindow)return;
     if(['workbench','projects','recruitment-test','honors'].includes(currentId)&&await handleWorkspaceRequest(event,{frame,openExternal:externalOpener,callTool:toolCaller,show}))return;
