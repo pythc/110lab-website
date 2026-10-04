@@ -6,6 +6,7 @@ import {createLabSession} from './lab-session.js';
 const $=id=>document.getElementById(id);
 const stages=[['screening','初筛'],['assessment','考核'],['interview','面试'],['decision','待决策'],['accepted','已录取'],['rejected','未通过']];
 const labels=Object.fromEntries(stages);
+const linkedCandidate=new URL(location.href).searchParams.get('candidate');
 const noticeLabels={draft:'待确认',queued:'等待处理',failed:'发送失败',unknown:'结果待核实',sent:'服务商已接收',simulated:'模拟完成'};
 const deliveryLabels={HELD:'未发送',QUEUED:'等待处理',SENDING:'处理中',RETRYING:'等待重试',FAILED:'发送失败',UNKNOWN:'结果待核实',SENT:'服务商已接收',SIMULATED:'模拟完成 未外发'};
 const state={profile:null,items:[],selected:null,archived:false,epoch:0,load:0,opening:0,busy:false,form:null,uppy:null,abort:null};
@@ -28,7 +29,7 @@ function setBusy(value){
 }
 function clearPrivate(){
   status();
-  state.epoch++;state.load++;state.opening++;
+  state.epoch++;state.load++;state.opening++;state.openedLinked=false;
   closeForm(true);closeDetail(true);state.items=[];state.profile=null;setBusy(false);
   $('rt-deliveries').replaceChildren();$('rt-rows').replaceChildren();$('rt-count').textContent='';$('rt-metrics').replaceChildren();$('rt-detail-info').replaceChildren();$('rt-events').replaceChildren();$('rt-current').replaceChildren();$('rt-detail-actions').replaceChildren();$('rt-form-fields').replaceChildren();$('rt-resume-info').replaceChildren();$('rt-upload').replaceChildren();
   for(const id of ['rt-detail-title','rt-detail-stage','rt-notice-body','rt-notice-subject','rt-upload-status','rt-detail-updated'])$(id).textContent='';
@@ -58,6 +59,7 @@ async function loadCandidates(){
     const group=$('rt-group').value;const groups=[...new Set(state.items.map(c=>c.group))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
     $('rt-group').replaceChildren(new Option('所有组别',''),...groups.map(g=>new Option(g,g)));$('rt-group').value=groups.includes(group)?group:'';
     renderTable();
+    if(!state.openedLinked&&/^[a-f0-9-]{36}$/.test(linkedCandidate||'')){state.openedLinked=true;void openCandidate(linkedCandidate);}
   }catch(error){if(epoch===state.epoch)status(error.message,true);}
 }
 function replaceCandidate(candidate){
