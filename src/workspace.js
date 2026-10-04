@@ -664,6 +664,9 @@ function openProjectDialog(project) {
   $('ws-field-link-docs').value = links.docs || '';
   $('ws-field-link-demo').value = links.demo || '';
   openDialog('ws-dialog-project', { project });
+  const fields = dlg.querySelector('.ws-project-fields');
+  if (fields) fields.scrollTop = 0;
+  $('ws-field-name').focus({ preventScroll: true });
   // Ensure the enterprise directory is loaded (or refreshed) on every open so
   // long-lived dialogs see new teammates.
   void loadMembers({ refresh: true });

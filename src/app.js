@@ -8,7 +8,7 @@ const portal=initWorkbench(config,{embeddedIds:Object.keys(EMBEDDED_APPS)});
 const workspace=initEmbeddedWorkspace();
 // The same compiled resource can be previewed outside an MCP host.
 if(window.parent!==window){
-  const app=new App({name:'110lab',version:'0.9.1'},{},{autoResize:false});
+  const app=new App({name:'110lab',version:'0.9.2'},{},{autoResize:false});
   new OpenAIExtensions(app);
   app.ontoolresult=()=>{}; // The catalog is already in this resource; never re-call its opener.
   try{
