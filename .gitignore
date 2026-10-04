@@ -20,3 +20,4 @@ scripts/verify-live-*.mjs
 src/portal.js
 vendor/RUNTIME-LICENSES.txt
 scripts/verify-live.mjs
+server/mail-membership-worker-runtime.mjs

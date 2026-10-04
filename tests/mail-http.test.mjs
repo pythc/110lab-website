@@ -5,6 +5,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createMailHttp} from '../server/mail-http.mjs';
+import {openMailMembershipState} from '../server/mail-membership-state.mjs';
 import {fixtureConfig,fixtureIdentity} from './helpers/mail-fixtures.mjs';
 
 const member={subject:'fictional_tenant:on_fixture_member_2026',email:'fictional.member@110-lab.cn',name:'虚构成员'};
@@ -75,4 +76,25 @@ test('unconfigured mail login fails closed while its page remains available',asy
   const h=await harness({enabled:false});
   try{assert.deepEqual(await (await h.request('/api/mail/config')).json(),{loginAvailable:false,notifyManualSend:false});assert.equal((await h.request('/api/mail/auth/start',{method:'POST',data:{}})).status,503);assert.equal((await h.request('/mail')).status,200);assert.match((await h.request('/mail')).headers.get('content-security-policy'),/frame-ancestors 'none'/);}
   finally{await h.close();}
+});
+test('notify access requires a live administrator and fresh membership verification',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'110lab-notify-http-'));let time=Date.now();
+  const now=()=>time,h=await harness({enabled:true,notifyEnabled:true,directory,config:fixtureConfig,localTest:true,now,fetchIdentity:async(_,{code})=>code==='member'?member:fixtureIdentity});
+  const state=openMailMembershipState({directory,now});
+  try{
+    const owner=await login(h,'owner'),person=await login(h,'member');
+    assert.equal((await h.request('/api/mail/notify')).status,401);
+    assert.equal((await h.request('/api/mail/notify',{jar:person.jar})).status,403);
+    let status=await (await h.request('/api/mail/notify',{jar:owner.jar})).json();assert.equal(status.state,'pending');assert.equal(status.url,undefined);
+    state.claim();state.finish(1);
+    status=await (await h.request('/api/mail/notify',{jar:owner.jar})).json();assert.equal(status.state,'ready');assert.equal(status.url,'https://www.feishu.cn/mail');
+    const change=async(kind,revision)=>h.request('/api/mail/administrators/'+kind,{method:'POST',jar:owner.jar,csrf:owner.csrf,data:{email:member.email,revision,confirmed:true}});
+    const granted=await change('grant',1);assert.equal(granted.status,200);assert.equal((await granted.json()).mailbox.state,'pending');
+    status=await (await h.request('/api/mail/notify',{jar:person.jar})).json();assert.equal(status.state,'pending');assert.equal(status.url,undefined);
+    state.finish(2);assert.equal((await (await h.request('/api/mail/notify',{jar:person.jar})).json()).state,'ready');
+    assert.equal((await change('revoke',2)).status,200);
+    assert.equal((await h.request('/api/mail/notify',{jar:person.jar})).status,403);
+    state.finish(3);time+=60001;
+    status=await (await h.request('/api/mail/notify',{jar:owner.jar})).json();assert.equal(status.state,'pending');assert.equal(status.url,undefined);
+  }finally{state.close();await h.close();await rm(directory,{recursive:true,force:true});}
 });
