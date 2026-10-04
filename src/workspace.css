@@ -540,3 +540,18 @@ body.is-workbench-embedded main.shell { padding-top: 10px; }
 .ws-grid-split:has(.ws-list:empty) .ws-side{display:none}
 .ws-list-wrap{min-width:0}
 .ws-side-row{white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Keep a long inbox inside the workbench, with filters and apps in reach. */
+#ws-panel-todos { --ws-todo-height: clamp(240px, 52dvh, 520px); }
+#ws-panel-todos .ws-list-wrap,
+#ws-todo-side {
+  max-height: var(--ws-todo-height);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+#ws-panel-todos .ws-list-wrap { padding: 3px; }
+#ws-todo-side { position: static; }
+@media (max-width: 900px) {
+  #ws-panel-todos { --ws-todo-height: clamp(200px, 45dvh, 420px); }
+}

@@ -10,7 +10,7 @@ const root=mkdtempSync(join(tmpdir(),'110lab-business-release-'));
 try{
  const manifest=JSON.parse(readFileSync('release.json'));
  for(const path of Object.keys(manifest.files)){mkdirSync(dirname(join(root,path)),{recursive:true});copyFileSync(path,join(root,path));}
- const result=spawnSync(process.execPath,['--test','--test-timeout=30000','tests/business-http.test.mjs'],{stdio:'inherit',env:{...process.env,BUSINESS_RELEASE_ROOT:root}});assert.equal(result.status,0);
+ const result=spawnSync(process.execPath,['--test','--test-timeout=90000','tests/business-http.test.mjs','tests/business-mcp-matrix.test.mjs'],{stdio:'inherit',env:{...process.env,BUSINESS_RELEASE_ROOT:root}});assert.equal(result.status,0);
  const worker=new Worker(join(root,'server/attachment-text-worker-runtime.mjs'),{execArgv:[],workerData:{buffer:Buffer.from('Isolated fictional attachment'),mime:'text/plain'}});
  const extracted=await new Promise((resolve,reject)=>{worker.once('message',resolve);worker.once('error',reject);});await worker.terminate();
  assert.equal(extracted.status,'EXTRACTED');assert.equal(extracted.segments[0].text,'Isolated fictional attachment');

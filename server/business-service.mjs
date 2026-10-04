@@ -9,10 +9,10 @@ import {createBusinessMailProvider} from './business-mail-provider.mjs';
 import {validateHonorFile} from './honors-upload.mjs';
 import {validateResume,resumeTypes} from './recruitment-files.mjs';
 import {z} from 'zod';
+import {businessReference as reference,parseBusinessReference} from './business-reference.mjs';
 
 const has=(r,q)=>!q||JSON.stringify(r).toLocaleLowerCase().includes(q.toLocaleLowerCase());
 const revision=(r,v)=>{if(r.revision!==v)fail('REVISION_CONFLICT','内容已更新 请重新读取');};
-const reference=(kind,...args)=>'110lab://'+kind+'/'+args.map(v=>encodeURIComponent(v)).join('/');
 const inDates=(value,a)=>!((a.from&&String(value).slice(0,10)<a.from)||(a.to&&String(value).slice(0,10)>a.to));
 const publicActor=a=>({subject:a.subject,name:a.name,email:a.email,role:a.role});
 const UUID=z.uuid();
@@ -92,7 +92,7 @@ export function createBusinessService({mail,workspace,honors,recruitment,updates
     a=check(a,scope);return state.putArtifact(a,{...args,mime,buffer});
   };
   async function attachment(a,{reference:ref}){
-    let url,parts;try{url=new URL(ref);if(url.protocol!=='110lab:'||url.search||url.hash)throw new Error();parts=url.pathname.slice(1).split('/').map(decodeURIComponent);}catch{fail('NOT_FOUND','附件不存在',404);}
+    let url,parts;try{url=parseBusinessReference(ref);parts=url.pathname.slice(1).split('/').map(decodeURIComponent);}catch{fail('NOT_FOUND','附件不存在',404);}
     let f,scope;
     if(url.hostname==='honor'&&parts.length===1){scope='honors:read';a=check(a,scope);f=requireStore(h).certificate(a,UUID.parse(parts[0]));}
     else if(url.hostname==='resume'&&parts.length===1){scope='recruitment:read';a=check(a,scope);f=requireStore(r).readResume(a,UUID.parse(parts[0]));f.mime=resumeTypes[f.extension];}
@@ -100,7 +100,7 @@ export function createBusinessService({mail,workspace,honors,recruitment,updates
     else fail('NOT_FOUND','附件不存在',404);
     if(f.buffer.length>10*1024*1024)fail('ATTACHMENT_TOO_LARGE','附件过大 请在原应用查看',413);
     const extraction=await extractAttachmentText(f.buffer,f.mime);check(a,scope);if(url.hostname==='honor')h.get(a,parts[0]);if(url.hostname==='mail')mailbox(a,parts[0]);
-    return {extraction,reference:ref,filename:f.filename,mime:f.mime,bytes:f.buffer.length,contentBase64:f.buffer.toString('base64'),untrustedContent:true};
+    return {extraction,reference:reference(url.hostname,...parts),filename:f.filename,mime:f.mime,bytes:f.buffer.length,contentBase64:f.buffer.toString('base64'),untrustedContent:true};
   }
   calls.lab_attachment_read=attachment;
   state.recoverMail();

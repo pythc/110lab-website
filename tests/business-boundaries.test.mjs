@@ -9,8 +9,24 @@ import {credentialFile,localUpload} from '../server/local-business-client.mjs';
 import {openBusinessState,paginate} from '../server/business-state.mjs';
 import {commandJournal} from '../server/durable-command.mjs';
 import {extractAttachmentText} from '../server/attachment-text.mjs';
+import {businessReference,parseBusinessReference} from '../server/business-reference.mjs';
+import {businessScope} from '../server/business-http.mjs';
 const actor={subject:'fictional:user',clientId:'test-client'};
 const temp=t=>{const d=mkdtempSync(join(tmpdir(),'110lab-boundary-'));t.after(()=>rmSync(d,{recursive:true,force:true}));return d;};
+
+test('private attachment URIs are valid and legacy references keep their business scopes',()=>{
+  for(const [kind,scope] of [['honor','honors:read'],['resume','recruitment:read'],['mail','mail:read']]){
+    const ref=businessReference(kind,'fictional@example.test','id/with spaces');
+    assert.equal(new URL(ref).protocol,'lab110:');
+    for(const value of [ref,ref.replace(/^lab110:/,'110lab:')]){
+      assert.equal(parseBusinessReference(value).href,ref);
+      assert.equal(businessScope('lab_attachment_read',{reference:value}),scope);
+    }
+  }
+  for(const value of ['https://honor/id','lab110://user@honor/id','lab110://honor:123/id','lab110://honor/id?extra=1','110lab://honor/id#fragment','invalid']){
+    assert.throws(()=>parseBusinessReference(value));
+  }
+});
 
 test('private local credentials serialize sessions and refuse symlinks or public files',t=>{
   const dir=temp(t),path=join(dir,'oauth.json'),store=credentialFile(path);
