@@ -190,6 +190,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       const c=get(id);if(c.revision!==input.revision)fail(409,'资料已更新 请刷新后重新预览');if(c.archived&&input.action!=='resolve_delivery')fail(409,'候选人已归档');
       let note=input.note||'';
       const action=input.action;
+      if(action==='reject'&&db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind='interview' AND status='SENDING'").get(id))fail(409,'面试邮件正在交付 请等待结果后再结束流程');
       if(action==='prepare_notice'){
         if(c.stage!=='interview'||!c.interview)fail(409,'请先安排面试');
         if(db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind='interview' AND status IN ('QUEUED','SENDING','RETRYING','UNKNOWN')").get(id))fail(409,'邮件任务尚未结束 请先处理原任务');
@@ -258,7 +259,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       if(!(row.kind==='application'&&row.actor==='website')&&!['admin','super_admin'].includes(role))fail(403,'确认人的管理员权限已撤销');
       const c=get(row.candidate_id),s=settings();if(c.archived)fail(409,'候选人已归档');
       if(row.payload.settingsRevision!==s.revision)fail(409,'配置已改变 请重新预览');
-      if(row.kind==='interview'&&(c.notification?.deliveryId!==row.id||getTemplate(row.payload.templateId).revision!==row.payload.templateRevision))fail(409,'邮件模板或预览已改变');
+      if(row.kind==='interview'&&(c.stage!=='interview'||c.notification?.deliveryId!==row.id||getTemplate(row.payload.templateId).revision!==row.payload.templateRevision))fail(409,'邮件模板或预览已改变');
       if(row.kind==='feishu'&&row.payload.fields['阶段']!==c.stage)fail(409,'候选人阶段已改变 请重新预览');
       if(row.kind==='application'&&row.payload.attachment?.sha256!==c.resume?.sha256)fail(409,'简历附件已改变');
       if(row.kind!=='feishu'&&!s.mailboxes.some(m=>m.enabled&&m.address===row.payload.from))fail(409,'发件邮箱已停用');

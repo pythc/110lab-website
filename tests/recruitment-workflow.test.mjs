@@ -116,3 +116,7 @@ test('admin can choose an enabled sender but cannot inject an unconfigured mailb
  c=act(s,c,'prepare_notice',{...values,sender:'other@example.com'});assert.equal(c.notification.from,'other@example.com');
  assert.throws(()=>act(s,c,'prepare_notice',{...values,sender:'forged@example.com'}),/已启用/);
 });
+test('rejecting a candidate cancels queued interview delivery; in-flight mail blocks premature closure',async t=>{
+ const s=fixture(t);let c=send(s,ready(s));c=act(s,c,'reject',{note:'虚构撤回申请'});const result=await runWorkflowDeliveryOnce(s,{roleForSubject:()=>owner.role,intervalMs:0,simulate(){throw new Error('Must not deliver after rejection');}});assert.equal(result.code,'PREVIEW_CHANGED');
+ let next=send(s,ready(s));s.claim({intervalMs:0});assert.throws(()=>act(s,next,'reject',{note:'虚构撤回申请'}),/正在交付/);
+});
