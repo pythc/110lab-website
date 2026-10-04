@@ -6,10 +6,11 @@ import {createBusinessService} from './business-service.mjs';
 import {createBusinessMailProvider,readBusinessMailConfig} from './business-mail-provider.mjs';
 import {ADMIN_FRAME_ANCESTORS} from './admin-http.mjs';
 import {MAIL_RESOURCE_METADATA} from './mail-oauth.mjs';
+import {parseBusinessReference} from './business-reference.mjs';
 
 export function businessScope(name,args={}){
   if(name==='lab_file_upload')return args.purpose==='honor_certificate'?'honors:write':'mail:draft';
-  if(name==='lab_attachment_read'){try{const host=new URL(args.reference).hostname;return ({honor:'honors:read',resume:'recruitment:read',mail:'mail:read'})[host]||'lab:identity';}catch{return 'lab:identity';}}
+  if(name==='lab_attachment_read'){try{const host=parseBusinessReference(args.reference).hostname;return ({honor:'honors:read',resume:'recruitment:read',mail:'mail:read'})[host]||'lab:identity';}catch{return 'lab:identity';}}
   return BUSINESS_TOOL_MAP.get(name)?.scope||'lab:identity';
 }
 export function businessChallenge(scope='lab:identity'){return `Bearer resource_metadata="${MAIL_RESOURCE_METADATA}", scope="${scope}", error="insufficient_scope"`;}

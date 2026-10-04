@@ -1,4 +1,4 @@
-# 110lab 业务 MCP 0.14.0
+# 110lab 业务 MCP 0.14.1
 
 实现范围：项目立项、奖项荣誉、招新管理、公共邮箱、动态管理。39 个 `lab_*` 工具加入现有工作台服务；需求平台的 14 个工具及个人连接保持独立。完整名称见 [清单](MCP-INVENTORY.md)，产品设计见 [设计稿](MCP-BUSINESS-DESIGN.md)。
 
@@ -13,6 +13,7 @@
 - 查询使用 `limit/cursor`；分页期间数据变化返回 `CURSOR_STALE`，重新开始查询。
 - 附件上传只读取用户明确指定的本地绝对路径，不扫描目录。只支持 PDF、DOCX、PNG/JPG、TXT，最大 10MB。荣誉证书只接受原证书类型。
 - `lab_attachment_read` 根据荣誉、简历或邮件所属对象重新鉴权，返回私有原文件和可提取文本。PDF 最多 50 页、文本最多 100000 字符；DOCX 保留段落。独立 Worker 限时 12 秒、堆 128MB、最多并发 2；图片不自动 OCR，加密/损坏文件明确返回不可解析。
+- 私有附件引用使用 `lab110://`，不是公开下载地址。0.14.1 兼容先前返回的 `110lab://` 输入，并输出合法 URI。
 - 业务成功结果放在 `structuredContent`，同时提供 JSON 文本；错误使用 `isError` 及 `{code,message}`。工具输入为严格 JSON Schema，拒绝未定义参数。
 
 ## 预览与实际效果
@@ -65,8 +66,8 @@ PORTAL_RECRUITMENT_WORKFLOW_MODE=dry-run
 
 1. 固定 Git 提交、干净工作树、release.json 哈希清单；发布前核对 live 容器 ID、启动时间、current 指针和共享网关哈希。
 2. 用 SQLite backup API 备份在线数据库；保存旧发布包、私有配置和网关文件，不复制正在写的 WAL 数据库文件。
-3. 新门户容器旁路启动，使用原 Node 运行时、业务数据挂载和身份配置；新增业务邮箱配置只读挂载。保留旧容器和现有 worker。
-4. 验证健康、匿名访问拒绝、工具发现、官网投递仍为模拟、公开动态及视频；仅替换门户的两个 Caddy 上游，并保持配置文件 inode。
+3. 暂停 MCP 写入与邮件领取并等待在途任务结束。新门户容器旁路启动，使用原 Node 运行时、业务数据挂载和身份配置；业务邮箱配置只读挂载。保留旧容器和现有独立 worker。
+4. 验证健康、匿名访问拒绝、工具发现、官网投递仍为模拟、公开动态及视频；仅替换门户的两个 Caddy 上游，并保持配置文件 inode。停止旧门户内的业务邮件 worker 后再解除暂停，避免同时领取任务。
 5. 回滚先在业务数据目录创建 `frozen` 文件（或 `PORTAL_BUSINESS_FREEZE_FILE` 指定路径）。新 MCP 写入和邮件领取立即停止；等待 `mail_jobs` 中 SENDING 归零，核实 UNKNOWN。再切回旧上游和 current 指针，停止新门户。
 6. 回滚保留新数据库、任务、审计和上传资料，不能恢复旧数据库覆盖上线后的真实资料，也不能清除 UNKNOWN 以触发重发。恢复新版前逐项处理遗留任务，再移除冻结文件。
 
@@ -85,5 +86,7 @@ node scripts/verify-business-release.mjs
 ```
 
 测试使用虚构身份、临时数据库和本机 SMTP 接收器；不向真实收件人发信，不写真实飞书表。发布验证与用户在 Codex 原生插件里的首次授权验收分别记录，不能把工具发现成功当作完整真人授权通过。
+
+0.14.1 全量调用与真实只读验证详见 [测试报告](MCP-TEST-2026-10-05.md)。
 
 协议实现参考：[飞书第三方邮箱客户端](https://www.feishu.cn/hc/zh-CN/articles/902478147400-在第三方邮箱客户端登录飞书邮箱)、[ImapFlow](https://imapflow.com/docs/api/imapflow-client/)、[MailParser](https://nodemailer.com/extras/mailparser)、[PDF.js](https://mozilla.github.io/pdf.js/api/draft/module-pdfjsLib.html)。
