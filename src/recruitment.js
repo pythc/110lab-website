@@ -25,16 +25,17 @@ export async function initRecruitment(){
     UNKNOWN:'提交已接收 · 发信结果待核实 为避免重复邮件请勿重新投递 可通过邮箱联系实验室并提供回执编号',
     EXPIRED:'回执资料已清理 未能确认邮件发送结果 请通过邮箱联系实验室并提供回执编号',
   };
-  const pending=()=>receipt&&['RECEIVED','SENDING','RETRYING'].includes(receipt.status);
+  const pending=()=>receipt&&(receipt.mailStatus?['QUEUED','SENDING','RETRYING'].includes(receipt.mailStatus):['RECEIVED','SENDING','RETRYING'].includes(receipt.status));
   function render(){
     if(!receipt)return;
     say(!receipt.id?'正在核实上次提交是否已接收 请保留当前标签页':texts[receipt.status]||'回执状态待核实');
+    if(receipt.mailStatus)say(receipt.mailStatus==='SENT'?'提交已接收 · 通知邮件已交给邮件服务商':'提交已接收 · 资料已保存至实验室招新系统');
     form.querySelector('[data-resume-id]').textContent=receipt.id||'';
     form.querySelector('[data-resume-receipt]').hidden=!receipt.id;
     fieldset.disabled=true;submit.hidden=true;
     form.querySelector('#resume-upload').hidden=true;
     retry.hidden=receipt.status!=='FAILED'||receipt.retriesRemaining===0;
-    reset.hidden=!['SENT','EXPIRED'].includes(receipt.status);
+    reset.hidden=!receipt.mailStatus&&!['SENT','EXPIRED'].includes(receipt.status);
     if(receipt.status==='FAILED'&&receipt.retriesRemaining===0)say('提交已接收 · 邮件发送失败 已达到重试上限 请联系实验室并提供回执编号');
     schedule();
   }
@@ -47,6 +48,8 @@ export async function initRecruitment(){
   }
   document.addEventListener('visibilitychange',()=>{if(document.hidden)clearTimeout(timer);else if(pending())poll();});
   try{config=await request('config',null,false);}catch{say('在线投递暂时不可用 可使用邮箱投递');return;}
+  if(config.recipient){for(const link of document.querySelectorAll('.recruit-mail a,.resume-consent a')){const old=new URL(link.href);link.href='mailto:'+encodeURIComponent(config.recipient)+old.search;link.textContent=config.recipient;}}
+  if(config.retention!=='permanent')document.querySelector('.resume-retention').textContent='网站临时资料发送成功后保留 24 小时，未发送资料保留 7 天，回执保留 30 天。收件邮箱中的资料由实验室管理。';
   try{
     const saved=JSON.parse(sessionStorage.getItem('110lab-resume-receipt')||'null');
     if(saved&&(typeof saved.id==='string'||saved.id===null)&&/^Bearer [A-Za-z0-9_-]{43}$/.test(saved.authorization)){authorization=saved.authorization;receipt={id:saved.id,status:'RECEIVED'};render();await poll();}
@@ -56,7 +59,7 @@ export async function initRecruitment(){
   const locale={...zh_CN,strings:{...zh_CN.strings,complete:'提交已接收',uploadComplete:'提交已接收',done:'完成上传',dropPasteFiles:'将简历拖到这里 或 %{browseFiles}',browseFiles:'选择文件'}};
   const uppy=new Uppy({id:'110lab-resume',autoProceed:false,allowMultipleUploadBatches:false,restrictions:{maxNumberOfFiles:1,minNumberOfFiles:1,maxFileSize:config.maxFileBytes,allowedFileTypes:['.pdf','.docx']},locale});
   uppy.use(Dashboard,{target:'#resume-upload',inline:true,width:'100%',height:220,hideUploadButton:true,hideRetryButton:true,hideCancelButton:true,showProgressDetails:true,disableThumbnailGenerator:true,note:'一份 PDF 或 DOCX 简历 · 最大 10MB',proudlyDisplayPoweredByUppy:false});
-  uppy.use(XHRUpload,{endpoint:'/api/recruitment/submissions',fieldName:'resume',formData:true,allowedMetaFields:['applicantName','group','email','consent','website'],limit:1,timeout:90000,headers:()=>({Authorization:authorization}),shouldRetry:xhr=>xhr.status===0||[408,502,503,504].includes(xhr.status),getResponseData:xhr=>xhr.responseType==='json'?xhr.response:JSON.parse(xhr.responseText)});
+  uppy.use(XHRUpload,{endpoint:'/api/recruitment/submissions',fieldName:'resume',formData:true,allowedMetaFields:['applicantName','group','email','consent','website',...(config.workflow?['intakeRevision']:[])],limit:1,timeout:90000,headers:()=>({Authorization:authorization}),shouldRetry:xhr=>xhr.status===0||[408,502,503,504].includes(xhr.status),getResponseData:xhr=>xhr.responseType==='json'?xhr.response:JSON.parse(xhr.responseText)});
   if(!receipt)say(config.available?'':'发信服务暂时不可用 可稍后刷新页面或使用邮箱投递');
   form.addEventListener('input',()=>{if(!busy&&!receipt)authorization=null;});
   uppy.on('file-added',()=>{if(!busy&&!receipt)authorization=null;});
@@ -75,7 +78,7 @@ export async function initRecruitment(){
     authorization||=randomKey();
     save();
     const fields=new FormData(form);
-    uppy.setMeta({applicantName:String(fields.get('name')).trim(),group:fields.get('group'),email:String(fields.get('email')).trim(),consent:fields.get('consent')==='on'?'true':'false',website:fields.get('website')||''});
+    uppy.setMeta({applicantName:String(fields.get('name')).trim(),group:fields.get('group'),email:String(fields.get('email')).trim(),consent:fields.get('consent')==='on'?'true':'false',website:fields.get('website')||'',...(config.workflow?{intakeRevision:String(config.intakeRevision)}:{})});
     busy=true;lastUploadError=null;fieldset.disabled=true;submit.disabled=true;uppy.getPlugin('Dashboard').setOptions({disabled:true});say('正在上传简历 上传完成后会生成回执');
     try{const result=await uppy.upload();if(result.failed?.length&&!receipt)say(lastUploadError||'未确认提交结果 请保持原资料并重试');}
     catch(error){say(error.message||'上传失败 请重试');}
@@ -87,7 +90,7 @@ export async function initRecruitment(){
     catch(error){say(error.message);}finally{busy=false;retry.disabled=false;}
   });
   reset.addEventListener('click',()=>{
-    if(!receipt||!['SENT','EXPIRED'].includes(receipt.status))return;
+    if(!receipt||!receipt.mailStatus&&!['SENT','EXPIRED'].includes(receipt.status))return;
     clearSaved();clearTimeout(timer);receipt=null;authorization=null;uppy.clear();form.reset();fieldset.disabled=!config.available;submit.disabled=!config.available;submit.hidden=false;retry.hidden=true;reset.hidden=true;form.querySelector('[data-resume-receipt]').hidden=true;form.querySelector('#resume-upload').hidden=false;uppy.getPlugin('Dashboard').setOptions({disabled:false});say(config.available?'可以提交新的资料 请勿重复投递相同简历':'发信服务暂时不可用 请稍后刷新页面');
   });
 }

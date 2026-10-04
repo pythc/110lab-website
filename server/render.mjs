@@ -1,6 +1,7 @@
 export const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function renderWorkbench(template,config){
   const icons={grading:'<path d="M7 3.5h7.2L19 8.2V20.5H7zM14.2 3.5V8.2H19M9.2 14.2l1.8 1.8 3.6-3.8"/>',assessment:'<rect x="7" y="3.5" width="10" height="17" rx="2"/><path d="M9.5 3.5h5V6h-5zM9.5 11h5M9.5 14.5h3.5"/>',requirements:'<path d="M9 7h10M9 12h10M9 17h7M4 7h1M4 12h1M4 17h1"/>',home:'<path d="M4 11 12 4.5 20 11"/><path d="M6.8 10.2V19.5h10.4V10.2"/>',updates:'<path d="M4 12a8 8 0 0 1 13.5-5.8"/><path d="M20 12a8 8 0 0 1-13.5 5.8"/><path d="M15.5 4.2H20V8.5"/><path d="M8.5 19.8H4V15.5"/>'};
+  icons.recruitment='<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 7h4M17 12h4M18 17v4M16 19h4"/>';
   icons.projects='<rect x="3" y="5" width="18" height="15" rx="2"/><path d="M8 5V3h8v2M3 11h18M12 9v4"/>';
   icons.mail='<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 6 8 6 8-6"/>';
   const status={available:'可用',intranet:'内网',disabled:'尚未启用'};

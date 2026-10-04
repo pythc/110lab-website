@@ -30,6 +30,11 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
       const status=await new Promise((resolve,reject)=>{const r=request(base+path,{headers:{Host:'110-lab.cn'}},res=>{res.resume();resolve(res.statusCode);});r.on('error',reject);r.end();});
       assert.equal(status,404);
     }
+    for(const path of ['/recruitment-test','/recruitment-test/embedded']){
+      const response=await fetch(base+path);assert.equal(response.status,200);assert.match(await response.text(),/招新流程测试/);
+      if(path.endsWith('/embedded'))assert.match(response.headers.get('content-security-policy'),/codex-sandbox:/);
+      const status=await new Promise((resolve,reject)=>{const r=request(base+path,{headers:{Host:'110-lab.cn'}},res=>{res.resume();resolve(res.statusCode);});r.on('error',reject);r.end();});assert.equal(status,404);
+    }
     assert.equal((await fetch(base+'/mcp/workbench-v5')).status,405);
     assert.equal((await fetch(base+'/mcp/workbench-v5',{method:'OPTIONS'})).status,204);
     assert.equal((await fetch(base+'/mcp/workbench-v5',{method:'POST',body:'{}'})).status,415);

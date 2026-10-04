@@ -13,7 +13,7 @@ const fail=(code,message,status=400)=>new RecruitmentError(status,code,message);
 const fieldsSchema=z.object({
   name:z.string().trim().min(1).max(60).regex(/^[\p{L}\p{N} ·-]+$/u),
   group:z.enum(GROUPS),email:z.email().max(254).transform(v=>v.toLowerCase()),
-  consent:z.literal('true'),website:z.literal(''),
+  consent:z.literal('true'),website:z.literal(''),intakeRevision:z.string().regex(/^[1-9]\d{0,8}$/).optional(),
 }).strict();
 const types={pdf:'application/pdf',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'};
 export const resumeTypes=types;
@@ -81,7 +81,7 @@ export async function readApplication(req,root,{timeoutMs=180000}={}){
   const remove=()=>{try{unlinkSync(path);}catch(error){if(error.code!=='ENOENT')throw error;}};
   try{
     if(Number(req.headers['content-length']||0)>MAX_FILE_BYTES+64*1024)throw fail('FILE_SIZE','请求过大 简历上限为 10MB',413);
-    try{parser=Busboy({headers:req.headers,limits:{files:1,fields:5,parts:7,fileSize:MAX_FILE_BYTES+1,fieldSize:1024,headerPairs:100}});}catch{throw fail('INVALID_FORM','请使用站内表单提交简历',415);}
+    try{parser=Busboy({headers:req.headers,limits:{files:1,fields:6,parts:8,fileSize:MAX_FILE_BYTES+1,fieldSize:1024,headerPairs:100}});}catch{throw fail('INVALID_FORM','请使用站内表单提交简历',415);}
     await new Promise((resolve,reject)=>{
       const stop=error=>{if(failure)return;failure=error;req.unpipe(parser);parser.destroy();req.resume();reject(error);};
       const onData=chunk=>{total+=chunk.length;if(total>MAX_FILE_BYTES+64*1024)stop(fail('FILE_SIZE','请求过大 简历上限为 10MB',413));};
@@ -92,7 +92,7 @@ export async function readApplication(req,root,{timeoutMs=180000}={}){
       parser.on('field',(name,value,info)=>{
         if(failure)return;
         const key=name==='applicantName'?'name':name;
-        if(!['name','applicantName','group','email','consent','website'].includes(name)||Object.hasOwn(fields,key)||info.valueTruncated||info.nameTruncated)return stop(fail('INVALID_FORM','表单资料不完整或格式无效'));
+        if(!['name','applicantName','group','email','consent','website','intakeRevision'].includes(name)||Object.hasOwn(fields,key)||info.valueTruncated||info.nameTruncated)return stop(fail('INVALID_FORM','表单资料不完整或格式无效'));
         fields[key]=value;
       });
       parser.on('file',(name,file,info)=>{

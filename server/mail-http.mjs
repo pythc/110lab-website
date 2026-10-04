@@ -38,6 +38,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
   if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
   const projectDirectory=enabled?(fetchDirectory?{list:fetchDirectory}:localTest?null:createWorkspaceDirectory({config,now})):null;
   return {enabled,workspaceDirectory:directory?join(directory,'workspace'):null,
+    roleForSubject(subject){return access?.me(subject)?.role||'member';},
     // Trusted in-process adapter. Every request re-reads the current lab role.
     identity(req,{embedded=false,write=false}={}) {
       if(!enabled)throw new MailAuthError(503,'飞书登录尚未配置');

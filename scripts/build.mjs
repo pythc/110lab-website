@@ -26,6 +26,11 @@ const [adminHTML,adminCSS,adminJS]=await Promise.all([readFile(resolve(root,'src
 await writeFile(resolve(root,'dist/admin.html'),adminHTML.replace('/* ADMIN_CSS */',()=>adminCSS).replace('/* ADMIN_SCRIPT */',()=>adminJS));
 const [mailHTML,mailCSS,mailJS]=await Promise.all([readFile(resolve(root,'src/mail.html'),'utf8'),readFile(resolve(root,'src/mail.css'),'utf8'),bundle('src/mail.js')]);
 await writeFile(resolve(root,'dist/mail.html'),mailHTML.replace('/* MAIL_CSS */',()=>mailCSS).replace('/* MAIL_SCRIPT */',()=>mailJS));
+const [recruitmentTestHTML,recruitmentTestCSS,recruitmentTestJS]=await Promise.all([readFile(resolve(root,'src/recruitment-test.html'),'utf8'),readFile(resolve(root,'src/recruitment-test.css'),'utf8'),bundle('src/recruitment-test.js')]);
+const uppyCSS=(await Promise.all(['node_modules/@uppy/core/dist/style.min.css','node_modules/@uppy/dashboard/dist/style.min.css'].map(p=>readFile(resolve(root,p),'utf8')))).join('\n');
+await writeFile(resolve(root,'dist/recruitment-test.html'),recruitmentTestHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentTestJS));
+const [recruitmentHTML,recruitmentJS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js')]);
+await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
 await rm(resolve(root,'dist/assets'),{recursive:true,force:true});
 await cp(resolve(root,'src/assets'),resolve(root,'dist/assets'),{recursive:true});
 const localBridge=await build({entryPoints:[resolve(root,'server/local-portal-bridge.mjs')],outfile:resolve(root,'plugin/110lab/mcp/portal-bridge.mjs'),bundle:true,metafile:true,format:'esm',platform:'node',target:'node20',minify:true,banner:{js:'import {createRequire as __createRequire} from "node:module";const require=__createRequire(import.meta.url);'}});
