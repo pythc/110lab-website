@@ -4,6 +4,7 @@ import {join} from 'node:path';
 import {randomBytes,createHash,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 
+export const LAB_LOGIN_LIFETIME=30*24*3600000;
 export class MailAuthError extends Error {constructor(status,message){super(message);this.status=status;}}
 const hash=s=>createHash('sha256').update(s).digest('hex'),nonce=()=>randomBytes(32).toString('base64url');
 export const MAIL_SCOPE='contact:user.employee:readonly';
@@ -49,24 +50,37 @@ export function openMailAuth({directory,config,now=Date.now,localTest=false,fetc
     CREATE TABLE IF NOT EXISTS mail_sessions(key TEXT PRIMARY KEY,subject TEXT NOT NULL,csrf TEXT NOT NULL,context TEXT NOT NULL,created INTEGER NOT NULL,seen INTEGER NOT NULL,expires INTEGER NOT NULL,config_id TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS mail_flows(state TEXT PRIMARY KEY,binding TEXT NOT NULL,context TEXT NOT NULL,verifier TEXT NOT NULL,expected_subject TEXT,callback_binding TEXT,status TEXT NOT NULL,subject TEXT,expires INTEGER NOT NULL,config_id TEXT NOT NULL,handoff_hash TEXT);
     CREATE TABLE IF NOT EXISTS mail_login_budget(scope TEXT,key TEXT,bucket INTEGER,count INTEGER,PRIMARY KEY(scope,key,bucket));
-    CREATE TABLE IF NOT EXISTS mail_host_flows(state TEXT PRIMARY KEY,authenticated_at INTEGER NOT NULL);`);
+    CREATE TABLE IF NOT EXISTS mail_host_flows(state TEXT PRIMARY KEY,authenticated_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS mail_host_flow_grants(state TEXT PRIMARY KEY,family TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS mail_session_grants(key TEXT PRIMARY KEY,family TEXT NOT NULL);`);
   const configId=hash(JSON.stringify(config));db.prepare('DELETE FROM mail_sessions WHERE config_id<>?').run(configId);db.prepare('DELETE FROM mail_flows WHERE config_id<>?').run(configId);
   const names={normal:localTest?'110lab_mail_test':'__Host-110lab_mail',embedded:'__Host-110lab_mail_embedded',normalBind:localTest?'110lab_mail_bind_test':'__Host-110lab_mail_bind',embeddedBind:'__Host-110lab_mail_bind_embedded',callback:localTest?'110lab_mail_callback_test':'__Host-110lab_mail_callback'};
-  const cookie=(name,value,{embedded=false,age=28800,lax=false}={})=>`${name}=${value}; Path=/; HttpOnly; SameSite=${embedded?'None':lax?'Lax':'Strict'}; Max-Age=${age}${localTest&&!embedded?'':'; Secure'}${embedded?'; Partitioned':''}`;
+  const cookie=(name,value,{embedded=false,age=LAB_LOGIN_LIFETIME/1000,lax=false}={})=>`${name}=${value}; Path=/; HttpOnly; SameSite=${embedded?'None':lax?'Lax':'Strict'}; Max-Age=${age}${localTest&&!embedded?'':'; Secure'}${embedded?'; Partitioned':''}`;
   const value=(header,name)=>{if(typeof header!=='string'||header.length>8192)return null;const a=header.split(';').map(s=>s.trim()).filter(s=>s.startsWith(name+'='));if(a.length!==1)return null;const v=a[0].slice(name.length+1);return /^[\w-]{43}$/.test(v)?v:null;};
   const context=embedded=>embedded?'embedded':'normal';
-  function clean(){db.prepare('DELETE FROM mail_sessions WHERE expires<=? OR seen<?').run(now(),now()-30*60000);db.prepare('DELETE FROM mail_flows WHERE expires<=?').run(now());db.prepare('DELETE FROM mail_host_flows WHERE state NOT IN (SELECT state FROM mail_flows)').run();db.prepare('DELETE FROM mail_login_budget WHERE bucket<?').run(Math.floor(now()/900000)-4);}
+  function clean(){db.prepare('DELETE FROM mail_sessions WHERE expires<=?').run(now());db.prepare('DELETE FROM mail_flows WHERE expires<=?').run(now());db.prepare('DELETE FROM mail_host_flows WHERE state NOT IN (SELECT state FROM mail_flows)').run();db.exec('DELETE FROM mail_host_flow_grants WHERE state NOT IN (SELECT state FROM mail_flows); DELETE FROM mail_session_grants WHERE key NOT IN (SELECT key FROM mail_sessions);');db.prepare('DELETE FROM mail_login_budget WHERE bucket<?').run(Math.floor(now()/900000)-4);}
   clean();const timer=setInterval(clean,60000);timer.unref();
   function flow(state){if(!/^[\w-]{43}$/.test(state||''))throw new MailAuthError(401,'登录链接已失效 请重新登录');const row=db.prepare('SELECT * FROM mail_flows WHERE state=? AND config_id=? AND expires>?').get(hash(state),configId,now());if(!row)throw new MailAuthError(401,'登录链接已失效 请重新登录');return row;}
   const budget=(scope,key,limit)=>{const bucket=Math.floor(now()/900000),count=db.prepare('INSERT INTO mail_login_budget VALUES(?,?,?,1) ON CONFLICT(scope,key,bucket) DO UPDATE SET count=count+1 RETURNING count').get(scope,key,bucket).count;if(count>limit)throw new MailAuthError(429,'登录尝试较多 请稍后再试');};
-  function mint(subject,embedded,authenticatedAt=now()){const token=nonce(),csrf=nonce(),t=now(),expires=authenticatedAt+8*3600000;if(authenticatedAt>t||expires<=t)throw new MailAuthError(401,'请重新通过飞书登录');db.prepare('INSERT INTO mail_sessions VALUES(?,?,?,?,?,?,?,?)').run(hash(context(embedded)+':'+token),subject,csrf,context(embedded),authenticatedAt,t,expires,configId);return {cookie:cookie(names[context(embedded)],token,{embedded,age:Math.floor((expires-t)/1000)}),session:{subject,csrf,created:authenticatedAt,expiresAt:new Date(expires).toISOString()}};}
+  let grants={active:()=>true,revoke:()=>{}};
+  function mint(subject,embedded,authenticatedAt=now(),family=null){const token=nonce(),csrf=nonce(),t=now(),expires=authenticatedAt+LAB_LOGIN_LIFETIME;if(authenticatedAt>t||expires<=t)throw new MailAuthError(401,'请重新通过飞书登录');db.prepare('INSERT INTO mail_sessions VALUES(?,?,?,?,?,?,?,?)').run(hash(context(embedded)+':'+token),subject,csrf,context(embedded),authenticatedAt,t,expires,configId);if(family)db.prepare('INSERT INTO mail_session_grants VALUES(?,?)').run(hash(context(embedded)+':'+token),family);return {cookie:cookie(names[context(embedded)],token,{embedded,age:Math.floor((expires-t)/1000)}),session:{subject,csrf,created:authenticatedAt,expiresAt:new Date(expires).toISOString()}};}
   function sessionByKey(key){
     const row=db.prepare('SELECT * FROM mail_sessions WHERE key=? AND config_id=?').get(key,configId);
-    if(!row||row.expires<=now()||row.seen<now()-30*60000)throw new MailAuthError(401,'登录已过期 请重新登录');
+    const family=db.prepare('SELECT family FROM mail_session_grants WHERE key=?').get(key)?.family;
+    if(!row||row.expires<=now()||family&&!grants.active(family))throw new MailAuthError(401,'登录已过期 请重新登录');
     if(now()-row.seen>=60000)db.prepare('UPDATE mail_sessions SET seen=? WHERE key=?').run(now(),key);
-    return {key,subject:row.subject,csrf:row.csrf,created:row.created,embedded:row.context==='embedded',expiresAt:new Date(row.expires).toISOString()};
+    return {key,family,subject:row.subject,csrf:row.csrf,created:row.created,embedded:row.context==='embedded',expiresAt:new Date(row.expires).toISOString()};
   }
-  return {names,sessionByKey,
+  return {names,sessionByKey,bindGrants(store){grants=store;},
+    revokeGrantSessions(family){
+      db.exec('BEGIN IMMEDIATE');try{
+        db.prepare('DELETE FROM mail_sessions WHERE key IN (SELECT key FROM mail_session_grants WHERE family=?)').run(family);
+        db.prepare('DELETE FROM mail_flows WHERE state IN (SELECT state FROM mail_host_flow_grants WHERE family=?)').run(family);
+        db.prepare('DELETE FROM mail_session_grants WHERE family=?').run(family);
+        db.prepare('DELETE FROM mail_host_flow_grants WHERE family=?').run(family);
+        db.exec('COMMIT');
+      }catch(e){db.exec('ROLLBACK');throw e;}
+    },
     start(header,{embedded=false,ip='unknown',expectedSubject=null}={}){
       clean();budget('global','all',100);budget('ip',hash(ip),10);
       const state=nonce(),binding=nonce(),verifier=nonce();db.prepare('INSERT INTO mail_flows VALUES(?,?,?,?,?,NULL,?,NULL,?,?,NULL)').run(hash(state),hash(binding),context(embedded),verifier,expectedSubject,'created',now()+5*60000,configId);
@@ -88,12 +102,12 @@ export function openMailAuth({directory,config,now=Date.now,localTest=false,fetc
     // second one-use secret via a same-origin opener, or explicit code entry.
     // Called only after MCP bearer verification. The browser cannot supply a
     // subject or turn possession of a flow URL into somebody else's session.
-    completeForHost(state,{subject,authenticatedAt}){const row=flow(state);if(row.context!=='embedded'||row.status!=='created'||row.expected_subject&&row.expected_subject!==subject)throw new MailAuthError(401,'请使用当前账号重新发起登录');if(!Number.isSafeInteger(authenticatedAt)||authenticatedAt>now()||authenticatedAt+8*3600000<=now())throw new MailAuthError(401,'请重新通过飞书登录');const ticket=nonce();db.exec('BEGIN IMMEDIATE');try{if(db.prepare("UPDATE mail_flows SET status='complete',subject=?,handoff_hash=?,verifier='' WHERE state=? AND status='created'").run(subject,hash(ticket),hash(state)).changes!==1)throw new MailAuthError(409,'登录结果已处理');db.prepare('INSERT INTO mail_host_flows VALUES(?,?)').run(hash(state),authenticatedAt);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}return {state,ticket};},
-    redeem(state,ticket,header,{embedded=false}={}){const row=flow(state),binding=value(header,names[embedded?'embeddedBind':'normalBind']);if(row.context!==context(embedded)||!binding||hash(binding)!==row.binding)throw new MailAuthError(401,'请在发起登录的页面完成操作');if(row.status!=='complete'||!row.handoff_hash||!/^[-\w]{43}$/.test(ticket||'')||hash(ticket)!==row.handoff_hash)throw new MailAuthError(401,'登录码无效或已使用');const authenticatedAt=db.prepare('SELECT authenticated_at FROM mail_host_flows WHERE state=?').get(hash(state))?.authenticated_at??now();if(authenticatedAt+8*3600000<=now())throw new MailAuthError(401,'请重新通过飞书登录');if(db.prepare("UPDATE mail_flows SET status='consumed',handoff_hash=NULL WHERE state=? AND status='complete'").run(hash(state)).changes!==1)throw new MailAuthError(409,'登录结果已处理');return mint(row.subject,embedded,authenticatedAt);},
-    session(header,{embedded=false}={}){const token=value(header,names[context(embedded)]);if(!token)throw new MailAuthError(401,'请先使用飞书登录');const key=hash(context(embedded)+':'+token),row=db.prepare('SELECT * FROM mail_sessions WHERE key=? AND config_id=?').get(key,configId);if(!row||row.context!==context(embedded)||row.expires<=now()||row.seen<now()-30*60000){db.prepare('DELETE FROM mail_sessions WHERE key=?').run(key);throw new MailAuthError(401,'登录已过期 请重新登录');}if(now()-row.seen>=60000)db.prepare('UPDATE mail_sessions SET seen=? WHERE key=?').run(now(),key);return {key,subject:row.subject,csrf:row.csrf,created:row.created,embedded,expiresAt:new Date(row.expires).toISOString()};},
+    completeForHost(state,{subject,authenticatedAt,family}){const row=flow(state);if(row.context!=='embedded'||row.status!=='created'||row.expected_subject&&row.expected_subject!==subject)throw new MailAuthError(401,'请使用当前账号重新发起登录');if(!Number.isSafeInteger(authenticatedAt)||authenticatedAt>now()||authenticatedAt+LAB_LOGIN_LIFETIME<=now())throw new MailAuthError(401,'请重新通过飞书登录');if(family&&!grants.active(family))throw new MailAuthError(401,'请重新通过飞书登录');const ticket=nonce();db.exec('BEGIN IMMEDIATE');try{if(db.prepare("UPDATE mail_flows SET status='complete',subject=?,handoff_hash=?,verifier='' WHERE state=? AND status='created'").run(subject,hash(ticket),hash(state)).changes!==1)throw new MailAuthError(409,'登录结果已处理');db.prepare('INSERT INTO mail_host_flows VALUES(?,?)').run(hash(state),authenticatedAt);if(family)db.prepare('INSERT INTO mail_host_flow_grants VALUES(?,?)').run(hash(state),family);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}return {state,ticket};},
+    redeem(state,ticket,header,{embedded=false}={}){const row=flow(state),binding=value(header,names[embedded?'embeddedBind':'normalBind']);if(row.context!==context(embedded)||!binding||hash(binding)!==row.binding)throw new MailAuthError(401,'请在发起登录的页面完成操作');if(row.status!=='complete'||!row.handoff_hash||!/^[-\w]{43}$/.test(ticket||'')||hash(ticket)!==row.handoff_hash)throw new MailAuthError(401,'登录码无效或已使用');const authenticatedAt=db.prepare('SELECT authenticated_at FROM mail_host_flows WHERE state=?').get(hash(state))?.authenticated_at??now();const family=db.prepare('SELECT family FROM mail_host_flow_grants WHERE state=?').get(hash(state))?.family;if(family&&!grants.active(family))throw new MailAuthError(401,'登录已退出 请重新登录');if(authenticatedAt+LAB_LOGIN_LIFETIME<=now())throw new MailAuthError(401,'请重新通过飞书登录');if(db.prepare("UPDATE mail_flows SET status='consumed',handoff_hash=NULL WHERE state=? AND status='complete'").run(hash(state)).changes!==1)throw new MailAuthError(409,'登录结果已处理');return mint(row.subject,embedded,authenticatedAt,family);},
+    session(header,{embedded=false}={}){const token=value(header,names[context(embedded)]);if(!token)throw new MailAuthError(401,'请先使用飞书登录');return sessionByKey(hash(context(embedded)+':'+token));},
     csrf(session,token){if(typeof token!=='string'||!/^[\w-]{43}$/.test(token)||!timingSafeEqual(Buffer.from(token),Buffer.from(session.csrf)))throw new MailAuthError(403,'页面已失效 请重新加载');},
     recent(session){if(now()-session.created>5*60000)throw new MailAuthError(403,'请重新通过飞书确认身份后再修改管理员');},
-    logout(session){db.prepare('DELETE FROM mail_sessions WHERE key=?').run(session.key);db.prepare('DELETE FROM mail_flows WHERE expected_subject=?').run(session.subject);return cookie(names[context(session.embedded)],'',{embedded:session.embedded,age:0});},
+    logout(session){if(session.family)grants.revoke(session.family);db.prepare('DELETE FROM mail_sessions WHERE key=?').run(session.key);db.prepare('DELETE FROM mail_flows WHERE expected_subject=?').run(session.subject);return cookie(names[context(session.embedded)],'',{embedded:session.embedded,age:0});},
     close(){clearInterval(timer);db.close();}
   };
 }

@@ -68,7 +68,7 @@ docker run --name 110lab-website --read-only --user 1000:1000 \
 
 ## 插件
 
-`plugin/110lab/` 保存插件清单。`open_110lab` 是侧边栏入口，其资源 URI 为 `ui://110lab/workbench/v0.8.7`，明确加载工作台；`search_110lab_projects` 为只读项目搜索。本次保持资源 URI，以保留已有嵌入登录分区；更新插件到 0.14.0 并重新打开工作台以加载新增应用入口。
+`plugin/110lab/` 保存插件清单。`open_110lab` 是侧边栏入口，其资源 URI 为 `ui://110lab/workbench/v0.8.7`，明确加载工作台；`search_110lab_projects` 为只读项目搜索。本次保持资源 URI，以保留已有嵌入登录分区；更新插件到 0.15.0 并重新打开工作台以加载新增应用入口。
 
 ## 素材与许可
 
@@ -79,3 +79,5 @@ docker run --name 110lab-website --read-only --user 1000:1000 \
 0.12.0 新增成员登记、管理员审核的「奖项荣誉」应用，并修正需求待办的 Open ID / 员工 ID 混用。详情与数据保留、回滚边界见 [荣誉登记与待办](docs/honors.md)。
 
 0.14.0 新增五组业务 MCP，共 39 个工具，包含按用途授权、私有附件、可信确认、幂等执行和操作追踪。notify 接通收发，根域邮箱待配置，招新发送仍模拟。[使用与部署](docs/MCP-BUSINESS.md) · [全部 MCP 清单](docs/MCP-INVENTORY.md)。
+
+0.15.0 将工作台统一登录改为固定 30 天有效期，插件在本机私有文件保存可撤销的登录凭据，重新打开后自动恢复。主动退出撤销该授权及其页面会话；管理员任免仍需 5 分钟内重新验证身份。首次升级可能需要重新登录一次。[认证与回滚说明](docs/MAIL-OAUTH.md)。

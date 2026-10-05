@@ -4,7 +4,11 @@ import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {UnauthorizedError} from '@modelcontextprotocol/sdk/client/auth.js';
 
-export const ISSUER='https://internal.110-lab.cn',RESOURCE=ISSUER+'/mcp/workbench-v6-1';
+import {join} from 'node:path';
+import {homedir} from 'node:os';
+import {credentialFile} from './local-credential-store.mjs';
+import {ISSUER,RESOURCE} from './portal-constants.mjs';
+export {ISSUER,RESOURCE} from './portal-constants.mjs';
 const secret=v=>typeof v==='string'&&/^[\w-]{43}$/.test(v);
 const error=text=>({isError:true,content:[{type:'text',text}]});
 const paths=new Set(['/mcp/workbench-v6-1','/.well-known/oauth-protected-resource/mcp/workbench-v6-1','/.well-known/oauth-protected-resource','/.well-known/oauth-authorization-server','/register','/token']);
@@ -15,19 +19,24 @@ export async function portalFetch(input,options={},timeoutMs=15000){
 }
 
 // A public OAuth client lives in the local plugin process. No Feishu App Secret
-// is shipped, and tokens/PKCE material never enter tool content or disk storage.
-export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={}){
-  let information,tokens,verifier,job,connecting;
+// is shipped. Only client registration and scoped refresh credentials are stored
+// privately on this computer; PKCE stays in memory and no token enters tool content.
+export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,storage=credentialFile(join(homedir(),'.config','110lab-login','oauth.json'))}={}){
+  let information,tokens,verifier,job,connecting,releaseLock;
+  const persist=()=>storage.save({client:information,tokens});
+  const release=()=>{releaseLock?.();releaseLock=undefined;};
+  const missing=()=>({_meta:{mailSessionMissing:true},content:[{type:'text',text:'请点击飞书登录'}]});
   const provider={
     get redirectUrl(){return job?.redirect;},
     get clientMetadata(){return {redirect_uris:[job.redirect],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code'],scope:'mail:session'};},
     state:()=>job.oauthState,
-    clientInformation:()=>information,saveClientInformation:value=>{information=value;},
-    tokens:()=>tokens,saveTokens:value=>{if(!job||job.done&&!job.finishing)throw new Error('Login expired');tokens=value;},
+    clientInformation:()=>information,saveClientInformation:value=>{information=value;persist();},
+    tokens:()=>tokens,saveTokens:value=>{if(!job||job.done&&!job.finishing)throw new Error('Login expired');tokens=value;persist();},
     saveCodeVerifier:value=>{verifier=value;},codeVerifier:()=>verifier,
-    invalidateCredentials(scope){if(['all','client'].includes(scope))information=undefined;if(['all','tokens'].includes(scope))tokens=undefined;if(['all','verifier'].includes(scope))verifier=undefined;},
+    invalidateCredentials(scope){if(['all','client'].includes(scope))information=undefined;if(['all','tokens'].includes(scope))tokens=undefined;if(['all','verifier'].includes(scope))verifier=undefined;persist();},
     async validateResourceURL(server,resource){if(String(server)!==RESOURCE||resource!==RESOURCE)throw new Error('Unexpected resource');return new URL(RESOURCE);},
     redirectToAuthorization(url){
+      if(job?.silent)throw new UnauthorizedError('Interactive login required');
       if(!job||job.done||url.origin!==ISSUER||url.pathname!=='/authorize'||url.username||url.password||url.searchParams.get('redirect_uri')!==job.redirect||url.searchParams.get('client_id')!==information?.client_id||url.searchParams.get('state')!==job.oauthState||url.searchParams.get('code_challenge_method')!=='S256'||url.searchParams.get('resource')!==RESOURCE)throw new Error('Unexpected authorization page');
       job.authorization=url.href;
     }
@@ -36,7 +45,7 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={
   const transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{authProvider:provider,fetch:fetchImpl});
   const connect=()=>connecting ||= client.connect(transport).catch(e=>{connecting=null;throw e;});
   function closeListener(current){clearTimeout(current.timer);current.listener?.close();current.listener?.closeIdleConnections();}
-  function settle(current,success){if(current.done)return;current.done=true;closeListener(current);current.resolve(success);}
+  function settle(current,success){if(current.done)return;current.done=true;closeListener(current);current.resolve(success);release();}
   async function listener(current){
     const page=(res,status,title)=>{res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"});res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title} · 110lab</title><style>body{margin:60px auto;max-width:480px;padding:24px;font:16px/1.7 system-ui;color:#23304b;background:#f5f7fa}h1{font-size:24px}</style><h1>${title}</h1><p>请返回 110lab 公共邮箱管理</p></html>`);};
     current.listener=createServer(async(req,res)=>{
@@ -57,15 +66,18 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={
     current.timer=setTimeout(()=>settle(current,false),timeoutMs);current.timer.unref();
   }
   return {
-    async start({state,fresh=false}={}){
-      if(!secret(state)||typeof fresh!=='boolean')return error('登录请求无效');
+    async start({state,fresh=false,silent=false}={}){
+      if(!secret(state)||typeof fresh!=='boolean'||typeof silent!=='boolean'||silent&&fresh)return error('登录请求无效');
       if(job&&(!job.done||job.starting||job.finishing||job.callbackStarted&&!job.callbackFinished))return error('已有登录正在进行 请完成授权或稍后重试');
-      const current={state,fresh,oauthState:randomBytes(32).toString('base64url'),done:false,starting:true};current.wait=new Promise(resolve=>{current.resolve=resolve;});job=current;
+      const current={state,fresh,silent,oauthState:randomBytes(32).toString('base64url'),done:false,starting:true};current.wait=new Promise(resolve=>{current.resolve=resolve;});job=current;
       try{
+        releaseLock=storage.acquire?.();const saved=storage.load();information=saved.client;tokens=saved.tokens;
+        if(silent&&(!information||!tokens)){settle(current,false);return missing();}
         await listener(current);await connect();
         const result=await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh}});
         settle(current,false);return result;
       }catch(e){
+        if(silent){settle(current,false);return missing();}
         if(e instanceof UnauthorizedError&&current.authorization&&!current.done)return {content:[{type:'text',text:'请在飞书完成登录'}],_meta:{mailAuthorization:{state,url:current.authorization}}};
         settle(current,false);return error('无法启动飞书登录 请稍后重试');
       }finally{current.starting=false;}
@@ -77,10 +89,10 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000}={
       if(!current.done)return {content:[{type:'text',text:'等待用户完成飞书登录'}],_meta:{mailAuthorizationPending:{state}}};
       current.result ||= (async()=>{
         current.finishing=true;
-        try{if(!await current.wait||current!==job)return error('授权未完成 请重新登录');return await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh:current.fresh}});}catch{return error('连接未完成 请重新登录');}
-        finally{current.finishing=false;}
+        try{if(!await current.wait||current!==job)return error('授权未完成 请重新登录');releaseLock=storage.acquire?.();const saved=storage.load();information=saved.client;tokens=saved.tokens;return await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh:current.fresh}});}catch{return error('连接未完成 请重新登录');}
+        finally{current.finishing=false;release();}
       })();return current.result;
     },
-    async close(){if(job)settle(job,false);await client.close();tokens=undefined;verifier=undefined;information=undefined;}
+    async close(){if(job)settle(job,false);release();await client.close();tokens=undefined;verifier=undefined;information=undefined;}
   };
 }

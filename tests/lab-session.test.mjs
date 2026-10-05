@@ -16,8 +16,8 @@ test('recruitment embedded login accepts only matching parent handoff, sends CSR
   else if(revoked)status=403;
   return {ok:status===200,status,json:async()=>data};
  };
- const source=(await readFile(new URL('../src/lab-session.js',import.meta.url),'utf8')).replace('export function','function');
- const create=runInNewContext(source+';createLabSession',{window,parent,location:{pathname:'/recruitment-test/embedded'},fetch,URL,AbortSignal,setTimeout:()=>1,clearTimeout(){},setInterval:()=>2,clearInterval(){}});
+ const source=(await readFile(new URL('../src/lab-session.js',import.meta.url),'utf8')).replaceAll('export function','function').replace(/^import .*persistent-login.*\n/m,'');
+ const create=runInNewContext(source+';createLabSession',{restoreLabSession:async()=>false,window,parent,location:{pathname:'/recruitment-test/embedded'},fetch,URL,AbortSignal,setTimeout:()=>1,clearTimeout(){},setInterval:()=>2,clearInterval(){}});
  const session=create({onChange:p=>profiles.push(p)});
  await session.load();assert.equal(session.profile,null);await session.login();assert.equal(messages[0].state,state);
  const result={type:'110lab-mail-host-result',state,ticket};
@@ -31,9 +31,9 @@ test('recruitment embedded login accepts only matching parent handoff, sends CSR
 
 test('upload carries CSRF without overriding multipart boundary and stale downloads are discarded after logout',async()=>{
  const requests=[];let completeDownload;
- const source=(await readFile(new URL('../src/lab-session.js',import.meta.url),'utf8')).replace('export function','function');
+ const source=(await readFile(new URL('../src/lab-session.js',import.meta.url),'utf8')).replaceAll('export function','function').replace(/^import .*persistent-login.*\n/m,'');
  const create=runInNewContext(source+';createLabSession',{
-  window:{addEventListener(){}},parent:{},location:{pathname:'/recruitment-test'},URL,AbortSignal,
+  restoreLabSession:async()=>false,window:{addEventListener(){}},parent:{},location:{pathname:'/recruitment-test'},URL,AbortSignal,
   setTimeout,clearTimeout,setInterval,clearInterval,
   fetch:async(path,options)=>{
    requests.push({path,options});

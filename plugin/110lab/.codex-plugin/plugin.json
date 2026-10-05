@@ -13,7 +13,7 @@
     "defaultPrompt": "打开 110lab 工作台，使用考核系统或需求平台。"
   },
   "name": "110lab",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "110 实验室工作台：项目、荣誉、招新、公共邮箱和官网动态的业务 MCP。",
   "author": {
     "name": "110 实验室"

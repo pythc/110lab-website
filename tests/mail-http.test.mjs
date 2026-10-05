@@ -74,7 +74,7 @@ test('mail HTTP enforces verified members, CSRF, fresh authentication, atomic tr
 });
 test('unconfigured mail login fails closed while its page remains available',async()=>{
   const h=await harness({enabled:false});
-  try{assert.deepEqual(await (await h.request('/api/mail/config')).json(),{loginAvailable:false,notifyManualSend:false});assert.equal((await h.request('/api/mail/auth/start',{method:'POST',data:{}})).status,503);assert.equal((await h.request('/mail')).status,200);assert.match((await h.request('/mail')).headers.get('content-security-policy'),/frame-ancestors 'none'/);}
+  try{assert.deepEqual(await (await h.request('/api/mail/config')).json(),{loginAvailable:false,notifyManualSend:false,persistentLoginDays:30,restorePolicy:1});assert.equal((await h.request('/api/mail/auth/start',{method:'POST',data:{}})).status,503);assert.equal((await h.request('/mail')).status,200);assert.match((await h.request('/mail')).headers.get('content-security-policy'),/frame-ancestors 'none'/);}
   finally{await h.close();}
 });
 test('notify access requires a live administrator and fresh membership verification',async()=>{

@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,copyFile} from 'node:fs/promises';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {tmpdir} from 'node:os';
 import {request} from 'node:http';
+import {credentialFile} from '../server/local-credential-store.mjs';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
 import {InMemoryTransport} from '@modelcontextprotocol/sdk/inMemory.js';
@@ -40,11 +42,11 @@ async function harness(){
     const approval=await call('/mail/oauth/approve',{form:{request:requestId(identity)},headers:{Cookie:binding}});assert.equal(approval.status,200);
     return navigationURL(approval);
   };
-  return {call,fetchImpl,start,approve,advance(ms){time+=ms;},async close(){await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
+  return {call,fetchImpl,start,approve,storedSessions(){const db=new DatabaseSync(join(directory,'mail-sessions.sqlite'),{readOnly:true});try{return db.prepare('SELECT count(*) AS count FROM mail_sessions').get().count;}finally{db.close();}},storage:credentialFile(join(directory,'client','oauth.json')),advance(ms){time+=ms;},async close(){await new Promise(r=>{server.close(r);server.closeAllConnections();});await rm(directory,{recursive:true,force:true});}};
 }
 
 test('local client opens standard OAuth and uses a validated loopback callback to log into its iframe',async()=>{
-  const h=await harness(),mail=createMailLoginClient({fetchImpl:h.fetchImpl});
+  const h=await harness(),mail=createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl});
   try{
     const flow=await h.start(),start=await mail.start({state:flow.state});
     const url=start._meta.mailAuthorization.url;assert.doesNotMatch(JSON.stringify(start.content),/authorize|127\.0\.0\.1/);
@@ -70,7 +72,7 @@ test('local client opens standard OAuth and uses a validated loopback callback t
 });
 
 test('cancelled and expired local authorizations do not hang or prevent retry',async()=>{
-  const h=await harness(),mail=createMailLoginClient({fetchImpl:h.fetchImpl,timeoutMs:1500});
+  const h=await harness(),mail=createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl,timeoutMs:1500});
   try{
     const first=await h.start();assert.ok((await mail.start({state:first.state}))._meta.mailAuthorization);
     assert.ok((await mail.finish({state:first.state}))._meta.mailAuthorizationPending);await mail.finish({state:first.state,cancel:true});assert.equal((await mail.finish({state:first.state})).isError,true);
@@ -82,7 +84,7 @@ test('cancelled and expired local authorizations do not hang or prevent retry',a
 });
 
 test('local MCP proxy retains workbench metadata and exposes the login bridge only to apps',async()=>{
-  const h=await harness(),bridge=createLocalPortalBridge({fetchImpl:h.fetchImpl}),client=new Client({name:'fixture-plugin-host',version:'1'});
+  const h=await harness(),bridge=createLocalPortalBridge({fetchImpl:h.fetchImpl,mail:createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl})}),client=new Client({name:'fixture-plugin-host',version:'1'});
   const [host,server]=InMemoryTransport.createLinkedPair();await bridge.server.connect(server);await client.connect(host);
   try{
     const tools=await client.listTools();assert.equal(tools.tools.length,5);
@@ -110,10 +112,57 @@ test('packaged local bridge initializes without node_modules or private configur
 test('a second login cannot replace the client while its authenticated handoff is in flight',async()=>{
   const h=await harness();let block=false,release,arrived;
   const gate=new Promise(r=>{release=r;}),received=new Promise(r=>{arrived=r;});
-  const mail=createMailLoginClient({fetchImpl:async(input,init)=>{if(block&&new URL(String(input)).pathname==='/mcp/workbench-v6-1'&&new Headers(init?.headers).has('authorization')&&init?.body?.includes('connect_110lab_mail')){arrived();await gate;}return h.fetchImpl(input,init);}});
+  const mail=createMailLoginClient({storage:h.storage,fetchImpl:async(input,init)=>{if(block&&new URL(String(input)).pathname==='/mcp/workbench-v6-1'&&new Headers(init?.headers).has('authorization')&&init?.body?.includes('connect_110lab_mail')){arrived();await gate;}return h.fetchImpl(input,init);}});
   try{
     const flow=await h.start(),started=await mail.start({state:flow.state}),callback=await h.approve(started._meta.mailAuthorization.url);assert.equal((await fetch(callback)).status,200);
     block=true;const completing=mail.finish({state:flow.state});await received;
     assert.equal((await mail.start({state:'z'.repeat(43)})).isError,true);release();assert.equal((await completing)._meta.mailHandoff.state,flow.state);
   }finally{release();await mail.close();await h.close();}
+});
+
+test('device grant survives restart, refreshes after idle, and logout revokes cookies and pending handoffs',async()=>{
+  const h=await harness();let mail=createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl});
+  try{
+    const empty=await h.start();assert.equal((await mail.start({state:empty.state,silent:true}))._meta.mailSessionMissing,true);
+    const flow=await h.start(),started=await mail.start({state:flow.state});
+    const callback=await h.approve(started._meta.mailAuthorization.url);assert.equal((await fetch(callback)).status,200);
+    const handoff=await mail.finish({state:flow.state});
+    const redeemed=await h.call('/api/mail/embedded/auth/redeem',{data:handoff._meta.mailHandoff,headers:{Cookie:flow.cookie}});
+    assert.equal(redeemed.status,200);assert.match(redeemed.headers['set-cookie'][0],/Max-Age=2592000/);
+    const originalCookie=jar(redeemed),saved=h.storage.load();
+    assert.equal(saved.tokens.scope,'mail:session');assert.deepEqual(Object.keys(saved).sort(),['client','resource','tokens']);
+    await mail.close();h.advance(7*86400000);
+    mail=createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl});
+    assert.equal((await h.call('/api/mail/embedded/session',{headers:{Cookie:originalCookie}})).status,200);
+    const restored=await h.start(),result=await mail.start({state:restored.state,silent:true});
+    assert.equal(result._meta.mailAuthorization,undefined);assert.ok(result._meta.mailHandoff.ticket);
+    assert.notEqual(h.storage.load().tokens.refresh_token,saved.tokens.refresh_token);
+    const newSession=await h.call('/api/mail/embedded/auth/redeem',{data:result._meta.mailHandoff,headers:{Cookie:restored.cookie}});
+    assert.equal(newSession.status,200);assert.match(newSession.headers['set-cookie'][0],/Max-Age=1987200/);assert.equal(h.storedSessions(),2);
+    const me=await h.call('/api/mail/embedded/session',{headers:{Cookie:jar(newSession)}});
+    const stale=await h.start(),pending=await mail.start({state:stale.state,silent:true});
+    assert.ok(pending._meta.mailHandoff.ticket);
+    const logout=await h.call('/api/mail/embedded/logout',{data:{},headers:{Cookie:jar(newSession),'X-CSRF-Token':me.value.csrf}});
+    assert.equal(logout.status,200);assert.match(logout.headers['set-cookie'][0],/Max-Age=0/);assert.equal(h.storedSessions(),0,'old runtime cannot revive revoked sessions after rollback');
+    assert.equal((await h.call('/api/mail/embedded/session',{headers:{Cookie:originalCookie}})).status,401);
+    assert.equal((await h.call('/api/mail/embedded/auth/redeem',{data:pending._meta.mailHandoff,headers:{Cookie:stale.cookie}})).status,401);
+    await mail.close();mail=createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl});
+    const after=await h.start(),noRestore=await mail.start({state:after.state,silent:true});
+    assert.equal(noRestore._meta.mailSessionMissing,true);assert.equal(noRestore._meta.mailAuthorization,undefined);
+    const manual=await h.start();assert.ok((await mail.start({state:manual.state}))._meta.mailAuthorization.url);
+  }finally{await mail.close();await h.close();}
+});
+
+test('silent resume cannot extend the original 30-day login deadline',async()=>{
+  const h=await harness();let mail=createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl});
+  try{
+    const flow=await h.start(),started=await mail.start({state:flow.state});
+    assert.equal((await fetch(await h.approve(started._meta.mailAuthorization.url))).status,200);
+    const first=await mail.finish({state:flow.state});
+    const cookie=jar(await h.call('/api/mail/embedded/auth/redeem',{data:first._meta.mailHandoff,headers:{Cookie:flow.cookie}}));
+    await mail.close();h.advance(30*86400000);
+    mail=createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl});
+    assert.equal((await h.call('/api/mail/embedded/session',{headers:{Cookie:cookie}})).status,401);
+    const after=await h.start();assert.equal((await mail.start({state:after.state,silent:true}))._meta.mailSessionMissing,true);
+  }finally{await mail.close();await h.close();}
 });

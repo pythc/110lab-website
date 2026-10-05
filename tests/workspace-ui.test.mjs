@@ -15,7 +15,7 @@ async function ui({embedded=true,pathname,search='',fetchImpl}={}){
     addEventListener(){},querySelector(){return null;},querySelectorAll(){return [];}});
   const el=id=>{if(!elements.has(id))elements.set(id,node());return elements.get(id);};
   const parent={postMessage:m=>sent.push(m)},window={parent,addEventListener(){},open(){throw new Error('Unexpected popup');}};
-  const source=(await readFile(new URL('../src/workspace.js',import.meta.url),'utf8')).replace('export function initWorkspace','function initWorkspace').replace('export default initWorkspace;','');
+  const source=(await readFile(new URL('../src/workspace.js',import.meta.url),'utf8')).replace(/^import .*persistent-login.*\n/m,'').replace('export function initWorkspace','function initWorkspace').replace('export default initWorkspace;','');
   const resolvedPath=pathname||(embedded?'/workbench/embedded':'/workbench');
   const context={window,location:{pathname:resolvedPath,search,assign:u=>navigated.push(u)},
     document:{addEventListener(){},getElementById:el,querySelector:()=>null,querySelectorAll:()=>[],createElement:node,createTextNode:text=>({textContent:text})},

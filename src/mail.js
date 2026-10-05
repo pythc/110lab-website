@@ -1,3 +1,4 @@
+import {restoreLabSession} from './persistent-login.js';
 const embedded=location.pathname==='/mail/embedded',prefix='/api/mail/'+(embedded?'embedded/':'');
 let csrf='',revision=null,profile=null,flow=null,busy=false,generation=0,action=null,hostPending=false,lastHostRequest=0,hostTimer;
 const $=id=>document.getElementById(id),labels={super_admin:'超级管理员',admin:'实验室管理员',member:'普通成员'};
@@ -62,4 +63,4 @@ window.addEventListener('focus',()=>{if(!busy&&!flow)load();});
 setInterval(()=>{if(!document.hidden&&!busy&&!flow&&profile)load();},60000);
 let notifyPolling=false;
 setInterval(async()=>{if(document.hidden||busy||flow||!profile||notifyPolling)return;notifyPolling=true;try{await loadNotify(generation);}finally{notifyPolling=false;}},10000);
-try{const config=await api('config');$('login').disabled=!config.loginAvailable;if(config.loginAvailable)await load();else message('飞书登录尚未配置');}catch(e){$('login').disabled=true;message(e.message);}
+try{const config=await api('config');$('login').disabled=!config.loginAvailable;if(config.loginAvailable){await restoreLabSession();await load();}else message('飞书登录尚未配置');}catch(e){$('login').disabled=true;message(e.message);}
