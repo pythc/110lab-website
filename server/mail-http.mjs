@@ -73,7 +73,7 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
         page(res,await readFile(new URL('../dist/assessment-sso.html',import.meta.url),'utf8'),{embedded});return true;
       }
       if(['/mail','/mail/','/mail/embedded'].includes(path)&&['GET','HEAD'].includes(req.method)){page(res,embedded?html.replace('<body>','<body class="embedded">'):html,{head:req.method==='HEAD',embedded});return true;}
-      if(route==='/api/mail/config'&&req.method==='GET'){json(res,200,{loginAvailable:enabled,notifyManualSend:notifyEnabled});return true;}
+      if(route==='/api/mail/config'&&req.method==='GET'){json(res,200,{loginAvailable:enabled,notifyManualSend:notifyEnabled,persistentLoginDays:30,restorePolicy:1});return true;}
       if(!enabled)throw new MailAuthError(503,'飞书登录尚未配置');
       if(!['GET','POST'].includes(req.method))throw new MailAuthError(405,'请求方式无效');
       if(['/api/mail/sso/exchange','/api/mail/sso/inspect'].includes(path)&&req.method==='POST'){

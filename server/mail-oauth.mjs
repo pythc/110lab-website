@@ -1,4 +1,5 @@
 import express from 'express';
+import {LAB_LOGIN_LIFETIME} from './mail-auth.mjs';
 import {ALL_SCOPES,parseScopes} from './business-scopes.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {lstatSync,chmodSync} from 'node:fs';
@@ -18,7 +19,7 @@ export const MAIL_HOST_SCOPE='mail:session';
 export const MAIL_RESOURCE_METADATA=MAIL_ISSUER+'/.well-known/oauth-protected-resource/mcp/workbench-v6-1';
 const hash=s=>createHash('sha256').update(s).digest('hex'),nonce=()=>randomBytes(32).toString('base64url');
 const secret=s=>typeof s==='string'&&/^[\w-]{43}$/.test(s);
-const lifetime=8*3600000;
+const lifetime=LAB_LOGIN_LIFETIME;
 
 // DCR is restricted to the actual supported hosts. Loopback port variation is
 // handled by the SDK; scheme, hostname and callback path still match exactly.
@@ -93,18 +94,22 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     },
     async exchangeRefreshToken(client,token,scopes,resource){
       checkResource(resource);
-      let result,reused=false;
+      let result,reused=false,reusedFamily;
       // Read and consume under one write lock, including across HTTP processes.
       // A concurrent replay must revoke the winner's newly issued token family.
-      db.exec('BEGIN IMMEDIATE');try{const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='refresh'").get(hash(token));if(!row||row.client!==client.client_id||row.expires<=now())throw new InvalidGrantError('Refresh token expired');if(scopes?.length&&scopes.some(s=>!scopesOf(row).includes(s)))throw new InvalidScopeError('Unsupported scope');if(row.used){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);reused=true;}else{db.prepare('UPDATE oauth_tokens SET used=1 WHERE key=?').run(hash(token));result=mint(scopes?.length?{...row,scopes:parseScopes(scopes).join(' ')}:row,row.family);}db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
-      if(reused)throw new InvalidGrantError('Refresh token reused');return result;
+      db.exec('BEGIN IMMEDIATE');try{const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='refresh'").get(hash(token));if(!row||row.client!==client.client_id||row.expires<=now())throw new InvalidGrantError('Refresh token expired');if(scopes?.length&&scopes.some(s=>!scopesOf(row).includes(s)))throw new InvalidScopeError('Unsupported scope');if(row.used){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);reused=true;reusedFamily=row.family;}else{db.prepare('UPDATE oauth_tokens SET used=1 WHERE key=?').run(hash(token));result=mint(scopes?.length?{...row,scopes:parseScopes(scopes).join(' ')}:row,row.family);}db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+      if(reused){auth.revokeGrantSessions(reusedFamily);throw new InvalidGrantError('Refresh token reused');}return result;
     },
     async verifyAccessToken(token){
       const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');
       return {token,clientId:row.client,scopes:scopesOf(row),expiresAt:Math.floor(row.expires/1000),resource:new URL(MAIL_RESOURCE),extra:{subject:row.subject,authenticatedAt:row.authenticated,family:row.family}};
     },
-    async revokeToken(client,{token}){if(!secret(token))return;const row=db.prepare('SELECT family FROM oauth_tokens WHERE key=? AND client=?').get(hash(token),client.client_id);if(row)db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);}
+    async revokeToken(client,{token}){if(!secret(token))return;const row=db.prepare('SELECT family FROM oauth_tokens WHERE key=? AND client=?').get(hash(token),client.client_id);if(row){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);auth.revokeGrantSessions(row.family);}}
   };
+  auth.bindGrants({
+    active:family=>!!db.prepare("SELECT 1 FROM oauth_tokens WHERE family=? AND kind='refresh' AND used=0 AND expires>? LIMIT 1").get(family,now()),
+    revoke:family=>{db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(family);auth.revokeGrantSessions(family);}
+  });
   const hostIdentity=async(header,{fresh=false,scopes=[MAIL_HOST_SCOPE]}={})=>{
     if(typeof header!=='string'||!/^Bearer [\w-]{43}$/.test(header))throw new InvalidTokenError('Sign in required');
     const info=await provider.verifyAccessToken(header.slice(7));

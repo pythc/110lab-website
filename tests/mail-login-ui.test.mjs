@@ -26,8 +26,8 @@ async function ui(embedded,{failStart=false}={}){
   const window={parent,addEventListener:(name,fn)=>listeners[name]=fn,open(){throw new Error('must never open a blank popup');}};
   const location={pathname:embedded?'/mail/embedded':'/mail',assign:u=>navigated.push(u)};
   const fetch=async(path)=>{requests.push(path);if(path.endsWith('config'))return {ok:true,json:async()=>({loginAvailable:true})};if(path.endsWith('auth/redeem')){authenticated=true;return {ok:true,json:async()=>({loggedIn:true})};}if(path.endsWith('session'))return authenticated?{ok:true,json:async()=>({name:'虚构成员',role:'member',csrf:state})}:{ok:false,status:401,json:async()=>({error:'unauthenticated'})};return failStart?{ok:false,status:429,json:async()=>({error:'请稍后再试'})}:{ok:true,json:async()=>({state,launchUrl:url})};};
-  const source=await readFile(new URL('../src/mail.js',import.meta.url),'utf8');
-  await runInNewContext('(async()=>{'+source+'})()',{window,location,document:{getElementById:el,querySelectorAll:()=>[]},fetch,AbortSignal,setTimeout(){return 1;},clearTimeout(){},setInterval(){},Option:function(){}});
+  const source=(await readFile(new URL('../src/mail.js',import.meta.url),'utf8')).replace(/^import .*persistent-login.*\n/m,'');
+  await runInNewContext('(async()=>{'+source+'})()',{restoreLabSession:async()=>false,window,location,document:{getElementById:el,querySelectorAll:()=>[]},fetch,AbortSignal,setTimeout(){return 1;},clearTimeout(){},setInterval(){},Option:function(){}});
   await el('login').onclick();return {el,sent,navigated,requests,async receive(data,source=parent){listeners.message({source,data});await new Promise(r=>setImmediate(r));}};
 }
 test('embedded login automatically redeems only the host result for its current flow',async()=>{

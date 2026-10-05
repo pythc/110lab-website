@@ -1,3 +1,4 @@
+import {restoreLabSession} from './persistent-login.js';
 // 110lab workspace frontend. Entry: initWorkspace(). No deps, textContent only.
 const PATHNAME = typeof location !== 'undefined' ? String(location.pathname || '') : '';
 const PROJECTS_PAGE = PATHNAME === '/projects/' || PATHNAME === '/projects' || PATHNAME === '/projects/embedded'
@@ -1108,6 +1109,6 @@ export function initWorkspace() {
   root.dataset.wsInit = 'true';
   bindEvents();
   renderShell(); renderPanels(); renderRequirementsSource();
-  void loadSession();
+  void restoreLabSession().then(()=>loadSession());
 }
 export default initWorkspace;

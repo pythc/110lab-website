@@ -1,3 +1,4 @@
+import {restoreLabSession} from './persistent-login.js';
 // Shared laboratory identity, with the same embedded handoff as the workbench.
 export function createLabSession({onChange=()=>{},onStatus=()=>{},apiRoot='/api/recruitment-test/'}={}){
   const embedded=location.pathname.endsWith('/embedded');
@@ -19,7 +20,7 @@ export function createLabSession({onChange=()=>{},onStatus=()=>{},apiRoot='/api/
   }
   async function load(){
     const gen=generation;
-    try{const value=await call('session');if(gen!==generation)return;accept(value);return value;}
+    try{await restoreLabSession();const value=await call('session');if(gen!==generation)return;accept(value);return value;}
     catch(e){if(gen===generation)clear();if(e.status!==401)onStatus(e.message,true);return null;}
   }
   async function redeem(ticket,expected){

@@ -20,13 +20,14 @@ export const EMBEDDED_APPS = Object.freeze({
 export async function handleMailExternalRequest(event,{frame,openExternal,callTool}) {
   if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame?.contentWindow)return false;
   const m=event.data;
-  if(m?.type==='110lab-mail-host-login'&&/^[\w-]{43}$/.test(m.state||'')&&typeof m.fresh==='boolean'){
+  if(m?.type==='110lab-mail-host-login'&&/^[\w-]{43}$/.test(m.state||'')&&typeof m.fresh==='boolean'&&(m.silent===undefined||typeof m.silent==='boolean')){
     let result,waitingForCallback=false;
     try{
-      result=await callTool?.({name:'connect_110lab_mail',arguments:{state:m.state,fresh:m.fresh}});
+      result=await callTool?.({name:'connect_110lab_mail',arguments:{state:m.state,fresh:m.fresh,...(m.silent?{silent:true}:{})}});
       const authorization=result?._meta?.mailAuthorization;
       if(authorization){
         waitingForCallback=true;
+        if(m.silent)throw new Error('Interactive login required');
         const url=new URL(authorization.url);
         if(result.isError||authorization.state!==m.state||url.origin!=='https://internal.110-lab.cn'||url.pathname!=='/authorize'||url.username||url.password||url.hash||typeof openExternal!=='function')throw new Error('Invalid login bridge');
         const opened=await openExternal(url.href);if(opened?.isError)throw new Error('Not opened');
@@ -94,7 +95,8 @@ export function initEmbeddedWorkspace() {
   const pages = new Map();
   const controls = new Map();
   let externalOpener=null;
-  let toolCaller=null,loginPending=false;
+  let toolCaller=null,loginPending=false,resolveToolReady;
+  const toolReady=new Promise(resolve=>{resolveToolReady=resolve;});
   const actions=document.createElement('div');
   actions.className='workspace-actions';actions.hidden=true;
   const external=document.createElement('a');external.target='_blank';external.rel='noopener noreferrer';external.textContent='独立打开';
@@ -177,8 +179,8 @@ export function initEmbeddedWorkspace() {
     if(['workbench','projects','recruitment-test','honors'].includes(currentId)&&await handleWorkspaceRequest(event,{frame,openExternal:externalOpener,callTool:toolCaller,show}))return;
     if(event.data?.type==='110lab-mail-host-login'){
       if(loginPending)return;loginPending=true;
-      try{await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});}finally{loginPending=false;}
+      try{if(!toolCaller)await Promise.race([toolReady,new Promise(resolve=>setTimeout(resolve,15000))]);await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});}finally{loginPending=false;}
     }else await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});
   });
-  return {show,setExternalOpener(opener){externalOpener=opener;},setToolCaller(caller){toolCaller=caller;pages.get('workbench')?.querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-ready'},'https://internal.110-lab.cn');}};
+  return {show,setExternalOpener(opener){externalOpener=opener;},setToolCaller(caller){toolCaller=caller;resolveToolReady();pages.get('workbench')?.querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-ready'},'https://internal.110-lab.cn');}};
 }

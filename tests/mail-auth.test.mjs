@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
-import {openMailAuth,fetchMailIdentity,MAIL_SCOPE,MAIL_CALLBACK} from '../server/mail-auth.mjs';
+import {openMailAuth,fetchMailIdentity,MAIL_SCOPE,MAIL_CALLBACK,LAB_LOGIN_LIFETIME} from '../server/mail-auth.mjs';
 
 import {fixtureConfig,fixtureIdentity} from './helpers/mail-fixtures.mjs';
 const first=c=>c.split(';')[0];
@@ -35,11 +35,14 @@ test('mail login uses PKCE, one-use callback, separate context cookies and bound
 test('reauthentication cannot switch identity; freshness, expiry and persisted sessions hold',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'110lab-mail-reauth-'));let time=Date.now();let auth=openMailAuth({directory:dir,config:fixtureConfig,now:()=>time,fetchIdentity:async()=>fixtureIdentity});
   try{
-    const f=await completed(auth),cookie=first(f.result.cookie),session=auth.session(cookie);auth.recent(session);
+    const f=await completed(auth),cookie=first(f.result.cookie),session=auth.session(cookie);assert.match(f.result.cookie,/Max-Age=2592000/);auth.recent(session);
     time+=5*60000+1;assert.throws(()=>auth.recent(session),e=>e.status===403);auth.close();auth=openMailAuth({directory:dir,config:fixtureConfig,now:()=>time,fetchIdentity:async()=>fixtureIdentity});assert.equal(auth.session(cookie).subject,fixtureIdentity.subject);
     const mismatch=auth.start('',{expectedSubject:'fictional_tenant:on_other_user_2026'}),launched=auth.launch(mismatch.state);await assert.rejects(()=>auth.callback(mismatch.state,'fictional_code',first(launched.cookie)),e=>e.status===403);
     const expired=auth.start('');time+=5*60000+1;assert.throws(()=>auth.launch(expired.state),e=>e.status===401);
-    time+=31*60000;assert.throws(()=>auth.session(cookie),e=>e.status===401);
+    time+=31*60000;assert.equal(auth.session(cookie).subject,fixtureIdentity.subject);
+    time=session.created+LAB_LOGIN_LIFETIME-1;assert.equal(auth.session(cookie).subject,fixtureIdentity.subject);
+    auth.close();auth=openMailAuth({directory:dir,config:fixtureConfig,now:()=>time,fetchIdentity:async()=>fixtureIdentity});assert.equal(auth.session(cookie).expiresAt,new Date(session.created+LAB_LOGIN_LIFETIME).toISOString());
+    time++;assert.throws(()=>auth.session(cookie),e=>e.status===401);
   }finally{auth.close();await rm(dir,{recursive:true,force:true});}
 });
 test('identity provider rejects different tenants, contact email fallback and invalid token responses',async()=>{
