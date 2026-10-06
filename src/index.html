@@ -100,26 +100,20 @@
           </div>
           <div class="product-summary">
             <p>面向 JVM 字节码的混淆框架<br class="desktop-break">让核心代码，得到保护</p>
-            <div class="product-actions">
-              <a class="product-link" href="#grunteon-film">观看一分钟介绍</a>
-              <span class="grunteon-status">功能展示 · 核心未开源</span>
-            </div>
           </div>
         </div>
         <figure class="product-film reveal" id="grunteon-film" aria-labelledby="grunteon-film-caption">
           <div class="product-video-frame">
-            <video controls playsinline preload="none" poster="/assets/grunteon-poster.jpg" width="1920" height="1080" aria-label="Grunteon 一分钟功能介绍，Ticking Away 配乐版" aria-describedby="grunteon-film-caption">
+            <video controls playsinline preload="none" poster="/assets/grunteon-poster.jpg" width="1920" height="1080" aria-label="Grunteon 一分钟功能介绍" aria-describedby="grunteon-film-caption">
               <source src="/assets/grunteon-ticking-away-60s.mp4" type="video/mp4">
               <p>你的浏览器暂不支持播放视频。<a href="/assets/grunteon-ticking-away-60s.mp4">打开 Grunteon 介绍视频</a></p>
             </video>
           </div>
-          <figcaption id="grunteon-film-caption"><span>一分钟了解 Grunteon <span aria-hidden="true">/</span> Ticking Away</span><a href="/assets/grunteon-ticking-away-60s.mp4">直接打开视频</a></figcaption>
+          <figcaption id="grunteon-film-caption"><span>一分钟了解 Grunteon</span><a href="/assets/grunteon-ticking-away-60s.mp4">直接打开视频</a></figcaption>
         </figure>
         <details class="grunteon-details">
-          <summary>项目与视频说明</summary>
-          <p>Grunteon 是 JVM 字节码混淆框架。此页展示项目的功能思路，核心实现未开源。</p>
-          <p>视频通过说明性代码动画介绍混淆思路，包含原始代码与变换形式的对照；画面为演示示意，不代表实际引擎运行结果或性能、安全强度测试。</p>
-          <p>视频时长 60 秒，配乐为 Ticking Away。可使用播放器暂停、调节音量、拖动进度或全屏观看。</p>
+          <summary>项目简介</summary>
+          <p>Grunteon 面向 Java、Kotlin 等 JVM 应用，将代码保护融入构建与发布流程。通过常量加密、控制流重组、动态调用隐藏与部分关键方法的 Native 迁移，让核心逻辑更难被提取、分析与还原。基于层级分析和统一映射，维护继承关系与调用一致性，让复杂变换兼顾工程兼容。可配置、可组合的保护策略，支持按业务需求平衡保护强度、运行开销与构建效率；类级并行处理提升任务吞吐，同步屏障和阶段归约维护处理顺序。配合规则过滤、验证约束与失败回退，让保护方案更易控制、验证和集成。从核心算法到业务逻辑，为持续迭代的应用建立更扎实的代码保护基础。</p>
         </details>
       </div>
     </section>

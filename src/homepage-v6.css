@@ -103,13 +103,9 @@
 .grunteon-section .product-identity h2 span {display:block;margin-top:10px;font-size:clamp(15px,1.6vw,21px);font-weight:450;line-height:1.5;letter-spacing:0}
 .grunteon-section .product-summary {flex-shrink:0}
 .grunteon-section .product-summary>p {color:#55555f}
-.grunteon-section .product-actions .product-link {background:#202024;box-shadow:none;color:#fff}
-.grunteon-section .product-actions .product-link:hover,.grunteon-section .product-actions .product-link:focus-visible {background:#3b3b43}
-.grunteon-status {font-size:11px;color:#62626c;line-height:1.6}
 .product-section.grunteon-section .product-video-frame {border-color:#e9e9ec;background:#fff;box-shadow:0 14px 55px #18181b0a}
 .grunteon-section video {background:#ebe8de}
 .grunteon-section figcaption {display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:16px;color:#63636d;font-size:12px;line-height:1.8}
-.grunteon-section figcaption span span {margin-inline:9px;color:#9999a2}
 .grunteon-section figcaption a {color:#454550;text-decoration:underline;text-underline-offset:3px}
 .grunteon-details {border-top:1px solid #e3e3e7;margin-top:26px;padding-top:20px;color:#5c5c66;font-size:13px;line-height:1.9}
 .grunteon-details summary {width:fit-content;min-height:44px;cursor:pointer;color:#34343b;font-weight:500}
