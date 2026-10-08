@@ -30,8 +30,8 @@ test('Grunteon public section has native, user-initiated playback and public-onl
   assert.match(section,/<video controls playsinline preload="none" poster="\/assets\/grunteon-poster.jpg"/);
   assert.match(section,/aria-describedby="grunteon-film-caption"/);
   assert.doesNotMatch(section,/autoplay|\bloop\b|mailto:|libfile_|file_000|whzy3185\/grunteon|\.jar\b/);
-  assert.doesNotMatch(section,/观看一分钟介绍|核心未开源|class="product-actions"/);
-  assert.match(section,/面向 JVM 字节码的混淆框架<br class="desktop-break">让核心代码，得到保护/);
+  assert.doesNotMatch(section,/观看一分钟介绍|一分钟了解 Grunteon|核心未开源|class="product-actions"/);
+  assert.match(section,/面向 JVM 字节码的混淆框架<br class="desktop-break">让核心代码得到保护/);
   const details=section.match(/<details class="grunteon-details">[\s\S]*?<\/details>/)?.[0];
   assert.ok(details,'project introduction starts collapsed with no open attribute');
   assert.match(details,/<summary>项目简介<\/summary>/);
