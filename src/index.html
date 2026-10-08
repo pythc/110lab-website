@@ -24,8 +24,9 @@
       </div>
     </nav>
   </header>
+  <nav class="chapter-nav" aria-label="页面章节" hidden></nav>
   <main>
-    <section class="hero-story" id="home" aria-labelledby="hero-title">
+    <section class="hero-story" id="home" data-chapter="首页" aria-labelledby="hero-title">
       <div class="hero-sticky">
         <div class="hero-copy">
           <p class="eyebrow">110 LABORATORY</p>
@@ -41,7 +42,7 @@
       </div>
     </section>
 
-    <section class="lab-intro" id="about" aria-labelledby="lab-title">
+    <section class="lab-intro" id="about" data-chapter="认识 110" aria-labelledby="lab-title">
       <div class="content-width">
         <div class="lab-intro-grid reveal">
           <div class="lab-heading">
@@ -65,7 +66,7 @@
       </div>
     </section>
 
-    <section class="product-section" id="projects" aria-labelledby="product-title">
+    <section class="product-section" id="projects" data-chapter="智评学堂" aria-labelledby="product-title">
       <div class="content-width">
         <div class="product-heading reveal">
           <div class="product-identity">
@@ -91,34 +92,30 @@
       </div>
     </section>
 
-    <section class="product-section grunteon-section" id="grunteon" aria-labelledby="grunteon-title">
+    <section class="product-section grunteon-section" id="grunteon" data-chapter="Grunteon" aria-labelledby="grunteon-title">
       <div class="content-width">
         <div class="product-heading reveal">
           <div class="product-identity">
             <img class="product-logo grunteon-logo" src="/assets/grunteon-logo.svg" alt="Grunteon 黑底白色方块 G 标志" width="160" height="160" loading="lazy" decoding="async">
-            <div><p class="lab-label">实验室项目</p><h2 id="grunteon-title">Grunteon <span>- JVM字节码混淆框架</span></h2></div>
+            <div><p class="lab-label">实验室项目</p><h2 id="grunteon-title">Grunteon <span>JVM字节码混淆框架</span></h2></div>
           </div>
           <div class="product-summary">
             <p>面向 JVM 字节码的混淆框架<br class="desktop-break">让核心代码得到保护</p>
+            <p class="grunteon-description">Grunteon 面向 Java、Kotlin 等 JVM 应用，将代码保护融入构建与发布流程。通过常量加密、控制流重组、动态调用隐藏与部分关键方法的 Native 迁移，让核心逻辑更难被提取、分析与还原。基于层级分析和统一映射，维护继承关系与调用一致性，让复杂变换兼顾工程兼容。可配置、可组合的保护策略，支持按业务需求平衡保护强度、运行开销与构建效率；类级并行处理提升任务吞吐，同步屏障和阶段归约维护处理顺序。配合规则过滤、验证约束与失败回退，让保护方案更易控制、验证和集成。从核心算法到业务逻辑，为持续迭代的应用建立更扎实的代码保护基础。</p>
           </div>
         </div>
-        <figure class="product-film reveal" id="grunteon-film" aria-labelledby="grunteon-film-caption">
+        <figure class="product-film reveal" id="grunteon-film" aria-label="Grunteon 介绍视频">
           <div class="product-video-frame">
-            <video controls playsinline preload="none" poster="/assets/grunteon-poster.jpg" width="1920" height="1080" aria-label="Grunteon 功能介绍" aria-describedby="grunteon-film-caption">
-              <source src="/assets/grunteon-ticking-away-60s.mp4" type="video/mp4">
-              <p>你的浏览器暂不支持播放视频。<a href="/assets/grunteon-ticking-away-60s.mp4">打开 Grunteon 介绍视频</a></p>
+            <video controls playsinline preload="none" poster="/assets/grunteon-poster-v2.jpg" width="1920" height="1080" aria-label="Grunteon 功能介绍">
+              <source src="/assets/grunteon-intro-v2.mp4" type="video/mp4">
+              <p>你的浏览器暂不支持播放视频。<a href="/assets/grunteon-intro-v2.mp4">打开 Grunteon 介绍视频</a></p>
             </video>
           </div>
-          <figcaption id="grunteon-film-caption"><span class="visually-hidden">Grunteon 功能介绍</span><a href="/assets/grunteon-ticking-away-60s.mp4">直接打开视频</a></figcaption>
         </figure>
-        <details class="grunteon-details">
-          <summary>项目简介</summary>
-          <p>Grunteon 面向 Java、Kotlin 等 JVM 应用，将代码保护融入构建与发布流程。通过常量加密、控制流重组、动态调用隐藏与部分关键方法的 Native 迁移，让核心逻辑更难被提取、分析与还原。基于层级分析和统一映射，维护继承关系与调用一致性，让复杂变换兼顾工程兼容。可配置、可组合的保护策略，支持按业务需求平衡保护强度、运行开销与构建效率；类级并行处理提升任务吞吐，同步屏障和阶段归约维护处理顺序。配合规则过滤、验证约束与失败回退，让保护方案更易控制、验证和集成。从核心算法到业务逻辑，为持续迭代的应用建立更扎实的代码保护基础。</p>
-        </details>
       </div>
     </section>
 
-    <section class="updates-section" id="updates" aria-labelledby="updates-title">
+    <section class="updates-section" id="updates" data-chapter="实验室动态" aria-labelledby="updates-title">
       <div class="content-width">
         <h2 id="updates-title">实验室动态</h2>
         <p class="updates-status" role="status">正在加载公开动态</p>
@@ -127,7 +124,7 @@
       </div>
     </section>
 
-    <section class="recruit-section" id="join" aria-labelledby="recruit-title">
+    <section class="recruit-section" id="join" data-chapter="加入我们" aria-labelledby="recruit-title">
       <div class="content-width">
         <div class="recruit-panel reveal">
           <div class="recruit-intro">
