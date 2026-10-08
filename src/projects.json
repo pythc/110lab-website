@@ -36,6 +36,17 @@
       "art": "teaching",
       "url": "https://ai-grading.110-lab.cn/login",
       "span": 1
+    },
+    {
+      "id": "grunteon",
+      "category": "tools",
+      "label": "项目介绍",
+      "title": "Grunteon - JVM字节码混淆框架",
+      "description": "面向 JVM 字节码的混淆框架。查看一分钟功能介绍，核心实现未开源。",
+      "tags": "JVM / 字节码 / 功能展示",
+      "art": "grunteon",
+      "url": "https://110-lab.cn/#grunteon",
+      "span": 1
     }
   ],
   "apps": [
