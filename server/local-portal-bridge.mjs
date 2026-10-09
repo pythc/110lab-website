@@ -1,5 +1,5 @@
 import {createLocalBusinessClient} from './local-business-client.mjs';
-import packageInfo from '../package.json' with {type:'json'};
+import packageInfo from '../plugin/110lab/plugin.json' with {type:'json'};
 import {Server} from '@modelcontextprotocol/sdk/server/index.js';
 import {StdioServerTransport} from '@modelcontextprotocol/sdk/server/stdio.js';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
