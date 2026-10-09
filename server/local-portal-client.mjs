@@ -22,7 +22,7 @@ export async function portalFetch(input,options={},timeoutMs=15000){
 // is shipped. Only client registration and scoped refresh credentials are stored
 // privately on this computer; PKCE stays in memory and no token enters tool content.
 export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,storage=credentialFile(join(homedir(),'.config','110lab-login','oauth.json'))}={}){
-  let information,tokens,verifier,job,connecting,releaseLock;
+  let information,tokens,verifier,job,client,transport,releaseLock;
   const persist=()=>storage.save({client:information,tokens});
   const release=()=>{releaseLock?.();releaseLock=undefined;};
   const missing=()=>({_meta:{mailSessionMissing:true},content:[{type:'text',text:'请点击飞书登录'}]});
@@ -41,9 +41,14 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,st
       job.authorization=url.href;
     }
   };
-  const client=new Client({name:'110lab-local-login',version:'0.8.7'});
-  const transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{authProvider:provider,fetch:fetchImpl});
-  const connect=()=>connecting ||= client.connect(transport).catch(e=>{connecting=null;throw e;});
+  async function connect(){
+    // A failed initialize closes the SDK transport permanently. Each login
+    // attempt needs its own transport; only persisted credentials are reused.
+    await client?.close();
+    client=new Client({name:'110lab-local-login',version:'0.15.1'});
+    transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{authProvider:provider,fetch:fetchImpl});
+    await client.connect(transport);
+  }
   function closeListener(current){clearTimeout(current.timer);current.listener?.close();current.listener?.closeIdleConnections();}
   function settle(current,success){if(current.done)return;current.done=true;closeListener(current);current.resolve(success);release();}
   async function listener(current){
@@ -93,6 +98,6 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,st
         finally{current.finishing=false;release();}
       })();return current.result;
     },
-    async close(){if(job)settle(job,false);release();await client.close();tokens=undefined;verifier=undefined;information=undefined;}
+    async close(){if(job)settle(job,false);release();await client?.close();tokens=undefined;verifier=undefined;information=undefined;}
   };
 }
