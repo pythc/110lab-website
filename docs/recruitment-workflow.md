@@ -72,6 +72,14 @@ PORTAL_RECRUITMENT_TEST_SUBJECTS=<用户本人已核实的企业 subject>
 
 所有占位符必须先由实际授权配置替换，否则不得启用。SMTP 凭据只挂给 worker，HTTP 仅持有非秘密发件地址清单。正式开放前先停止测试 worker 并排空/核实在途任务，再按明确批准切换正式范围；不可通过删除 allowlist 顺手开启所有人的发送。
 
+### 正式启用
+
+收到正式启用指令后，先检查全部发送任务。`QUEUED`、`SENDING`、`RETRYING`、`UNKNOWN` 必须逐项核实，不能把历史测试积压作为正式任务补发。拦截新的招新提交，等待在途上传的 180 秒期限结束，冻结业务写入并停止发送 worker，备份数据库、原 HTTP 配置、私有 provider 配置及网关。
+
+保持已有业务权限、SMTP 发件地址、应用凭据和数据不变，只将 HTTP 的 `PORTAL_RECRUITMENT_WORKFLOW_MODE` 设为 `live`，去除 `PORTAL_RECRUITMENT_TEST_EMAILS` / `PORTAL_RECRUITMENT_TEST_SUBJECTS`，并删除 provider JSON 中的 `testAllowlist`。先在维护状态下验证新 HTTP 和发送 worker，再恢复招新提交。新官网申请自动排队回执；面试官通知以管理员分配为触发，面试及结果邮件仍需管理员逐人预览确认。历史 `HELD` / `SIMULATED` 任务保持原状。
+
+若需要退回测试模式，先恢复招新维护、冻结并停止 worker，核实在途任务和新增的正式任务，再备份当前数据库。恢复启用前的私有 provider 配置和同版本旧 HTTP 容器，核对网关后切回；不恢复旧数据库覆盖新资料。存在尚未处理的正式任务时，发送 worker 保持停止，先由管理员处置任务，不能让测试白名单将这些正式任务批量标记失败。回滚不得覆盖并发修改的网关或私有配置。
+
 ## 数据、投递状态和保留
 
 私有目录 0700、SQLite/盐/凭据 0600。SQLite 保存简历 BLOB、历史版本、内嵌图片、模板、候选人、审核、回执、发送任务。永久保留业务记录；只清理未接收的过期上传和限流计数。简历默认容量上限 1 GiB，图片总容量 100 MiB，满额拒绝新内容，不能删除已有资料腾空间。
