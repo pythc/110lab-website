@@ -1,62 +1,101 @@
-# 官网招新工作流
+# 招新工作台工作流
 
-0.11.0 新增 `/recruitment` 与 `/recruitment/embedded`，工作台应用「招新管理」指向这里。原 `/recruitment-test` 与其虚构数据保持独立。官网新增投递直接写入此工作流，不读取或迁移其他部署的真实招新内容。
+## 0.16.0 的范围
 
-## 操作
+候选人、简历、面试安排、审核记录、模板、图片和发送任务均保存在外网服务器的招新工作台数据库中。官网投递和插件「招新管理」共用这一份数据。**不依赖飞书表格，不读取、迁移或接管其他部署的存量招新流程。** 原 `/recruitment-test` 虚构流程继续独立。
 
-1. 官网填写姓名、组别、联系邮箱，上传一份 PDF/DOCX（10 MiB）。勾选用途与永久保留说明。服务端验证文件实际格式、限制重复提交、上传并发和持久频率。
-2. 接收事务同时保存候选人、简历、同意记录、私有回执、简历转送任务。回执只表示资料已收到；邮件任务独立记录，不把模拟当发送成功。
-3. 实验室管理员在传统候选人列表处理初筛、考核记录、面试安排和决策。邮件模板有系统变量及自定义变量；面试官邮箱用于 Reply-To，其他联系方式显示在正文。
-4. 每名候选人生成独立邮件预览，检查 From、To、Reply-To、主题与正文后确认。冻结模板、配置版本及内容；等待发送时撤权、改模板、换邮箱、归档会使任务失败，不能悄悄改收件人后发送。
-5. 超级管理员配置允许使用的邮箱、默认发信邮箱和收件邮箱。默认均为 `noreply@110-lab.cn`。收件地址同时更新官网邮箱投递链接、同意说明及转送收件人；邮件主题继续为 `[招新简历] 姓名-应聘组别`。UI 不保存凭据。
+页面改动由服务器提供，现有 0.15.0 插件加载新版页面即可；本次不修改本机登录协议。旧表格同步 MCP 已停止提供；客户端重新读取工具列表后生效。
 
-`HELD` 未发送；`QUEUED` 等待；`SENDING` 处理中；`SIMULATED` 模拟完成；`SENT` 服务商已接收（不承诺最终收件箱送达）；`FAILED` 明确失败；`RETRYING` 可安全重试的临时拒绝；`UNKNOWN` 结果待核实。连接中断/发送后无确认/进程失联不自动重发。管理员登记核实依据后才可重试明确未发送任务。任务保留操作人、冻结内容、稳定 Message-ID、尝试次数和状态事件。
+## 操作流程
 
-当前默认 `dry-run`，没有任何对外邮件或飞书写入。官网资料仍正常入库，简历转送任务为 HELD；管理员可逐人模拟转送和面试通知。以后切到 live 也不会自动释放旧 HELD 或模拟任务，只有切换后的新投递自动转送。
+1. 官网 Uppy 表单填写姓名、组别、联系邮箱，上传一份 PDF/DOCX（10 MiB 内）。服务端校验内容、大小、同意记录、限流和重复投递。
+2. 同一事务保存候选人、简历、私有投递回执，并创建发给**候选人**的收件确认邮件任务。页面分别报告“提交已接收”与邮件状态；不把服务商接收当作收件箱送达。
+3. 管理员在传统列表中处理初筛，可选择先记录考核或直接进入面试。面试阶段从现有飞书通讯录选择面试官。
+4. **招新工作流**应用仅向被选择的面试官发消息，消息包含 `/recruitment/interviewer?assignment=<UUID>`。面试官通过工作台飞书身份登录，填写未来的面试时间、HTTPS 面试链接、回复邮箱和联系方式。链接本身不能代替登录，其他身份不能查看或回填。
+5. 面试官提交后，管理员看到“安排待审核”，可以退回修改。选择模板、填写自定义变量、检查实际 From / To / Reply-To、主题、图文预览后，逐人确认发送。面试及后续结果邮件的回复发往面试官联系邮箱；尚未安排面试官的回执和未通过邮件回复到公共收件邮箱。修改安排、改派面试官或模板变化会使旧预览失效。
+6. 记录面试反馈后，可准备录取邮件；未通过邮件可从未结束的流程准备。结果决定和发送任务在确认时一起提交。已经成功发送的结果不能重复发；明确失败可重试，配置变化后可重新预览同一结果。
+7. 所有发送保留独立任务、冻结内容、Message-ID、操作人、尝试次数和状态记录。管理员可核实不明确结果、重试明确失败；不会因刷新页面重复发送。
 
-## 飞书应用
+## 模板和多媒体
 
-2026-10-05 只读核实 [招新工作流](https://open.feishu.cn/app/cli_aae419847eb85bcf/baseinfo)：App ID `cli_aae419847eb85bcf`，已发布，使用长连接，订阅机器人入群与接收消息事件。未修改其 Secret、事件、回调、权限或现有部署。
+内置投递回执、面试邀请、录取通知、未通过通知四种用途。管理员可新增或编辑模板、主题、富文本、系统变量、自定义变量及默认值；超级管理员选择自动回执模板。
 
-新增适配器只调用出站多维表格 OpenAPI，不建立长连接。管理员逐人预览准备同步的记录后确认；当前仅模拟。正式启用需在**独立的联动表**配置 App Token / Table ID，应用获得该表访问权限及记录读写权限；不要复用会触发正在进行的真实招新自动化的表。
+系统变量：`name`、`group`、`applicationId`、`interviewTime`、`interviewerName`、`interviewerEmail`、`interviewerContact`、`location`、`decisionNote`。语法为 `{{name}}`。自动回执只可使用投递时已经知道的字段，自定义必填变量必须有默认值。结果说明是会发送给候选人的文字，不应填写内部评议。
 
-表字段：`110lab编号`（文本，唯一候选人 ID）、`姓名`（文本）、`应聘组别`（文本）、`阶段`（文本）、`邮箱`（文本）、`工作台链接`（超链接）。已有记录按编号查找后更新；创建用 UUID client_token 幂等。多条同编号记录拒绝写入。记录链接返回有登录保护的工作台，简历不上传飞书、不产生公开文件 URL。
+正文支持文字样式、链接和 PNG/JPEG/GIF/WebP 内嵌图片。单张不超过 2 MiB，单封最多 8 张、总计不超过 8 MiB。服务端检查图片格式，清理脚本、事件属性和外部跟踪图片，变量按 HTML 转义。图片随 MIME 以 CID 内嵌，存储和预览均需管理员权限，不提供公开文件地址。邮件同时包含纯文本版本。视频和音频使用封面配 HTTPS 链接，不承诺邮件客户端内直接播放。
 
-参考官方接口：[创建记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/create)、[更新记录](https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/update)、[查询记录](https://open.feishu.cn/document/docs/bitable-v1/app-table-record/search)。不自动触发录取决定、群消息、面试通知或旧招新进程。
+## 飞书应用边界
 
-## 数据与部署配置
+应用 ID：`cli_aae419847eb85bcf`，名称「招新工作流」。仅使用出站 [发送消息 API](https://open.feishu.cn/document/server-docs/im-v1/message/create)，以企业 `union_id` 定位同一成员，不混用另一个登录应用的 `open_id`。
 
-仅新增 HTTP 环境变量：
+**不建立第二个长连接，不更改事件订阅、回调、原表格或现有运行实例。** 现有 App Secret 经授权后只在服务器私有 worker 配置使用，不重置、不进入浏览器或插件包。通知失败可在工作台查看错误及重试。应用必须已经具备机器人发消息权限，并对所选面试官可用；代码完成不能代替这项真实验证。
 
-```
+旧 `lab_recruitment_feishu_preview`、`lab_recruitment_feishu_sync` 已撤下；历史表格配置只为读取旧数据兼容保留，旧排队的表格同步任务会拒绝执行。
+
+## 权限与发件配置
+
+- 实验室超级管理员：配置可用邮箱、默认发信邮箱、收件/回复邮箱、自动回执模板。
+- 实验室管理员：候选人管理、面试官分配、模板维护、逐人确认发送、核实与重试。
+- 普通成员：只看和填写分配给自己的面试安排，不能读取所有候选人或下载简历。
+
+默认邮箱 `noreply@110-lab.cn`。官网邮箱投递链接与说明跟随收件地址，人工投递主题仍为 `[招新简历] 姓名-应聘组别`。不将 notify 子域凭据冒充根域发件人。若经授权临时使用 `noreply@notify.110-lab.cn` 联调，实际 From 也必须是该地址。
+
+HTTP 配置：
+
+```text
 PORTAL_RECRUITMENT_WORKFLOW_ENABLED=true
 PORTAL_RECRUITMENT_WORKFLOW_MODE=dry-run
 PORTAL_RECRUITMENT_WORKFLOW_DATA=/data/mail/workspace/recruitment
+PORTAL_RECRUITMENT_WORKFLOW_SENDERS=<已经核实具备 SMTP 凭据的邮箱列表>
 ```
 
-路径必须对应现有私有邮件数据挂载；以实际容器挂载点为准。默认可不配置 DATA，使用 `PORTAL_MAIL_DATA/workspace/recruitment`。无需新密钥、服务或外部网络任务。默认关闭时保留旧官网收件队列；旧回执通过原实现查询和重试，不消费两遍请求体。
+默认 `dry-run` 不外发：官网回执任务为 `HELD`，管理员确认的任务可模拟执行。切换到 `live` 不会释放旧 `HELD` / `SIMULATED` 任务。正式模式中，新官网投递自动排队回执；其他邮件仍需逐人确认。
 
-私有目录 0700、数据库和盐 0600，数据库包含简历 BLOB、历史简历版本、候选人、模板、设置、审核记录及投递任务。所有正式工作流数据永久保留。只有未接收成功的过期临时上传、限流计数可清理。默认附件存储上限 1 GiB，满额拒绝新提交，不能删旧资料腾空间。外网服务器定期容量监控及 SQLite 一致备份；备份本身私有，发布包不含业务数据库。
+仅指定本人测试时，HTTP **保持 dry-run**，额外配置：
 
-新配置上线前须报告范围。切换前记录旧 release/容器、当前网关摘要、所有后台进程；使用 SQLite backup 备份所有私有数据库。仅切换门户 HTTP，保留旧发送与成员同步服务，不更改正在运行的招新程序。候选先验证主域不开放管理 API、嵌入 CSP、未登录拒绝、接收模式 dry-run、永久保留与当前邮箱。无真实外发测试。
-
-回滚：按最新共享网关摘要检查后切回旧 HTTP 和 release 指针；不恢复或覆盖任何新数据库，不删除新简历。旧界面不显示新工作流，但再次升级可恢复所有新增资料；回滚前先关闭官网新提交入口，等在途接收完成、记录最后回执并备份，切换后明确官网恢复的接收地址及旧保留策略。不可把新数据库交给旧临时清理器。
-
-## 以后启用真实发送时的配置（本次不自动启用）
-
-独立进程 `server/recruitment-workflow-worker-runtime.mjs`。只给 worker 挂载 0600 的私有 JSON：
-
+```text
+PORTAL_RECRUITMENT_TEST_EMAILS=<用户已确认的测试收件邮箱>
+PORTAL_RECRUITMENT_TEST_SUBJECTS=<用户本人已核实的企业 subject>
 ```
+
+两项需要一起配置。只有新投递邮箱精确命中的候选人会创建 live 任务；面试官也只允许该本人 subject。其他候选人仍模拟/保留。发送 worker 必须同时设置下述 `testAllowlist`，发信前再校验收件人，不能只靠页面约定隔离。
+
+独立进程 `server/recruitment-workflow-worker-runtime.mjs`，MODE=live。worker 挂载 WORKFLOW_DATA 可写、现有 PORTAL_MAIL_DATA 角色库只读，以及 WORKFLOW_PROVIDERS 指向的 0600 JSON：
+
+```json
 {
-  "smtp": [{"address":"noreply@110-lab.cn","host":"smtp.feishu.cn","port":465,"secure":true,"user":"noreply@110-lab.cn","pass":"<由用户提供到私有配置>"}],
-  "feishu": {"appId":"cli_aae419847eb85bcf","appSecret":"<经授权配置>"}
+  "smtp": [{"address":"<获准发件地址>","host":"smtp.feishu.cn","port":465,"secure":true,"user":"<实际 SMTP 用户>","pass":"<私有凭据>"}],
+  "feishu": {"appId":"cli_aae419847eb85bcf","appSecret":"<经授权的现有凭据>"},
+  "testAllowlist": {"emails":["<用户测试邮箱>"],"subjects":["<用户本人 subject>"]}
 }
 ```
 
-SMTP 与 Feishu 任一可暂不配置，不得复用 notify 子域凭据冒充根域地址。HTTP 只配置非机密目录 `PORTAL_RECRUITMENT_WORKFLOW_SENDERS=noreply@110-lab.cn`；该目录不证明凭据有效，需运维核实后填写。worker 需要 `PORTAL_MAIL_DATA` 只读角色库，WORKFLOW_DATA 可写，WORKFLOW_PROVIDERS 指向私有 JSON，MODE=live。HTTP 与 worker 的 MODE 必须一致；配置文件不进环境变量、Git、聊天或发布包。默认每分钟最多一项任务，最多 8 次尝试。取消外发测试不等于已验证飞书线上发信。
+所有占位符必须先由实际授权配置替换，否则不得启用。SMTP 凭据只挂给 worker，HTTP 仅持有非秘密发件地址清单。正式开放前先停止测试 worker 并排空/核实在途任务，再按明确批准切换正式范围；不可通过删除 allowlist 顺手开启所有人的发送。
 
-## 验证
+## 数据、投递状态和保留
 
-`npm run build && npm test && npm run release`。新测试覆盖官网 multipart 到候选人和模拟面试通知、模板变量、权限撤销、配置变更、容量回滚、永久保留、幂等、UNKNOWN 中断恢复与人工核实、仅 loopback 的 SMTP 交付及模拟 Feishu 请求。浏览器实际验证 Uppy 上传、回执、列表详情、自定义模板、面试官回复邮箱、逐人确认。
+私有目录 0700、SQLite/盐/凭据 0600。SQLite 保存简历 BLOB、历史版本、内嵌图片、模板、候选人、审核、回执、发送任务。永久保留业务记录；只清理未接收的过期上传和限流计数。简历默认容量上限 1 GiB，图片总容量 100 MiB，满额拒绝新内容，不能删除已有资料腾空间。
 
-本地 `node scripts/preview-recruitment-workflow.mjs` 使用虚构身份，仅监听 127.0.0.1:4195；数据在 ignored artifacts/recruitment-workflow/local-data，永不打包。只用于预览，不是生产登录绕过。
+`HELD` 未发送；`QUEUED` 等待；`SENDING` 处理中；`SIMULATED` 模拟完成；`SENT` 服务商已接收；`FAILED` 明确失败；`RETRYING` 可安全重试；`UNKNOWN` 结果待核实。每分钟最多处理一项，最多 8 次尝试。发送中断、无确认或进程失联进入 UNKNOWN，不自动重发；管理员登记核实依据后才可继续。
+
+## 发布与回滚门槛
+
+1. 核对当前 HEAD、构建 manifest、线上 release、网关摘要/挂载 inode、现有容器及私有配置摘要；不覆盖其他会话或管理员的变动。
+2. SQLite backup 备份全部业务库并执行 quick_check，备份旧 release、配置与共享网关。先拦截招新写入/新上传并等待在途上传完成；业务 MCP 冻结且邮件发送排空。备份失败则不切换。
+3. 启动候选 HTTP，验证匿名 API 401、公开域不暴露管理员数据、嵌入页 CSP、面试官入口和 dry-run 配置。候选只新增 mail_images 表和缺失默认模板，不删除或重写候选人资料。
+4. 只切换 110lab 的 HTTP 上游和 current 指针。考核、批改、需求平台、原招新程序以及成员同步和旧收件服务均不重启。新增 live worker 只能在本人白名单与批准的私有配置到位后启动。
+5. 从官网以明确标记的虚构资料提交，用本人身份分配、回填、审核并检查邮件；分别覆盖录取和未通过。核对 SMTP 接收结果、实际收到的图片/回复地址及 Feishu message_id。未经这些验证不得报告线上全链路已通过。
+6. 回滚前拦截招新写入并等待在途操作、停止新 worker、核实 SENDING/UNKNOWN，做新的数据库备份。检查网关没有并发修改再切回旧上游及 current。**不恢复旧库覆盖新数据，不删新简历或图片**。旧版不理解完整新流程，回滚后招新写入暂时维护，其他工作台应用继续可用；修复升级后恢复。新库不得交给旧临时文件清理器。
+
+## 验证命令
+
+```sh
+npm run build
+npm test
+npm run release
+BUSINESS_RELEASE_ROOT="$PWD" node --test --test-timeout=90000 tests/business-mcp-matrix.test.mjs
+```
+
+自动测试使用隔离 SQLite、虚构身份、loopback SMTP 和模拟 Feishu 传输，涵盖官网 multipart 接收、模板 CID 图片、赋权与跨身份拒绝、回填、审核前不发信、结果两分支、重试和防重、测试白名单、旧工具停用，以及原工作台回归。真实 SMTP/飞书外发与模拟结果应分别记录。
+
+`node scripts/preview-recruitment-workflow.mjs` 为仅监听 127.0.0.1:4195 的开发预览，使用虚构身份；数据在 ignored artifacts/recruitment-workflow/local-data，不打包到生产。这不是生产登录入口。

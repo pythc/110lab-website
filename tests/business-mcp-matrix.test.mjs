@@ -378,7 +378,7 @@ test('JSON-RPC tools/call covers every business MCP tool on loopback fixtures', 
   });
   assert.equal(listed.status, 200);
   const advertised = listed.body.result.tools.filter(tool => tool.name.startsWith('lab_')).map(tool => tool.name);
-  assert.equal(new Set(advertised).size, 39);
+  assert.equal(new Set(advertised).size, 37);
   assert.deepEqual(new Set(advertised), new Set(definedTools));
 
   assert.equal((await h.tool(null, 'lab_whoami')).status, 401);
@@ -634,26 +634,8 @@ test('JSON-RPC tools/call covers every business MCP tool on loopback fixtures', 
   assert.equal(options.mode, 'dry-run');
   assert.equal(options.settings.feishu.tableId, 'tblFictional2026');
   assert.equal(options.templates[0].name, '虚构面试邀请');
-  const feishuPreview = data(await ok(owner.token, 'lab_recruitment_feishu_preview', {
-    requestId: randomUUID(),
-    id: candidate.body.id,
-    expectedRevision: candidate.body.revision,
-  }));
-  assert.equal(feishuPreview.preview.payload.target.tableId, 'tblFictional2026');
-  assert.equal(feishuPreview.preview.mode, 'dry-run');
-  await failTool(owner.token, 'lab_recruitment_feishu_sync', {
-    requestId: randomUUID(),
-    previewId: feishuPreview.id,
-  }, body => assert.equal(body.code, 'CONFIRMATION_REQUIRED'));
-  await confirm(feishuPreview);
-  const feishuQueued = data(await ok(owner.token, 'lab_recruitment_feishu_sync', {
-    requestId: randomUUID(),
-    previewId: feishuPreview.id,
-  }));
-  assert.equal(feishuQueued.mailStatus, 'NOT_SENT');
-  const feishuDone = await pollSimulated(feishuQueued.operationId, 'status');
-  assert.equal(feishuDone.mode, 'dry-run');
-  assert.equal(feishuDone.kind, 'feishu');
+  // Table-based recruitment tools are retired; old grants cannot expose them.
+  assert.ok(!BUSINESS_TOOLS.some(t=>/recruitment_feishu/.test(t.name)));
 
   let applicant = data(await ok(owner.token, 'lab_candidate_get', {id: candidate.body.id}));
   applicant = data(await ok(owner.token, 'lab_candidate_record', {
@@ -863,12 +845,12 @@ test('JSON-RPC tools/call covers every business MCP tool on loopback fixtures', 
   assert.equal(withdrawnAgain.revision, withdrawn.revision);
   assert.equal((await h.call('/api/updates')).body.updates.length, 0);
 
-  assert.equal(definedTools.length, 39);
+  assert.equal(definedTools.length, 37);
   const missing = definedTools.filter(name => !succeeded.has(name)).sort();
   const unexpected = [...succeeded].filter(name => !definedTools.includes(name)).sort();
   assert.deepEqual(unexpected, []);
   assert.deepEqual(missing, [], 'tools without a successful tools/call: ' + missing.join(', '));
-  assert.equal(succeeded.size, 39);
+  assert.equal(succeeded.size, 37);
   assert.equal(h.traffic.sends, 0);
   assert.deepEqual(h.traffic.blocked, []);
 });

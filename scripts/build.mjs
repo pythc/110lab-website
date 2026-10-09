@@ -44,4 +44,8 @@ const localBridge=await build({entryPoints:[resolve(root,'server/local-portal-br
 const packages=new Set(Object.keys(localBridge.metafile.inputs).filter(p=>p.includes('node_modules/')).map(p=>{const parts=p.split('node_modules/').at(-1).split('/');return parts[0].startsWith('@')?parts.slice(0,2).join('/'):parts[0];})),notices=[];
 for(const name of packages){let found=false;for(const file of ['LICENSE','LICENSE.md','LICENSE.txt','LICENSE-MIT','LICENCE']){try{notices.push('Package: '+name+'\n'+await readFile(resolve(root,'node_modules',name,file),'utf8'));found=true;break;}catch(e){if(e.code!=='ENOENT')throw e;}}if(!found)throw new Error('Missing license notice for '+name);}
 await writeFile(resolve(root,'plugin/110lab/mcp/NOTICE.txt'),notices.join('\n\n'));
+
+const interviewerHTML=await readFile(resolve(root,'src/recruitment-interviewer.html'),'utf8'),interviewerJS=await bundle('src/recruitment-interviewer.js');
+await writeFile(resolve(root,'dist/recruitment-interviewer.html'),interviewerHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>interviewerJS));
+
 console.log('110lab built: static homepage + workbench + MCP App');

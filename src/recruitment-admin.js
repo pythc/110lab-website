@@ -1,6 +1,7 @@
 import Uppy from '@uppy/core';
 import Dashboard from '@uppy/dashboard';
 import zhCN from '@uppy/locales/lib/zh_CN.js';
+import {mailEditor,mailPreview} from './recruitment-mail-editor.js';
 import {createLabSession} from './lab-session.js';
 
 const $=id=>document.getElementById(id);
@@ -55,7 +56,7 @@ async function loadCandidates(){
   try{
     const result=await session.request('candidates');
     if(epoch!==state.epoch||load!==state.load)return;
-    state.items=result.items;state.mode=result.deliveryMode;$('rt-mode').textContent=result.deliveryMode==='live'?'正式发送':'仅模拟 不外发';
+    state.items=result.items;state.mode=result.deliveryMode;$('rt-mode').textContent=result.testDeliveryEnabled?'仅指定测试地址可外发':result.deliveryMode==='live'?'正式发送':'仅模拟 不外发';
     const group=$('rt-group').value;const groups=[...new Set(state.items.map(c=>c.group))].sort((a,b)=>a.localeCompare(b,'zh-CN'));
     $('rt-group').replaceChildren(new Option('所有组别',''),...groups.map(g=>new Option(g,g)));$('rt-group').value=groups.includes(group)?group:'';
     renderTable();
@@ -89,7 +90,10 @@ function renderRow(c){
   const person=el('td','rt-person-cell'),name=button(c.name,()=>void openCandidate(c.id),'rt-name-link');
   person.append(name,el('span','rt-email',c.email));
   const stage=el('td'),badge=el('span','rt-pill',labels[c.stage]);badge.dataset.stage=c.stage;stage.append(badge);
-  if(c.notification?.status==='failed')stage.append(el('span','rt-notice-alert','通知失败'));
+  if(c.assignment?.status==='submitted'&&c.stage==='interview')stage.append(el('span','rt-notice-alert','安排待审核'));
+  if([c.notification?.status,c.resultNotification?.status].includes('failed'))stage.append(el('span','rt-notice-alert','邮件发送失败'));
+  if(c.assignment?.notificationStatus==='FAILED')stage.append(el('span','rt-notice-alert','面试官通知失败'));
+  if([c.notification?.status,c.resultNotification?.status].includes('unknown'))stage.append(el('span','rt-notice-alert','发送结果待核实'));
   const resume=el('td',c.resume?'rt-resume-present':'rt-muted',c.resume?'已上传':'未上传');
   const updated=el('td','rt-updated',date(c.updatedAt));updated.title=new Date(c.updatedAt).toLocaleString('zh-CN');
   const actions=el('td','rt-row-actions');actions.append(button('查看详情',()=>void openCandidate(c.id),'rt-table-action'));
@@ -111,6 +115,7 @@ function renderDetail(){
   const summary=[];
   if(c.assessment)summary.push('考核 '+c.assessment.score+' 分 · '+c.assessment.note);
   if(c.interview){summary.push('面试 '+date(c.interview.at)+' · '+c.interview.interviewer+' · '+c.interview.location);if(c.interview.score!==undefined)summary.push('面试反馈 '+c.interview.score+' 分 · '+c.interview.note);}
+  if(c.assignment){const a=c.assignment;summary.push('面试官 '+a.name+' · '+({requested:'等待面试官填写',submitted:'待管理员审核',changes_requested:'已退回修改',approved:'安排已确认'}[a.status]||a.status));if(a.proposal&&a.status!=='approved')summary.push('待审核安排 '+date(a.proposal.at)+' · '+a.proposal.location+' · '+a.proposal.contact);}
   if(c.decisionNote)summary.push('决策记录 '+c.decisionNote);
   if(!summary.length)summary.push(({screening:'查看资料后 完成初筛并选择后续安排',assessment:'考核进行中 完成后记录成绩',interview:'安排面试并审核通知内容',decision:'根据评价记录确认本次决策'})[c.stage]||'流程已结束');
   $('rt-current').replaceChildren(...summary.map(v=>el('p','rt-current-summary',v)));
@@ -120,16 +125,17 @@ function renderDetail(){
     if(c.stage==='screening'){add('通过初筛','screen',{},'rt-button rt-primary');}
     if(c.stage==='assessment')add('记录考核结果','assessment',{},'rt-button rt-primary');
     if(c.stage==='interview'){
-      add(c.interview?'调整面试安排':'安排面试','schedule');
-      if(c.interview&&!['queued','unknown'].includes(c.notification?.status))add('生成邮件预览','prepare_notice');
+      if(!['sent','queued','unknown'].includes(c.notification?.status))add(c.assignment?'重新分配面试官':'分配面试官','assign_interviewer');
+      if(c.assignment?.status==='submitted')add('退回修改','return_interview');
+      if((c.assignment?.status==='submitted'||!c.assignment&&c.interview)&&!['queued','unknown'].includes(c.notification?.status))add('生成邮件预览','prepare_notice');
       if(c.notification?.status==='draft')actions.push(button('检查并确认邮件',()=>void previewDelivery('interview'),'rt-button rt-primary'));
       if(['simulated','sent'].includes(c.notification?.status))add('记录面试反馈','interview',{},'rt-button rt-primary');
     }
-    if(c.stage==='decision')add('确认录取','accept',{},'rt-button rt-primary');
-    if(!terminal(c))add('结束为未通过','reject',{},'rt-button rt-danger');
-    else add('归档候选人','archive');
+    if(c.stage==='decision')add('录取并预览通知','prepare_outcome',{outcome:'accepted'},'rt-button rt-primary');
+    if(!terminal(c))add('未通过并预览通知','prepare_outcome',{outcome:'rejected'},'rt-button rt-danger');
+    else{if(['failed','draft'].includes(c.resultNotification?.status))add('重新生成结果通知','prepare_outcome',{outcome:c.stage});add('归档候选人','archive');}
   }
-  if(!c.archived){actions.push(button('简历转送',()=>void previewDelivery('application')),button('飞书联动',()=>void previewDelivery('feishu')));}
+  if(!c.archived&&c.resultNotification?.status==='draft')actions.push(button('检查并确认结果邮件',()=>void previewDelivery('outcome'),'rt-button rt-primary'));
   $('rt-detail-actions').replaceChildren(...actions);renderDeliveries(c);
   $('rt-notice-section').hidden=!c.notification;
   $('rt-notice-state').textContent=c.notification?noticeLabels[c.notification.status]+(c.notification.attempts?' · '+c.notification.attempts+' 次尝试':''):'';
@@ -180,7 +186,7 @@ async function downloadResume(c){
   try{const blob=await session.download('candidates/'+c.id+'/resume');if(epoch!==state.epoch)return;const url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=c.resume.filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}
   catch(error){if(epoch===state.epoch)status(error.message,true);}finally{if(epoch===state.epoch)setBusy(false);}
 }
-const actionTitles={create:'新建候选人',screen:'完成初筛',assessment:'记录考核结果',schedule:'安排面试',interview:'记录面试反馈',accept:'确认录取',reject:'结束为未通过',archive:'归档候选人',prepare_notice:'生成邮件预览',send_notice:'逐人确认面试邮件',confirm_forward:'确认简历转送',sync_feishu:'确认飞书联动',retry_delivery:'重试投递',resolve_delivery:'核实投递结果',settings:'邮箱与联动',templates:'邮件模板'};
+const actionTitles={send_receipt:'检查并发送投递回执',assign_interviewer:'分配飞书面试官',return_interview:'退回面试安排',prepare_outcome:'结果邮件预览',send_outcome:'确认决定并发送结果邮件',create:'新建候选人',screen:'完成初筛',assessment:'记录考核结果',schedule:'安排面试',interview:'记录面试反馈',accept:'确认录取',reject:'结束为未通过',archive:'归档候选人',prepare_notice:'生成邮件预览',send_notice:'逐人确认面试邮件',confirm_forward:'确认简历转送',sync_feishu:'确认飞书联动',retry_delivery:'重试投递',resolve_delivery:'核实投递结果',settings:'邮箱设置',templates:'邮件模板'};
 function field(name,label,{type='text',value='',required=true,maxLength=2000,placeholder='',min,max}={}){
   const wrap=el('label','rt-field'),input=el(type==='textarea'?'textarea':'input');input.name=name;if(type!=='textarea')input.type=type;input.value=value;input.required=required;input.maxLength=maxLength;input.placeholder=placeholder;if(min!==undefined)input.min=min;if(max!==undefined)input.max=max;
   wrap.append(el('span','',label),input);$('rt-form-fields').append(wrap);return input;
@@ -190,6 +196,7 @@ function openForm(action,values={}){
   const c=state.selected;if(!['create','settings','templates'].includes(action)&&(!c||c.archived&&action!=='resolve_delivery'))return;
   state.form={action,values,id:['create','settings','templates'].includes(action)?null:c.id,revision:c?.revision,request:null};
   const fields=$('rt-form-fields');fields.replaceChildren();$('rt-form-error').hidden=true;
+  $('rt-form-dialog').classList.toggle('rt-mail-form',['templates','send_notice','send_outcome','send_receipt'].includes(action));
   $('rt-form-title').textContent=actionTitles[action];$('rt-form-submit').textContent=action==='create'?'建立候选人':'确认';
   const intro=text=>fields.append(el('p','rt-form-intro',text));
   if(action==='create'){
@@ -204,6 +211,9 @@ function openForm(action,values={}){
     wrap.append(check,el('span','','安排考核'));fields.append(wrap);intro('关闭后进入面试安排');field('note','初筛记录',{type:'textarea',required:false});
   }else if(action==='assessment'||action==='interview'){
     intro(action==='assessment'?'记录考核成绩与评价':'记录本次面试的反馈');field('score','评分',{type:'number',min:0,max:100});field('note','评价记录',{type:'textarea'});
+  }else if(action==='assign_interviewer'){void interviewerSelect(state.form);
+  }else if(action==='return_interview'){field('note','修改说明',{type:'textarea',maxLength:2000});
+  }else if(action==='prepare_outcome'){field('note','发给候选人的结果说明',{type:'textarea',maxLength:2000});void templateVariables(state.form,values.outcome);
   }else if(action==='schedule'){
     const local=value=>{const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
     field('at','面试时间',{type:'datetime-local',value:c.interview?.at?local(c.interview.at):'',min:local(Date.now()+60000)});
@@ -212,12 +222,13 @@ function openForm(action,values={}){
     if(c.notification)intro('修改安排后 通知需要重新审核');
   }else if(action==='prepare_notice'){
     void templateVariables(state.form);
-  }else if(['send_notice','confirm_forward','sync_feishu'].includes(action)){
-    const p=values.preview;intro(state.mode==='live'?'确认后将交给发送服务处理':'当前只执行模拟 不会发邮件或写入飞书');
+  }else if(['send_notice','send_outcome','send_receipt','confirm_forward','sync_feishu'].includes(action)){
+    const p=values.preview;intro(p.mode==='live'?'确认后将交给发送服务处理':'当前只执行模拟 不对外发送');
     if(action==='sync_feishu')fields.append(el('pre','rt-form-preview',JSON.stringify(p.payload,null,2)));
-    else fields.append(el('p','rt-form-intro',`发件人 ${p.payload.from}\n收件人 ${p.payload.to}\n回复地址 ${p.payload.replyTo}`),el('strong','',p.payload.subject),el('pre','rt-form-preview',p.payload.body));
+    else fields.append(el('p','rt-form-intro',`发件人 ${p.payload.from}\n收件人 ${p.payload.to}\n回复地址 ${p.payload.replyTo}`),el('strong','',p.payload.subject));
+    if(p.payload.html)void mailPreview(session,p.payload,fields);else fields.append(el('pre','rt-form-preview',p.payload.body));
     const wrap=el('label','rt-checkbox'),check=el('input');check.type='checkbox';check.required=true;wrap.append(check,el('span','','我已逐项检查此候选人的收件地址和内容'));fields.append(wrap);
-  }else if(action==='retry_delivery'){const job=c.deliveries.find(d=>d.id===values.deliveryId);intro('仅重试该任务的原始内容 不修改收件人和模板');fields.append(el('pre','rt-form-preview',job.kind==='feishu'?JSON.stringify(job.payload.fields,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));const wrap=el('label','rt-checkbox'),check=el('input');check.type='checkbox';check.required=true;wrap.append(check,el('span','','我已检查此候选人的重试内容'));fields.append(wrap);
+  }else if(action==='retry_delivery'){const job=c.deliveries.find(d=>d.id===values.deliveryId);intro('仅重试该任务的原始内容 不修改收件人和模板');fields.append(el('pre','rt-form-preview',['feishu','interviewer'].includes(job.kind)?JSON.stringify(job.payload.fields||job.payload,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));const wrap=el('label','rt-checkbox'),check=el('input');check.type='checkbox';check.required=true;wrap.append(check,el('span','','我已检查此候选人的重试内容'));fields.append(wrap);
   }else if(action==='resolve_delivery'){
     selectField('outcome','核实结果',[['not_sent','确认未发送'],['sent','确认服务商已接收']]);field('note','核实依据',{type:'textarea'});
   }else if(action==='settings'){renderSettings(values.settings);
@@ -233,8 +244,11 @@ function formPayload(context){
   if(context.action==='screen')Object.assign(value,{assessmentRequired:data.has('assessmentRequired'),note:text('note')});
   if(['assessment','interview'].includes(context.action))Object.assign(value,{score:Number(text('score')),note:text('note')});
   if(context.action==='schedule')Object.assign(value,{at:new Date(text('at')).toISOString(),interviewer:text('interviewer'),email:text('email'),contact:text('contact'),location:text('location')});
-  if(context.action==='prepare_notice'){const template=context.templates?.find(t=>t.id===text('templateId'));if(!template)throw new Error('请选择邮件模板');Object.assign(value,{templateId:template.id,templateRevision:template.revision,sender:text('sender'),values:Object.fromEntries(template.variables.map(v=>[v.key,text('variable:'+v.key)]))});}
-  if(['send_notice','confirm_forward','sync_feishu'].includes(context.action))value.previewHash=context.values.preview.previewHash;
+  if(context.action==='assign_interviewer')value.subject=text('memberSubject');
+  if(context.action==='return_interview')value.note=text('note');
+  if(['prepare_notice','prepare_outcome'].includes(context.action)){const template=context.templates?.find(t=>t.id===text('templateId'));if(!template)throw new Error('请选择邮件模板');Object.assign(value,{templateId:template.id,templateRevision:template.revision,sender:text('sender'),values:Object.fromEntries(template.variables.map(v=>[v.key,text('variable:'+v.key)]))});}
+  if(context.action==='prepare_outcome'){delete value.sender;value.outcome=context.values.outcome;value.note=text('note');}
+  if(['send_notice','send_outcome','send_receipt','confirm_forward','sync_feishu'].includes(context.action))value.previewHash=context.values.preview.previewHash;
   if(['retry_delivery','resolve_delivery'].includes(context.action))value.deliveryId=context.values.deliveryId;
   if(context.action==='resolve_delivery')Object.assign(value,{outcome:text('outcome'),note:text('note')});
   if(context.action==='settings')return settingsPayload(data,context);
@@ -284,28 +298,29 @@ function selectField(name,label,options,value){
 }
 async function previewDelivery(kind){
   if(state.busy||!state.selected)return;const c=state.selected,epoch=state.epoch;setBusy(true);
-  try{const preview=await session.request('candidates/'+c.id+'/preview-'+kind);if(epoch!==state.epoch||state.selected?.id!==c.id)return;setBusy(false);openForm(({interview:'send_notice',application:'confirm_forward',feishu:'sync_feishu'})[kind],{preview});}
+  try{const preview=await session.request('candidates/'+c.id+'/preview-'+kind);if(epoch!==state.epoch||state.selected?.id!==c.id)return;setBusy(false);openForm(({receipt:'send_receipt',interview:'send_notice',outcome:'send_outcome',application:'confirm_forward',feishu:'sync_feishu'})[kind],{preview});}
   catch(error){if(epoch===state.epoch)status(error.message,true);}finally{if(epoch===state.epoch)setBusy(false);}
 }
 function renderDeliveries(c){
   $('rt-deliveries').replaceChildren(...(c.deliveries||[]).map(job=>{
     const box=el('article','rt-delivery'),head=el('div','rt-section-heading');
-    head.append(el('strong','',({interview:'面试邮件',application:'简历转送',feishu:'飞书联动'})[job.kind]),el('span','rt-pill',deliveryLabels[job.status]));
+    head.append(el('strong','',({interview:'面试邮件',receipt:'投递回执',outcome:'结果邮件',interviewer:'面试官通知',application:'简历转送',feishu:'历史表格同步'})[job.kind]),el('span','rt-pill',deliveryLabels[job.status]));
     box.append(head,el('p','rt-help',date(job.updatedAt)+' · '+(job.mode==='live'?'正式任务':'模拟任务')+' · 尝试 '+job.attempts+' 次'),el('p','rt-help','任务 '+job.id+(job.error?' · '+job.error:'')));
     const detail=el('details'),summary=el('summary','','查看已确认内容和处理记录');
-    detail.append(summary,el('pre','rt-form-preview',job.kind==='feishu'?JSON.stringify(job.payload.fields,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));
+    detail.append(summary,el('pre','rt-form-preview',['feishu','interviewer'].includes(job.kind)?JSON.stringify(job.payload.fields||job.payload,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));
     for(const e of job.events||[])detail.append(el('p','rt-help',date(e.at)+' · '+(deliveryLabels[e.status]||e.status)+(e.code?' · '+e.code:'')));
     box.append(detail);
+    if(!c.archived&&job.kind==='receipt'&&['FAILED','HELD','SIMULATED'].includes(job.status)&&c.deliveries.find(d=>d.kind==='receipt')?.id===job.id)box.append(button('重新预览回执',()=>void previewDelivery('receipt')));
     if(!c.archived&&job.status==='FAILED')box.append(button('检查后重试',()=>openForm('retry_delivery',{deliveryId:job.id})));
     if(job.status==='UNKNOWN')box.append(button('登记核实结果',()=>openForm('resolve_delivery',{deliveryId:job.id})));
     return box;
   }));
   if(!c.deliveries?.length)$('rt-deliveries').append(el('p','rt-help','暂无投递记录'));
 }
-async function templateVariables(context){
+async function templateVariables(context,kind='interview'){
   const epoch=state.epoch;$('rt-form-submit').disabled=true;
   try{
-    const [result,settings]=await Promise.all([session.request('templates'),session.request('settings')]);if(state.form!==context||epoch!==state.epoch)return;context.templates=result.items;selectField('sender','发件邮箱',settings.mailboxes.filter(m=>m.enabled).map(m=>[m.address,m.label+' · '+m.address]),settings.sender);
+    const [result,settings]=await Promise.all([session.request('templates'),session.request('settings')]);if(state.form!==context||epoch!==state.epoch)return;result.items=result.items.filter(t=>(t.kind||'interview')===kind);context.templates=result.items;if(kind==='interview')selectField('sender','发件邮箱',settings.mailboxes.filter(m=>m.enabled).map(m=>[m.address,m.label+' · '+m.address]),settings.sender);
     const selector=selectField('templateId','邮件模板',result.items.map(t=>[t.id,t.name])),container=el('div','rt-form-fields');$('rt-form-fields').append(container);
     const render=()=>{container.replaceChildren();const t=result.items.find(t=>t.id===selector.value);if(!t)return;container.append(el('p','rt-help','姓名、组别与面试安排自动填入 下一步检查完整邮件'));
       for(const v of t.variables){const n=field('variable:'+v.key,v.label,{value:v.defaultValue,required:v.required,maxLength:1000});container.append(n.parentElement);}
@@ -313,7 +328,7 @@ async function templateVariables(context){
   }catch(e){if(state.form===context){$('rt-form-error').hidden=false;$('rt-form-error').textContent=e.message;}}
   finally{if(state.form===context&&epoch===state.epoch)$('rt-form-submit').disabled=false;}
 }
-const variableNames={name:'候选人姓名',group:'应聘组别',interviewTime:'面试时间',interviewerName:'面试官姓名',interviewerEmail:'面试官邮箱',interviewerContact:'面试官联系方式',location:'地点或会议链接'};
+const variableNames={name:'候选人姓名',group:'应聘组别',interviewTime:'面试时间',interviewerName:'面试官姓名',interviewerEmail:'面试官邮箱',interviewerContact:'面试官联系方式',location:'地点或会议链接',applicationId:'投递编号',decisionNote:'结果说明'};
 function renderTemplateEditor(templates){
   const context=state.form;context.templates=templates;
   const selector=selectField('editingTemplate','选择模板',[...templates.map(t=>[t.id,t.name]),['new','新建模板']]);
@@ -321,7 +336,9 @@ function renderTemplateEditor(templates){
   const render=()=>{
     const t=templates.find(t=>t.id===selector.value)||{id:crypto.randomUUID(),revision:0,name:'',subject:'[110实验室面试邀请] {{name}}',body:'{{name}} 同学你好\n\n面试时间：{{interviewTime}}\n面试官：{{interviewerName}}\n联系方式：{{interviewerContact}}\n地点：{{location}}',variables:[]};context.editingTemplate=t;
     content.replaceChildren();
-    for(const [key,label,type,maxLength]of [['name','模板名称','text',80],['subject','主题','text',180],['body','正文','textarea',12000]]){const n=field(key,label,{value:t[key],type,maxLength});content.append(n.parentElement);}
+    const kind=selectField('kind','模板用途',[['interview','面试邀请'],['receipt','投递回执'],['accepted','录取通知'],['rejected','未通过通知']],t.kind||'interview');content.append(kind.parentElement);
+    for(const [key,label,type,maxLength]of [['name','模板名称','text',80],['subject','主题','text',180]]){const n=field(key,label,{value:t[key],type,maxLength});content.append(n.parentElement);}
+    context.editor=mailEditor(session,t,content,message=>{ $('rt-form-error').hidden=false;$('rt-form-error').textContent=message;});
     content.append(el('p','rt-help','可用变量 '+Object.entries(variableNames).map(([k,v])=>`{{${k}}} ${v}`).join(' · ')));
     const rows=el('div','rt-variable-rows');rows.id='rt-variable-rows';content.append(el('h3','','自定义变量'),rows);
     for(const v of t.variables)variableRow(rows,v);
@@ -337,11 +354,11 @@ function variableRow(container,value={key:'',label:'',defaultValue:'',required:t
 }
 function templatePayload(data,context){
   const t=context.editingTemplate;if(!t)throw new Error('模板尚未加载');
-  return {template:{id:t.id,revision:t.revision,name:String(data.get('name')||'').trim(),subject:String(data.get('subject')||'').trim(),body:String(data.get('body')||'').trim(),variables:[...$('rt-variable-rows').children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.type==='checkbox'?input.checked:input.value.trim()])))}};
+  return {template:{id:t.id,revision:t.revision,name:String(data.get('name')||'').trim(),subject:String(data.get('subject')||'').trim(),kind:String(data.get('kind')), ...context.editor.value(),variables:[...$('rt-variable-rows').children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(input=>[input.dataset.key,input.type==='checkbox'?input.checked:input.value.trim()])))}};
 }
 function renderSettings(s){
   const fields=$('rt-form-fields'),rows=el('div');rows.id='rt-mailbox-rows';
-  fields.append(el('p','rt-help','收信地址同时用于官网邮箱投递说明和简历转送 发信地址用于面试邮件'),rows);
+  fields.append(el('p','rt-help','收信地址用于官网投递说明与尚无面试官时的回复地址 发信地址用于招新邮件'),rows);
   const add=(value={address:'',label:'',enabled:true})=>{
     const row=el('div','rt-config-row');
     for(const [key,label]of [['address','邮箱地址'],['label','邮箱名称']]){const n=el('input');n.dataset.key=key;n.type=key==='address'?'email':'text';n.value=value[key];n.placeholder=label;n.setAttribute('aria-label',label);n.required=true;n.maxLength=key==='address'?254:80;row.append(n);}
@@ -349,13 +366,22 @@ function renderSettings(s){
   };
   for(const m of s.mailboxes)add(m);fields.append(button('添加可用邮箱',()=>{if(rows.children.length<10)add();}));
   field('sender','默认发件邮箱',{type:'email',value:s.sender,maxLength:254});field('recipient','收件邮箱 / 官网投递邮箱',{type:'email',value:s.recipient,maxLength:254});
-  fields.append(el('p','rt-help','发件邮箱需由服务器配置相应凭证 不在此保存密码'),el('h3','','飞书招新工作流'),el('p','rt-help','应用 cli_aae419847eb85bcf · 保留原长连接 不订阅现有事件'));
-  field('appToken','独立联动表 App Token',{value:s.feishu.appToken,required:false,maxLength:80});field('tableId','表格 Table ID',{value:s.feishu.tableId,required:false,maxLength:80});
-  fields.append(el('p','rt-help',(s.mode==='live'?'真实联动已启用 请核对目标表格。':'当前仅模拟 请勿填写正在运行真实流程的表格。')+'资料和处理记录永久保存在实验室服务器。'));
+  fields.append(el('p','rt-help','候选人、面试安排和审核记录保存在工作台 飞书仅发送面试官填写通知'));
+  const context=state.form;context.settingsReady=false;$('rt-form-submit').disabled=true;void session.request('templates').then(({items})=>{if(state.form!==context)return;selectField('receiptTemplateId','自动投递回执模板',items.filter(t=>t.kind==='receipt').map(t=>[t.id,t.name]),s.receiptTemplateId||'11011011-0110-4110-8110-110110110111');context.settingsReady=true;$('rt-form-submit').disabled=false;}).catch(e=>{if(state.form===context){$('rt-form-error').hidden=false;$('rt-form-error').textContent=e.message;}});
 }
-function settingsPayload(data,context){return {revision:context.values.settings.revision,mailboxes:[...$('rt-mailbox-rows').children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(n=>[n.dataset.key,n.type==='checkbox'?n.checked:n.value.trim()]))),sender:String(data.get('sender')).trim(),recipient:String(data.get('recipient')).trim(),feishu:{appToken:String(data.get('appToken')).trim(),tableId:String(data.get('tableId')).trim()}};}
+function settingsPayload(data,context){if(!context.settingsReady)throw Error('请等待回执模板加载完成');return {revision:context.values.settings.revision,mailboxes:[...$('rt-mailbox-rows').children].map(row=>Object.fromEntries([...row.querySelectorAll('[data-key]')].map(n=>[n.dataset.key,n.type==='checkbox'?n.checked:n.value.trim()]))),sender:String(data.get('sender')).trim(),recipient:String(data.get('recipient')).trim(),receiptTemplateId:String(data.get('receiptTemplateId')||'11011011-0110-4110-8110-110110110111')};}
 for(const [id,action,route] of [['rt-templates','templates','templates'],['rt-settings','settings','settings']])$(id).addEventListener('click',async()=>{
   if(state.busy)return;const epoch=state.epoch;setBusy(true);
   try{const result=await session.request(route);if(epoch!==state.epoch)return;setBusy(false);openForm(action,{[action]:route==='templates'?result.items:result});}
   catch(e){if(epoch===state.epoch)status(e.message,true);}finally{if(epoch===state.epoch)setBusy(false);}
 });
+
+async function interviewerSelect(context){
+  const epoch=state.epoch;$('rt-form-submit').disabled=true;
+  try{const result=await session.request('members');if(state.form!==context||epoch!==state.epoch)return;
+    const search=field('memberSearch','搜索成员',{required:false,placeholder:'姓名或邮箱'}),select=selectField('memberSubject','面试官',[],state.selected?.assignment?.subject);select.required=true;select.className='rt-member-select';
+    const render=()=>{const old=select.value,q=search.value.trim().toLowerCase();select.replaceChildren(new Option('请选择飞书成员',''),...result.members.filter(m=>(m.name+' '+m.email).toLowerCase().includes(q)).map(m=>new Option(m.name+(m.email?' · '+m.email:''),m.subject)));if([...select.options].some(o=>o.value===old))select.value=old;};search.addEventListener('input',render);render();
+    $('rt-form-fields').append(el('p','rt-help','确认后 招新工作流应用将向所选面试官发送填写入口'));
+  }catch(e){if(state.form===context){$('rt-form-error').hidden=false;$('rt-form-error').textContent=e.message;}}
+  finally{if(state.form===context&&epoch===state.epoch)$('rt-form-submit').disabled=false;}
+}

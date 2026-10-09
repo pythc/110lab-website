@@ -86,7 +86,7 @@ test('recruitment templates render variables, simulate only after per-person con
   h.service.confirm(h.actor('owner'),p.id,p.fingerprint);const queued=await h.call('recruitment_notice_send',{...ids(),previewId:p.id});assert.equal(queued.mailStatus,'NOT_SENT');
   await runWorkflowDeliveryOnce(h.r,{mode:'dry-run',roleForSubject:()=>h.profiles.owner.role,intervalMs:0});
   assert.equal((await h.call('operation_get',{operationId:queued.operationId})).status,'SIMULATED');assert.equal(h.sends,0);
-  await assert.rejects(h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:h.r.get(h.actor('owner'),c.id).revision}),{code:'PROVIDER_NOT_READY'});
+  await assert.rejects(h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:h.r.get(h.actor('owner'),c.id).revision}),{code:'NOT_FOUND'});
 });
 
 test('mail drafts, attachment transfer, confirmation and simulation never invoke a network sender',async t=>{
@@ -108,14 +108,11 @@ test('mail ambiguous delivery is never retried; queued permission changes preven
   p=await prepare();h.service.confirm(h.actor('owner'),p.id,p.fingerprint);await h.call('mail_send',{...ids(),previewId:p.id});h.profiles.owner.role='member';await h.service.runMail();assert.equal(h.sends,1);
 });
 
-test('Feishu synchronization requires a configured exact target and human preview; dry-run never writes externally',async t=>{
-  const h=await harness(t),a=h.actor('owner');const settings=h.r.settings(a);
+test('retired table tools cannot run even with old configuration and grants',async t=>{
+  const h=await harness(t),a=h.actor('owner'),settings=h.r.settings(a);
   h.r.saveSettings(a,{...ids(),revision:settings.revision,mailboxes:settings.mailboxes,sender:settings.sender,recipient:settings.recipient,feishu:{appToken:'FictionalAppToken2026',tableId:'tblFictional2026'}});
   const c=h.r.create(a,{...ids(),name:'虚构联动候选人',email:'candidate@example.test',group:'开发组',summary:'测试'});
-  const p=await h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:c.revision});
-  assert.equal(p.preview.payload.target.tableId,'tblFictional2026');
-  await assert.rejects(h.call('recruitment_feishu_sync',{...ids(),previewId:p.id}),{code:'CONFIRMATION_REQUIRED'});
-  h.service.confirm(a,p.id,p.fingerprint);const queued=await h.call('recruitment_feishu_sync',{...ids(),previewId:p.id});
-  await runWorkflowDeliveryOnce(h.r,{mode:'dry-run',roleForSubject:()=>a.role,intervalMs:0});
-  assert.equal((await h.call('operation_get',{operationId:queued.operationId})).status,'SIMULATED');assert.equal(h.sends,0);
+  await assert.rejects(h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:c.revision}),{code:'NOT_FOUND'});
+  await assert.rejects(h.call('recruitment_feishu_sync',{...ids(),previewId:randomUUID()}),{code:'NOT_FOUND'});
+  assert.throws(()=>h.r.preview(a,c.id,'feishu'),/停用/);assert.equal(h.sends,0);
 });
