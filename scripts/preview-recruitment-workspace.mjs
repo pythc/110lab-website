@@ -1,3 +1,4 @@
+import {previewPdfFixture,previewDocxFixture} from '../tests/fixtures/resume-preview.mjs';
 // Disposable loopback-only fixtures. Never loads production config or outbound providers.
 import {createServer} from 'node:http';
 import {readFile,mkdtemp} from 'node:fs/promises';
@@ -16,14 +17,13 @@ const s=openRecruitmentWorkflowStore({directory,deliveryMode:'dry-run',now:()=>c
 const action=(c,name,values={})=>s.act(actor,c.id,{requestId:randomUUID(),revision:c.revision,action:name,...values});
 const command=(c,name,values={})=>s[name](actor,c.id,{requestId:randomUUID(),revision:c.revision,...values});
 const drain=async()=>{while(await runWorkflowDeliveryOnce(s,{mode:'dry-run',roleForSubject:()=>actor.role,intervalMs:0}));};
-function pdf(){const chunks=['%PDF-1.4\n'],offsets=[0];let n=chunks[0].length;const stream='BT /F1 20 Tf 60 750 Td (Fictional Resume - Preview Only) Tj 0 -40 Td /F1 12 Tf (Projects: Computer vision, web development) Tj ET';for(const[i,value]of ['<< /Type /Catalog /Pages 2 0 R >>','<< /Type /Pages /Kids [3 0 R] /Count 1 >>','<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Length '+stream.length+' >>\nstream\n'+stream+'\nendstream'].entries()){const part=(i+1)+' 0 obj\n'+value+'\nendobj\n';offsets.push(n);chunks.push(part);n+=part.length;}chunks.push('xref\n0 6\n0000000000 65535 f \n'+offsets.slice(1).map(o=>String(o).padStart(10,'0')+' 00000 n \n').join('')+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+n+'\n%%EOF');return Buffer.from(chunks.join(''));}
-const buffer=pdf();
+const buffer=previewPdfFixture(),docxBuffer=await previewDocxFixture(await readFile(new URL('../src/assets/110lab-icon.png',import.meta.url)));
 const image=s.saveImage(actor,{requestId:randomUUID(),data:(await readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))).toString('base64')});
 const t=s.templates(actor).items.find(t=>(t.kind||'interview')==='interview');s.saveTemplate(actor,{requestId:randomUUID(),template:{...t,html:'<p style="text-align:center"><img src="cid:lab-'+image.id+'" width="160" alt="110lab"></p><h2 style="text-align:center">期待与你见面</h2><p>{{name}} 同学你好</p><p>感谢你申请 {{group}}，邀请你参加本次面试。</p><p>面试时间：{{interviewTime}}</p><p>面试官：{{interviewerName}}</p><p>会议链接：{{location}}</p><p>联系方式：{{interviewerContact}}</p><p style="text-align:right">110 实验室</p>'}});
 const names=['陈知夏','周一凡','沈予安','许望','林予','苏可','陆溪'];
 for(let i=0;i<names.length;i++){
  let c=s.create(actor,{requestId:randomUUID(),name:names[i]+'（虚构）',email:'candidate'+i+'@example.com',group:i%2?'产品组':'开发组',summary:'有图像识别与前端项目经历，希望参与实验室项目。此资料仅用于本地流程验证。'});
- c=s.attachResume(actor,c.id,{requestId:randomUUID(),revision:c.revision,buffer,filename:'虚构简历.pdf',extension:'pdf',bytes:buffer.length,sha256:createHash('sha256').update(buffer).digest('hex')});
+ c=s.attachResume(actor,c.id,{requestId:randomUUID(),revision:c.revision,buffer:i===0?docxBuffer:buffer,filename:i===0?'虚构简历.docx':'虚构简历.pdf',extension:i===0?'docx':'pdf',bytes:(i===0?docxBuffer:buffer).length,sha256:createHash('sha256').update(i===0?docxBuffer:buffer).digest('hex')});
  if(i===0)continue;
  c=action(c,'screen',{assessmentRequired:i===1,note:'本地测试'});if(i<3)continue;
  c=s.assignInterviewer(actor,c.id,{requestId:randomUUID(),revision:c.revision,subject:actor.subject},actor);await drain();c=s.get(actor,c.id);if(i===3)continue;

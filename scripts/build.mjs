@@ -2,6 +2,7 @@ import {readFile,mkdir,writeFile,cp,rm} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {build} from 'esbuild';
+import {createHash} from 'node:crypto';
 import {renderWorkbench} from '../server/render.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const config=JSON.parse(await readFile(resolve(root,'src/projects.json'),'utf8'));
@@ -9,7 +10,7 @@ const ids=new Set();for(const p of config.apps){if(!p.id||ids.has(p.id))throw ne
 for(const value of [...Object.values(config.systems),...config.apps.map(p=>p.url),...config.projects.map(p=>p.url)].filter(Boolean)){
  const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password)throw new Error('Destinations must be HTTPS without embedded credentials');
 }
-const bundle=async entry=>(await build({entryPoints:[resolve(root,entry)],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',minify:true})).outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
+const bundle=async(entry,define={})=>(await build({entryPoints:[resolve(root,entry)],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',minify:true,define})).outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
 await mkdir(resolve(root,'dist'),{recursive:true});
 const confirmScript=await bundle('src/mcp-confirm.js');
 await writeFile(resolve(root,'dist/mcp-confirm.html'),(await readFile(resolve(root,'src/mcp-confirm.html'),'utf8')).replace('/* MCP_CONFIRM_SCRIPT */',()=>confirmScript));
@@ -40,7 +41,9 @@ const [honorsHTML,honorsCSS,honorsJS]=await Promise.all([readFile(resolve(root,'
 await writeFile(resolve(root,'dist/honors.html'),honorsHTML.replace('/* HONORS_CSS */',()=>honorsCSS).replace('/* HONORS_SCRIPT */',()=>honorsJS));
 await rm(resolve(root,'dist/assets'),{recursive:true,force:true});
 await cp(resolve(root,'src/assets'),resolve(root,'dist/assets'),{recursive:true});
-await writeFile(resolve(root,'dist/assets/recruitment-pdf-preview-v1.mjs'),await bundle('src/recruitment-pdf-preview.js'));
+const docxScript=await bundle('src/recruitment-docx-frame.js');
+const docxCSP="default-src 'none'; script-src 'sha256-"+createHash('sha256').update(docxScript).digest('base64')+"'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; form-action 'none'; base-uri 'none'";
+await writeFile(resolve(root,'dist/assets/recruitment-pdf-preview-v1.mjs'),await bundle('src/recruitment-pdf-preview.js',{__DOCX_PREVIEW_SCRIPT__:JSON.stringify(docxScript),__DOCX_PREVIEW_CSP__:JSON.stringify(docxCSP)}));
 await cp(resolve(root,'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),resolve(root,'dist/assets/recruitment-pdf-worker-6.4.299.mjs'));
 await cp(resolve(root,'node_modules/pdfjs-dist/LICENSE'),resolve(root,'dist/assets/recruitment-pdf-LICENSE.txt'));
 const localBridge=await build({entryPoints:[resolve(root,'server/local-portal-bridge.mjs')],outfile:resolve(root,'plugin/110lab/mcp/portal-bridge.mjs'),bundle:true,metafile:true,format:'esm',platform:'node',target:'node20',minify:true,banner:{js:'import {createRequire as __createRequire} from "node:module";const require=__createRequire(import.meta.url);'}});

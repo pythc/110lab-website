@@ -38,3 +38,14 @@
 .rw-hr-list{display:grid;gap:12px;margin-top:24px}.rw-hr-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #e4e8f0;padding-top:16px}.rw-hr-row p{margin-bottom:0}#rw-hr .rw-panel{margin-bottom:20px}#rw-hr .rt-field{max-width:640px}
 
 .recruitment-workspace .rw-nav button{scroll-margin-top:80px}.recruitment-workspace .rw-nav{overflow-x:auto;white-space:nowrap}
+
+/* An in-page reader keeps interview drafts in place and works in plugin frames. */
+.rw-resume-dialog{width:min(1100px,calc(100vw - 32px));height:calc(100dvh - 40px);max-height:960px;max-width:none;padding:0;border:1px solid #dce3ee;border-radius:14px;color:#202b3b;background:#f5f7fb;box-shadow:0 28px 100px #17253b38;overflow:hidden}
+.rw-resume-dialog::backdrop{background:#17253b70;backdrop-filter:blur(3px)}
+.rw-resume-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:20px;height:68px;padding:12px 22px;box-sizing:border-box;border-bottom:1px solid #dce3ee;background:white}
+.rw-resume-dialog h2{font-size:16px;font-weight:600;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rw-resume-dialog>header button{flex-shrink:0}
+.rw-resume-viewer{height:calc(100% - 68px);display:flex;flex-direction:column;min-height:0;overflow:auto}
+.rw-preview-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;padding:10px 14px;background:white;border-bottom:1px solid #e1e6ef;flex-shrink:0}.rw-preview-toolbar span{font-size:13px;min-width:100px;text-align:center;color:#596579}
+.rw-resume-dialog .rw-pdf-pages{flex:1;min-height:0;max-height:none;overflow:auto;padding:20px;box-sizing:border-box}.rw-resume-dialog .rw-pdf-pages canvas{max-width:none;margin:0 auto;background:white;box-shadow:0 3px 18px #18273f18}
+.rw-docx-frame{width:100%;height:100%;border:0;flex:1;min-height:300px;background:#edf0f5}
+@media(max-width:600px){.rw-resume-dialog{width:100vw;height:100dvh;max-height:none;margin:0;border-radius:0;border:0}.rw-resume-dialog>header{padding:10px 14px}.rw-preview-toolbar{gap:6px}.rw-preview-toolbar .rt-button{padding:6px 9px;font-size:12px}.rw-preview-toolbar span{min-width:80px}.rw-resume-dialog .rw-pdf-pages{padding:10px}}

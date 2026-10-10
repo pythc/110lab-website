@@ -1,5 +1,6 @@
 import {createRecruitmentRoleWorkspace} from './recruitment-roles.js';
 import {saveResumeFile} from './resume-download.js';
+import {openResumePreview} from './resume-preview.js';
 import Uppy from '@uppy/core';
 import Dashboard from '@uppy/dashboard';
 import zhCN from '@uppy/locales/lib/zh_CN.js';
@@ -165,7 +166,7 @@ function renderDetail(){
 function renderUpload(c){
   $('rt-resume-info').replaceChildren();$('rt-upload').replaceChildren();$('rt-upload-status').textContent='';
   clearResumePreview();$('rw-upload-disclosure').hidden=c.archived;
-  if(c.resume){const box=el('div','rt-resume-file');box.append(el('strong','',c.resume.filename),el('p','',Math.ceil(c.resume.bytes/1024)+' KB · '+'永久保留'),button(c.resume.extension==='pdf'?'预览简历':'下载 DOCX 简历',()=>void (c.resume.extension==='pdf'?previewResume(c):downloadResume(c))),button('下载',()=>void downloadResume(c)));$('rt-resume-info').append(box);}
+  if(c.resume){const box=el('div','rt-resume-file');box.append(el('strong','',c.resume.filename),el('p','',Math.ceil(c.resume.bytes/1024)+' KB · '+'永久保留'),button('预览简历',()=>previewResume(c)));if(!session.embedded)box.append(button('下载',()=>void downloadResume(c)));$('rt-resume-info').append(box);}
   $('rt-upload').hidden=c.archived;$('rt-upload-actions').hidden=c.archived;
   if(c.archived){if(!c.resume)$('rt-resume-info').append(el('p','rt-help','没有保存的简历'));return;}
   const epoch=state.epoch,instance=new Uppy({id:'110lab-recruitment-'+c.id,autoProceed:false,restrictions:{maxNumberOfFiles:1,minNumberOfFiles:1,maxFileSize:10*1024*1024,allowedFileTypes:['.pdf','.docx']},locale:zhCN});
@@ -409,9 +410,8 @@ for(const b of document.querySelectorAll('[data-detail-tab]'))b.addEventListener
 $('rw-interviews-refresh').onclick=()=>{if(interviewWorkspace?.busy())return;if(!interviewWorkspace?.dirty()||confirm('刷新会放弃未提交的填写内容，继续？'))void interviewWorkspace?.load(true);};
 for(const[id,step]of [['rw-previous',-1],['rw-next',1]])$(id).onclick=()=>{const index=state.filtered.findIndex(c=>c.id===state.selected?.id);const c=state.filtered[index+step];if(c)void openCandidate(c.id);};
 window.addEventListener('beforeunload',e=>{if(templateWorkspace?.dirty()||interviewWorkspace?.dirty()){e.preventDefault();e.returnValue='';}});
-async function previewResume(c){
-  clearResumePreview();const target=$('rw-resume-preview'),id=c.id,epoch=state.epoch,generation=resumeGeneration;target.textContent='正在加载简历';
+function previewResume(c){
+  clearResumePreview();const id=c.id,epoch=state.epoch,generation=resumeGeneration;
   const current=()=>epoch===state.epoch&&state.selected?.id===id&&generation===resumeGeneration;
-  try{const moduleUrl='/assets/recruitment-pdf-preview-v1.mjs';const [blob,{previewPdf}]=await Promise.all([session.download('candidates/'+id+'/resume'),import(moduleUrl)]);if(!current())return;const cleanup=await previewPdf(blob,target,current);if(current())resumeCleanup=cleanup;else cleanup?.();}
-  catch(e){if(current())target.textContent='无法预览此 PDF，请使用下载查看。';}
+  const viewer=openResumePreview({filename:c.resume.filename,load:()=>session.download('candidates/'+id+'/resume'),current});resumeCleanup=viewer.destroy;
 }
