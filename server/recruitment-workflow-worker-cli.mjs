@@ -1,3 +1,4 @@
+import {existsSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {join} from 'node:path';
 import {createWorkflowSmtpProvider,readWorkflowProviderConfig,runWorkflowDeliveryOnce} from './recruitment-workflow-worker.mjs';
@@ -10,8 +11,9 @@ const {openRecruitmentWorkflowStore}=await import('./recruitment-workflow-store.
 const store=openRecruitmentWorkflowStore({directory,deliveryMode:'live',mailProfiles:smtp.profiles});
 const roles=new DatabaseSync(join(mailDirectory,'mail-access.sqlite'),{readOnly:true});
 const roleForSubject=subject=>roles.prepare('SELECT role FROM administrators WHERE subject=? AND active=1').get(subject)?.role||'member';
+const freezeFile=process.env.PORTAL_BUSINESS_FREEZE_FILE||join(mailDirectory,'workspace/mcp-business/frozen');
 let stopped=false,busy=false,running;
-const tick=async()=>{if(stopped||busy)return;busy=true;try{running=runWorkflowDeliveryOnce(store,{mode,smtp,feishu,roleForSubject});await running;}catch(e){console.error('Recruitment delivery failed',e.code||e.name);}finally{busy=false;}};
+const tick=async()=>{if(stopped||busy||existsSync(freezeFile))return;busy=true;try{running=runWorkflowDeliveryOnce(store,{mode,smtp,feishu,roleForSubject,allowedEmails:config.testAllowlist?.emails,allowedSubjects:config.testAllowlist?.subjects});await running;}catch(e){console.error('Recruitment delivery failed',e.code||e.name);}finally{busy=false;}};
 const timer=setInterval(tick,5000);void tick();
 for(const signal of ['SIGINT','SIGTERM'])process.once(signal,async()=>{stopped=true;clearInterval(timer);await running;smtp.close();store.close();roles.close();process.exit(0);});
 console.log('Recruitment workflow delivery worker started');

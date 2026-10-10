@@ -90,3 +90,11 @@ test('real provider maps Feishu union IDs to stored subjects without removing cu
   }});
   const worker=f.start({provider});await worker.tick();assert.equal(f.state.status(4).state,'ready');assert.equal(calls.length,2);
 });
+
+test('directory administrators get mailbox membership before first login and revoke by subject',async t=>{
+  const f=fixture(t),w=f.start();await w.tick();
+  f.access.grantDirectoryAdministrator(owner.subject,{subject:member.subject,name:member.name},1);
+  await w.tick();assert.ok([...f.members.values()].includes(member.subject));
+  f.access.revokeAdministratorBySubject(owner.subject,member.subject,2);
+  await w.tick();assert.ok(![...f.members.values()].includes(member.subject));
+});

@@ -29,7 +29,7 @@ export async function initRecruitment(){
   function render(){
     if(!receipt)return;
     say(!receipt.id?'正在核实上次提交是否已接收 请保留当前标签页':texts[receipt.status]||'回执状态待核实');
-    if(receipt.mailStatus)say(receipt.mailStatus==='SENT'?'提交已接收 · 通知邮件已交给邮件服务商':'提交已接收 · 资料已保存至实验室招新系统');
+    if(receipt.mailStatus)say(receipt.mailStatus==='SENT'?'提交已接收 · 回执邮件已交给邮件服务商':'提交已接收 · 资料已保存至实验室招新系统');
     form.querySelector('[data-resume-id]').textContent=receipt.id||'';
     form.querySelector('[data-resume-receipt]').hidden=!receipt.id;
     fieldset.disabled=true;submit.hidden=true;

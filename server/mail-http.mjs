@@ -39,6 +39,15 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
   if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
   const projectDirectory=enabled?(fetchDirectory?{list:fetchDirectory}:localTest?null:createWorkspaceDirectory({config,now})):null;
   const sso=assessmentSsoEnabled&&enabled?openLabSso({directory,auth,access,now}):null;
+  async function administratorDirectory(subject,{fresh=false}={}){
+    access.listAdministrators(subject);
+    const known=access.listMembers(subject);
+    if(!projectDirectory){if(localTest)return known;throw new MailAuthError(503,'飞书通讯录暂时无法读取 请稍后重试');}
+    let members;try{members=await projectDirectory.list({fresh});}catch{throw new MailAuthError(503,'飞书通讯录暂时无法读取 请稍后重试');}
+    access.listAdministrators(subject);
+    const verified=new Map(known.map(m=>[m.subject,m]));
+    return members.map(m=>({...m,email:verified.get(m.subject)?.email||m.email}));
+  }
   return {enabled,
     businessIdentity:(header,scopes)=>{if(!oauth)throw new MailAuthError(503,'飞书登录尚未配置');return oauth.businessIdentity(header,scopes);},
     profile:subject=>{if(!access)throw new MailAuthError(503,'飞书登录尚未配置');return access.me(subject);},
@@ -127,12 +136,24 @@ export async function createMailHttp({enabled=process.env.PORTAL_MAIL_ENABLED===
       }
       if(route==='/api/mail/logout'&&req.method==='POST'){z.object({}).strict().parse(await body(req));res.setHeader('Set-Cookie',auth.logout(session));json(res,200,{loggedOut:true});return true;}
       if(route==='/api/mail/administrators'&&req.method==='GET'){json(res,200,access.listAdministrators(session.subject));return true;}
-      if(route==='/api/mail/members'&&req.method==='GET'){json(res,200,{members:access.listMembers(session.subject)});return true;}
+      if(route==='/api/mail/members'&&req.method==='GET'){
+        const members=await administratorDirectory(session.subject);
+        const latest=auth.session(req.headers.cookie,{embedded});if(latest.subject!==session.subject)throw new MailAuthError(403,'登录身份已改变');
+        access.listAdministrators(latest.subject);json(res,200,{members,source:'feishu'});return true;
+      }
       if(route==='/api/mail/audit'&&req.method==='GET'){json(res,200,{events:access.audit(session.subject).entries});return true;}
       if(['/api/mail/administrators/grant','/api/mail/administrators/revoke','/api/mail/administrators/transfer'].includes(route)&&req.method==='POST'){
-        const v=z.object({email,revision,confirmed:z.literal(true)}).strict().parse(await body(req));auth.recent(session);
-        if(route.endsWith('/grant'))access.grantAdministrator(session.subject,v.email,v.revision);
-        else if(route.endsWith('/revoke'))access.revokeAdministrator(session.subject,v.email,v.revision);
+        const v=z.object({email:email.optional(),subject:z.string().min(1).max(256).optional(),revision,confirmed:z.literal(true)}).strict().refine(v=>!!v.email!==!!v.subject).parse(await body(req));auth.recent(session);
+        if(route.endsWith('/grant')){
+          const members=await administratorDirectory(session.subject,{fresh:true});
+          const latest=auth.session(req.headers.cookie,{embedded});auth.csrf(latest,req.headers['x-csrf-token']);auth.recent(latest);
+          if(latest.subject!==session.subject)throw new MailAuthError(403,'登录身份已改变');
+          const member=members.find(m=>v.subject?m.subject===v.subject:m.email===v.email.toLowerCase());
+          if(!member)throw new MailAuthError(409,'该成员已不在可用飞书通讯录中 请刷新后选择');
+          access.grantDirectoryAdministrator(latest.subject,member,v.revision);
+        }
+        else if(route.endsWith('/revoke')){if(v.subject)access.revokeAdministratorBySubject(session.subject,v.subject,v.revision);else access.revokeAdministrator(session.subject,v.email,v.revision);}
+        else if(!v.email)throw new MailAuthError(400,'转让对象需先登录并完成企业身份验证');
         else access.transferSuperAdministrator(session.subject,v.email,v.revision);
         json(res,200,{changed:true,...(membership?{mailbox:membership.status(access.membershipSnapshot().revision)}:{})});return true;
       }

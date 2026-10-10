@@ -4,14 +4,14 @@ import {lstatSync,chmodSync,existsSync} from 'node:fs';
 import {z} from 'zod';
 import {WorkspaceError} from './workspace-store.mjs';
 
-export function openWorkspaceRecruitment({directory,source,now=Date.now}) {
+export function openWorkspaceRecruitment({directory,source,canManage=actor=>['admin','super_admin'].includes(actor?.role),now=Date.now}) {
   const path=join(directory,'recruitment-triage.sqlite');
   for(const suffix of ['','-wal','-shm'])if(existsSync(path+suffix)&&lstatSync(path+suffix).isSymbolicLink())throw new Error('Invalid triage storage');
   const db=new DatabaseSync(path);chmodSync(path,0o600);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=3000;
     CREATE TABLE IF NOT EXISTS handled(id TEXT PRIMARY KEY,actor_subject TEXT NOT NULL,actor_name TEXT NOT NULL,note TEXT NOT NULL,at INTEGER NOT NULL) STRICT;`);
   const secure=()=>{for(const suffix of ['','-wal','-shm'])if(existsSync(path+suffix))chmodSync(path+suffix,0o600);};secure();
-  const admin=actor=>{if(!['admin','super_admin'].includes(actor?.role))throw new WorkspaceError(403,'需要实验室管理员权限');};
+  const admin=actor=>{if(!canManage(actor))throw new WorkspaceError(403,'需要实验室管理员权限');};
   function snapshot(){return source?.()||{state:'disabled',items:[]};}
   return {
     list(actor){

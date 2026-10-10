@@ -1,8 +1,8 @@
 // Executes copied release bundles outside node_modules; SMTP is loopback only.
 import assert from 'node:assert/strict';
-import {mkdtempSync,mkdirSync,copyFileSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readFileSync,copyFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname,join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {randomBytes} from 'node:crypto';
 import {spawnSync,spawn} from 'node:child_process';
@@ -20,8 +20,8 @@ const started=(child,marker)=>new Promise((resolve,reject)=>{
   child.once('exit',()=>{if(!output.includes(marker)){clearTimeout(timer);reject(new Error('Bundled process exited before starting'));}});
 });
 try{
-  for(const directory of ['server','dist','src'])mkdirSync(join(root,directory));
-  for(const path of ['server/runtime.mjs','server/recruitment-worker-runtime.mjs','server/recruitment-ops-runtime.mjs','dist/index.html','dist/workbench.html','dist/mail.html','dist/recruitment-test.html','dist/recruitment.html','dist/honors.html','src/projects.json'])copyFileSync(path,join(root,path));
+  const manifest=JSON.parse(readFileSync('release.json','utf8'));
+  for(const path of Object.keys(manifest.files)){mkdirSync(dirname(join(root,path)),{recursive:true});copyFileSync(path,join(root,path));}
   const {createHttpServer}=await import(pathToFileURL(join(root,'server/runtime.mjs')));
   const {runDeliveryOnce}=await import(pathToFileURL(join(root,'server/recruitment-worker-runtime.mjs')));
   const messages=[];

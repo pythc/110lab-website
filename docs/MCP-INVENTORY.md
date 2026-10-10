@@ -89,9 +89,7 @@
 | `lab_candidate_record` | 记录初筛考核或面试安排 | `recruitment:write` |
 | `lab_candidate_decide` | 记录管理员录取决定 | `recruitment:decide` |
 | `lab_recruitment_notice_preview` | 逐人生成面试通知预览 | `recruitment:write` |
-| `lab_recruitment_feishu_preview` | 预览飞书招新字段变更 | `recruitment:sync` |
 | `lab_recruitment_notice_send` | 发送已逐人确认的面试通知 | `recruitment:send` |
-| `lab_recruitment_feishu_sync` | 执行已确认的飞书同步 | `recruitment:sync` |
 | `lab_mail_send` | 发送已确认的公共邮箱草稿 | `mail:send` |
 | `lab_update_publish` | 发布已确认的官网动态 | `updates:publish` |
 | `lab_update_withdraw` | 撤回已确认的官网动态 | `updates:publish` |
@@ -114,3 +112,6 @@
 - 妙搭网页保留首次飞书官方授权，这是本次用户明确接受的范围。
 - 业务工具使用明确用途和权限范围的授权流程；不能把当前只用于会话连接的 `mail:session` 悄悄扩大为发信、审核或管理权限。
 - 验证未发送真实邮件、发起真实评审或通知；notify 接通 IMAP/SMTP，根域邮箱待配置，招新发送保持模拟。
+
+
+招新改为工作台持久化后，`lab_recruitment_feishu_preview` 与 `lab_recruitment_feishu_sync` 已撤下，旧表格配置及授权不会触发写入。面试官通知和回填由招新工作台处理；飞书应用仅发送面试安排入口，不修改其已有事件订阅。

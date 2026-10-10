@@ -98,3 +98,24 @@ test('notify access requires a live administrator and fresh membership verificat
     status=await (await h.request('/api/mail/notify',{jar:owner.jar})).json();assert.equal(status.state,'pending');assert.equal(status.url,undefined);
   }finally{state.close();await h.close();await rm(directory,{recursive:true,force:true});}
 });
+
+test('admin directory grants require a fresh provider member and revalidate auth after lookup',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'110lab-directory-grant-'));let members=[{subject:member.subject,name:member.name,email:''}],fail=false,optionsSeen=[],duringLookup;
+  const h=await harness({enabled:true,directory,config:fixtureConfig,localTest:true,fetchIdentity:async(_,{code})=>code==='member'?member:fixtureIdentity,fetchDirectory:async options=>{optionsSeen.push(options);if(duringLookup)await duringLookup();if(fail)throw Error('private-provider-error');return members;}});
+  try{
+    const owner=await login(h,'owner');
+    const req=(route,data)=>h.request('/api/mail/'+route,{method:'POST',jar:owner.jar,csrf:owner.csrf,data});
+    const grant=(subject,revision=1)=>req('administrators/grant',{subject,revision,confirmed:true});
+    const list=await h.request('/api/mail/members',{jar:owner.jar});assert.equal(list.status,200);assert.equal((await list.json()).members[0].subject,member.subject);
+    assert.equal((await grant('other_tenant:on_outside_2026')).status,409);
+    fail=true;assert.equal((await grant(member.subject)).status,503);assert.equal((await h.request('/api/mail/members',{jar:owner.jar})).status,503);fail=false;
+    members=[];assert.equal((await grant(member.subject)).status,409);
+    members=[{subject:member.subject,name:member.name,email:''}];
+    assert.equal((await grant(member.subject)).status,200);assert.equal(optionsSeen.at(-1).fresh,true);
+    const person=await login(h,'member');assert.equal(person.role,'admin');
+    assert.equal((await h.request('/api/mail/members',{jar:person.jar})).status,403);
+    assert.equal((await req('administrators/revoke',{subject:member.subject,revision:3,confirmed:true})).status,200);
+    duringLookup=async()=>{duringLookup=null;await req('logout',{});};
+    assert.equal((await grant(member.subject,4)).status,401,'logout during provider request prevents a stale grant');
+  }finally{await h.close();await rm(directory,{recursive:true,force:true});}
+});

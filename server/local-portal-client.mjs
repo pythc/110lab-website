@@ -11,6 +11,11 @@ import {ISSUER,RESOURCE} from './portal-constants.mjs';
 export {ISSUER,RESOURCE} from './portal-constants.mjs';
 const secret=v=>typeof v==='string'&&/^[\w-]{43}$/.test(v);
 const error=text=>({isError:true,content:[{type:'text',text}]});
+const reportFailure=(phase,e)=>{
+  const kind=e instanceof UnauthorizedError?'authorization':e?.safe?'credential_busy':e instanceof TypeError?'connection':'client';
+  // Never log messages, URLs, callback state or credentials from an exception.
+  process.stderr.write(JSON.stringify({source:'110lab-login',phase,kind,...(Number.isInteger(e?.code)?{code:e.code}:{})})+'\n');
+};
 const paths=new Set(['/mcp/workbench-v6-1','/.well-known/oauth-protected-resource/mcp/workbench-v6-1','/.well-known/oauth-protected-resource','/.well-known/oauth-authorization-server','/register','/token']);
 export async function portalFetch(input,options={},timeoutMs=15000){
   const url=new URL(input instanceof Request?input.url:String(input));
@@ -22,7 +27,7 @@ export async function portalFetch(input,options={},timeoutMs=15000){
 // is shipped. Only client registration and scoped refresh credentials are stored
 // privately on this computer; PKCE stays in memory and no token enters tool content.
 export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,storage=credentialFile(join(homedir(),'.config','110lab-login','oauth.json'))}={}){
-  let information,tokens,verifier,job,connecting,releaseLock;
+  let information,tokens,verifier,job,client,transport,releaseLock;
   const persist=()=>storage.save({client:information,tokens});
   const release=()=>{releaseLock?.();releaseLock=undefined;};
   const missing=()=>({_meta:{mailSessionMissing:true},content:[{type:'text',text:'请点击飞书登录'}]});
@@ -41,9 +46,14 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,st
       job.authorization=url.href;
     }
   };
-  const client=new Client({name:'110lab-local-login',version:'0.8.7'});
-  const transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{authProvider:provider,fetch:fetchImpl});
-  const connect=()=>connecting ||= client.connect(transport).catch(e=>{connecting=null;throw e;});
+  async function connect(){
+    // A failed initialize closes the SDK transport permanently. Each login
+    // attempt needs its own transport; only persisted credentials are reused.
+    await client?.close();
+    client=new Client({name:'110lab-local-login',version:'0.15.1'});
+    transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{authProvider:provider,fetch:fetchImpl});
+    await client.connect(transport);
+  }
   function closeListener(current){clearTimeout(current.timer);current.listener?.close();current.listener?.closeIdleConnections();}
   function settle(current,success){if(current.done)return;current.done=true;closeListener(current);current.resolve(success);release();}
   async function listener(current){
@@ -57,7 +67,7 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,st
       if(u.searchParams.getAll('code').length!==1||!secret(u.searchParams.get('code'))){page(res,400,'回调无效');return;}
       current.callbackStarted=true;
       try{await transport.finishAuth(u.searchParams.get('code'));if(current.done)throw new Error('Expired');page(res,200,'已完成连接');settle(current,true);}
-      catch{page(res,400,'连接未完成 请重新登录');settle(current,false);}
+      catch(e){reportFailure('callback',e);page(res,400,'连接未完成 请重新登录');settle(current,false);}
       finally{current.callbackFinished=true;}
     });
     current.listener.requestTimeout=10000;current.listener.headersTimeout=10000;
@@ -70,15 +80,17 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,st
       if(!secret(state)||typeof fresh!=='boolean'||typeof silent!=='boolean'||silent&&fresh)return error('登录请求无效');
       if(job&&(!job.done||job.starting||job.finishing||job.callbackStarted&&!job.callbackFinished))return error('已有登录正在进行 请完成授权或稍后重试');
       const current={state,fresh,silent,oauthState:randomBytes(32).toString('base64url'),done:false,starting:true};current.wait=new Promise(resolve=>{current.resolve=resolve;});job=current;
+      let phase='credentials';
       try{
         releaseLock=storage.acquire?.();const saved=storage.load();information=saved.client;tokens=saved.tokens;
         if(silent&&(!information||!tokens)){settle(current,false);return missing();}
-        await listener(current);await connect();
+        phase='loopback';await listener(current);phase='initialize';await connect();phase='handoff';
         const result=await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh}});
         settle(current,false);return result;
       }catch(e){
-        if(silent){settle(current,false);return missing();}
+        if(silent){if(!(e instanceof UnauthorizedError))reportFailure(phase,e);settle(current,false);return missing();}
         if(e instanceof UnauthorizedError&&current.authorization&&!current.done)return {content:[{type:'text',text:'请在飞书完成登录'}],_meta:{mailAuthorization:{state,url:current.authorization}}};
+        reportFailure(phase,e);
         settle(current,false);return error('无法启动飞书登录 请稍后重试');
       }finally{current.starting=false;}
     },
@@ -89,10 +101,10 @@ export function createMailLoginClient({fetchImpl=portalFetch,timeoutMs=260000,st
       if(!current.done)return {content:[{type:'text',text:'等待用户完成飞书登录'}],_meta:{mailAuthorizationPending:{state}}};
       current.result ||= (async()=>{
         current.finishing=true;
-        try{if(!await current.wait||current!==job)return error('授权未完成 请重新登录');releaseLock=storage.acquire?.();const saved=storage.load();information=saved.client;tokens=saved.tokens;return await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh:current.fresh}});}catch{return error('连接未完成 请重新登录');}
+        try{if(!await current.wait||current!==job)return error('授权未完成 请重新登录');releaseLock=storage.acquire?.();const saved=storage.load();information=saved.client;tokens=saved.tokens;return await client.callTool({name:'connect_110lab_mail',arguments:{state,fresh:current.fresh}});}catch(e){reportFailure('complete',e);return error('连接未完成 请重新登录');}
         finally{current.finishing=false;release();}
       })();return current.result;
     },
-    async close(){if(job)settle(job,false);release();await client.close();tokens=undefined;verifier=undefined;information=undefined;}
+    async close(){if(job)settle(job,false);release();await client?.close();tokens=undefined;verifier=undefined;information=undefined;}
   };
 }
