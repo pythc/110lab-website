@@ -5,7 +5,7 @@
 <a class="rw-skip" href="#rt-content">跳到候选人</a>
 <main class="rt-app rw-app">
   <header class="rt-header"><div class="rt-brand"><a id="rt-back" href="/workbench">110lab</a><h1>招新工作台</h1><span id="rt-mode" class="rt-badge">连接中</span></div><div class="rt-identity"><span id="rt-person">未登录</span><button id="rt-login" class="rt-button rt-primary">飞书登录</button><button id="rt-logout" class="rt-button" hidden>退出</button></div></header>
-  <nav id="rw-nav" class="rw-nav" aria-label="招新工作区" hidden><button data-view="candidates" aria-current="page">候选人</button><button data-view="interviews">我的面试</button><button data-view="templates">邮件模板</button><button data-view="settings" id="rt-settings" hidden>设置</button></nav>
+  <nav id="rw-nav" class="rw-nav" aria-label="招新工作区" hidden><button data-view="candidates" aria-current="page">候选人</button><button data-view="interviews">我的面试</button><button data-view="templates">邮件模板</button><button data-view="hr" hidden>人员与权限</button><button data-view="settings" id="rt-settings" hidden>设置</button></nav>
   <div id="rt-status" class="rt-status" role="status" aria-live="polite" hidden></div>
   <section id="rt-locked" class="rt-locked"><div class="rt-lock-mark" aria-hidden="true">110</div><h2 id="rt-locked-title">登录招新工作台</h2><p id="rt-locked-description">管理员处理招新，面试官查看分配给自己的面试</p><button id="rt-login-main" class="rt-button rt-primary">飞书登录</button></section>
   <section id="rt-content" hidden>
@@ -17,6 +17,7 @@
     <div id="rt-list" class="rt-list"><div class="rt-table-scroll" role="region" aria-label="候选人列表" tabindex="0"><table class="rt-table"><caption class="rt-sr-only">候选人与当前任务</caption><thead><tr><th scope="col">候选人</th><th scope="col">当前任务</th><th scope="col">处理人</th><th scope="col">面试时间</th><th scope="col">通知</th><th scope="col">操作</th></tr></thead><tbody id="rt-rows"></tbody></table></div><footer class="rt-list-footer"><span id="rt-count" aria-live="polite"></span><span>最近更新优先</span></footer></div></section>
   </section>
   <section id="rw-interviews" class="rw-page" hidden><div class="rw-page-heading"><div><h2>我的面试</h2><p>查看资料、填写安排、提交评价</p></div><button id="rw-interviews-refresh" class="rt-button">刷新面试</button></div><div id="rw-interview-list"></div></section>
+  <section id="rw-hr" class="rw-page" hidden></section>
   <section id="rw-templates" class="rw-page" hidden></section>
   <section id="rt-detail" class="rw-detail" aria-labelledby="rt-detail-title" hidden>
     <div class="rw-detail-heading"><button id="rt-detail-close" class="rt-button" aria-label="返回候选人列表">返回列表</button><span id="rt-detail-updated"></span><div class="rw-detail-pager"><button id="rw-previous" class="rt-button">上一位</button><button id="rw-next" class="rt-button">下一位</button></div></div>

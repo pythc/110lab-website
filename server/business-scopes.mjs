@@ -17,5 +17,6 @@ export const isLabAdmin = actor => ['admin','super_admin'].includes(actor?.role)
 export function assertBusinessScope(actor, scope) {
   if (!actor?.subject) throw Object.assign(new Error('请先连接实验室身份'), {code:'AUTH_REQUIRED',status:401});
   if (!actor.scopes?.includes(scope)) throw Object.assign(new Error('需要授权此业务能力'), {code:'SCOPE_REQUIRED',status:403,scope});
+  if (scope.startsWith('recruitment:')&&(scope==='recruitment:read'||actor.recruitmentRole==='hr'))return;
   if ((/^(recruitment|mail|updates):/.test(scope) || scope.endsWith(':review')) && !isLabAdmin(actor)) throw Object.assign(new Error('需要实验室管理员权限'), {code:'FORBIDDEN',status:403});
 }

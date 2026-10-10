@@ -34,3 +34,7 @@
 .recruitment-workspace .rt-table th,.recruitment-workspace .rt-table td{display:table-cell}.recruitment-workspace .rt-table td:nth-child(3),.recruitment-workspace .rt-table th:nth-child(5){display:table-cell}
 
 .rw-interview-list{background:white;border:1px solid var(--rw-line);border-radius:12px;overflow:hidden}.rw-interview-row{display:grid;grid-template-columns:minmax(160px,1fr) 180px 200px auto;gap:20px;align-items:center;padding:20px 24px;border-bottom:1px solid var(--rw-line)}.rw-interview-row:last-child{border:0}.rw-interview-row .rt-help{margin:6px 0 0}.rw-interview-row .rt-pill{justify-self:start}.rw-interview-row time{font-size:13px;color:var(--rw-muted)}.rw-interview-back{margin-bottom:20px}@media(max-width:900px){.rw-interview-row{grid-template-columns:1fr auto;gap:12px;padding:18px}.rw-interview-row time{grid-column:1}.rw-interview-row button{grid-column:2}}
+
+.rw-hr-list{display:grid;gap:12px;margin-top:24px}.rw-hr-row{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid #e4e8f0;padding-top:16px}.rw-hr-row p{margin-bottom:0}#rw-hr .rw-panel{margin-bottom:20px}#rw-hr .rt-field{max-width:640px}
+
+.recruitment-workspace .rw-nav button{scroll-margin-top:80px}.recruitment-workspace .rw-nav{overflow-x:auto;white-space:nowrap}

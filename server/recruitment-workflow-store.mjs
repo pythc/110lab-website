@@ -1,3 +1,5 @@
+import {createRecruitmentRoles} from './recruitment-roles.mjs';
+import {createRecruitmentNotifications,isRecruitmentIm,AUTOMATIC_RECRUITMENT_KINDS} from './recruitment-notifications.mjs';
 import {createRecruitmentLifecycle} from './recruitment-lifecycle.mjs';
 import {invalidateOutcome,decisionContext} from './recruitment-workspace.mjs';
 import {cleanMailHtml,imageIds} from './recruitment-rich-mail.mjs';
@@ -7,12 +9,12 @@ import {join} from 'node:path';
 import {randomUUID,randomBytes,createHmac,createHash} from 'node:crypto';
 import {z} from 'zod';
 import {nextRecruitmentStage} from './recruitment-test-machine.mjs';
-import {RecruitmentTestError,requireRecruitmentAdmin} from './recruitment-test-store.mjs';
+import {RecruitmentTestError,requireRecruitmentAdmin as requireLabAdministrator} from './recruitment-test-store.mjs';
 import {keyHash,RecruitmentError,MAX_FILE_BYTES} from './recruitment-store.mjs';
 import {DEFAULT_RECRUITMENT_MAILBOX,RECRUITMENT_FEISHU_APP_ID,workflowText as text,mailboxSchema,templateSchema,defaultInterviewTemplate,defaultRecruitmentTemplates,renderInterviewTemplate,previewHash} from './recruitment-templates.mjs';
 
 const fail=(status,message)=>{throw new RecruitmentTestError(status,message);};
-const superAdmin=actor=>{requireRecruitmentAdmin(actor);if(actor.role!=='super_admin')fail(403,'仅超级管理员可配置邮箱和飞书联动');};
+const superAdmin=actor=>{requireLabAdministrator(actor);if(actor.role!=='super_admin')fail(403,'仅超级管理员可配置邮箱和飞书联动');};
 const common={requestId:z.uuid(),revision:z.number().int().min(1)};
 const labels={create:'建立候选人',intake:'官网简历投递',resume:'更新简历',screen:'完成初筛',assessment:'记录考核',schedule:'安排面试',prepare_notice:'生成邮件预览',send_notice:'确认面试邮件',interview:'记录面试',accept:'录取',reject:'未通过',archive:'归档',retry_delivery:'重试投递',confirm_forward:'确认简历转送',sync_feishu:'确认飞书联动',resolve_delivery:'核实投递结果'};
 const createSchema=z.object({requestId:z.uuid(),name:text(80,1),group:text(60,1),email:mailboxSchema,summary:text(2000)}).strict();
@@ -86,9 +88,12 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
   const tx=fn=>{db.exec('BEGIN IMMEDIATE');try{const result=fn();db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}};
   const hash=value=>createHmac('sha256',salt).update(value).digest('hex');
   const audit=(actor,action,data)=>db.prepare('INSERT INTO audit VALUES(?,?,?,?,?)').run(randomUUID(),now(),actor.subject,action,JSON.stringify(data));
+  const roles=createRecruitmentRoles({db,now,tx,fail,audit});
+  const requireRecruitmentAdmin=roles.requireOperator;
   const mutate=(actor,input,target,fn)=>{
     requireRecruitmentAdmin(actor);const fingerprint=previewHash({target,input});
     return tx(()=>{
+      requireRecruitmentAdmin(actor);
       const old=db.prepare('SELECT fingerprint,result FROM requests WHERE actor=? AND request_id=?').get(actor.subject,input.requestId);
       if(old){if(old.fingerprint!==fingerprint)fail(409,'同一请求内容已改变 请重新操作');return JSON.parse(old.result);}
       const result=fn();db.prepare('INSERT INTO requests VALUES(?,?,?,?)').run(actor.subject,input.requestId,fingerprint,JSON.stringify(result));return result;
@@ -122,11 +127,11 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
   const enqueue=(c,actor,kind,payload)=>{
     if(db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind=? AND status IN ('QUEUED','SENDING','RETRYING','UNKNOWN')").get(c.id,kind))fail(409,'已有待处理或结果待核实的任务 请先处理原任务');
     const s=settings();
-    if(!['feishu','interviewer'].includes(kind)&&(!s.mailboxes.some(m=>m.enabled&&m.address===payload.from)))fail(409,'发件邮箱已停用 请重新预览');
-    if(modeFor(c)==='live'&&!['feishu','interviewer'].includes(kind)&&!mailProfiles.some(p=>p.address===payload.from&&p.configured))fail(409,'此邮箱尚未配置服务器发信凭证');
+    if(!isRecruitmentIm(kind)&&(!s.mailboxes.some(m=>m.enabled&&m.address===payload.from)))fail(409,'发件邮箱已停用 请重新预览');
+    if(modeFor(c)==='live'&&!isRecruitmentIm(kind)&&!mailProfiles.some(p=>p.address===payload.from&&p.configured))fail(409,'此邮箱尚未配置服务器发信凭证');
     if(kind==='feishu')fail(409,'招新数据已改为工作台管理 请分配面试官');
     const id=randomUUID(),time=now(),taskMode=modeFor(c);
-    if(taskMode==='live'&&deliveryMode!=='live'&&kind==='interviewer'&&!liveTestSubjects.includes(payload.subject))fail(403,'测试阶段只能通知指定的本人飞书身份');
+    if(taskMode==='live'&&deliveryMode!=='live'&&isRecruitmentIm(kind)&&!liveTestSubjects.includes(payload.subject))fail(403,'测试阶段只能通知指定的本人飞书身份');
     db.prepare('INSERT INTO deliveries(id,candidate_id,kind,mode,status,payload,actor,created_at,updated_at,next_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,c.id,kind,taskMode,'QUEUED',JSON.stringify(payload),actor.subject,time,time,time);
     deliveryEvent(id,'QUEUED');return id;
   };
@@ -137,9 +142,11 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
   const modeFor=c=>liveTestEmails.includes(c.email)?'live':deliveryMode;
   const validateReceiptTemplate=t=>{if(t.kind!=='receipt')fail(400,'请选择投递回执模板');try{renderInterviewTemplate(t,{id:randomUUID(),name:'候选人',group:'组别',email:'fixture@example.com'});}catch{fail(400,'自动回执仅可使用投递信息 自定义必填变量需设置默认值');}};
   const receiptStatus=id=>db.prepare("SELECT status FROM deliveries WHERE candidate_id=? AND kind='receipt' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(id)?.status||null;
+  const notifications=createRecruitmentNotifications({db,now,tx,get,roles,modeFor,deliveryEvent,fail});
   const lifecycle=createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate,enqueue,settings,getTemplate,fail,requireAdmin:requireRecruitmentAdmin,mode:deliveryMode,modeFor,deliveryEvent,readResume});
   return {
-    ...lifecycle,
+    ...lifecycle,...notifications,
+    canManage:roles.canManage,requireOperator:roles.requireOperator,recruitmentSession:roles.session,listHr:roles.listHr,setHr:roles.setHr,
     root:directory,mode:deliveryMode,close:()=>db.close(),
     publicConfig:()=>({workflow:true,enabled:true,available:true,maxFileBytes:MAX_FILE_BYTES,recipient:settings().recipient,intakeRevision:settings().revision,retention:'permanent',deliveryMode}),
     beginUpload(ip){consume('upload',hash(ip),30,600000);},
@@ -154,7 +161,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
         const id=randomUUID(),c=baseCandidate(id,{name:fields.name,email:fields.email,group:fields.group,summary:''},'website');
         c.consent={at:stamp(),version:'110lab-recruitment-permanent-v1',recipient:settings().recipient};
         c.resume={filename:`${fields.name}-${fields.group}-简历.${extension}`,bytes,extension,sha256,uploadedAt:stamp(),expiresAt:null};
-        file(id,buffer,c.resume);event(c,{subject:'website',name:'官网投递'},'intake');put(c);
+        file(id,buffer,c.resume);event(c,{subject:'website',name:'官网投递'},'intake');put(c);notifications.recordIntake(c);
         // Only new explicitly enabled intakes queue a candidate receipt. Existing held
         // and simulated tasks remain in their original mode after deployment.
         const payload=lifecycle.receiptPayload(c),job=randomUUID(),time=now(),taskMode=modeFor(c),initialStatus=taskMode==='live'?'QUEUED':'HELD';
@@ -170,8 +177,8 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
     },
     hasReceipt(id,authorization){const supplied=keyHash(authorization);return !!(id===null?db.prepare('SELECT id FROM intake_receipts WHERE key_hash=?').get(supplied):db.prepare('SELECT id FROM intake_receipts WHERE id=? AND key_hash=?').get(id,supplied));},
     labInbox(){return {state:'ready',items:db.prepare('SELECT data FROM candidates ORDER BY rowid DESC LIMIT 1000').all().map(({data})=>{const c=JSON.parse(data);return {id:c.id,name:c.name,group:c.group,receivedAt:c.createdAt,deliveryStatus:'RECEIVED'};})};},
-    list(actor){requireRecruitmentAdmin(actor);return {mode:'managed',deliveryMode,testDeliveryEnabled:liveTestEmails.length>0,retention:'permanent',items:db.prepare("SELECT json_remove(data,'$.draftHistory','$.interviewHistory','$.assignmentHistory','$.resultNotification.html','$.resultNotification.body','$.assignment.feedback.note','$.notification.html','$.events','$.notification.body','$.notification.variables','$.summary','$.assessment.note','$.interview.note','$.decisionNote') data FROM candidates ORDER BY rowid DESC LIMIT 10000").all().map(r=>{const c=JSON.parse(r.data);return {...c,receiptStatus:receiptStatus(c.id)};})};},
-    get(actor,id){requireRecruitmentAdmin(actor);const c=get(id);return {...c,receiptStatus:receiptStatus(c.id),resultDraftValid:c.resultNotification?.status==='draft'&&c.resultNotification.contextHash===decisionContext(c),deliveries:db.prepare('SELECT * FROM deliveries WHERE candidate_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').all(id).map(deliveryView)};},
+    list(actor){if(!roles.canManage(actor))return {mode:'managed',deliveryMode,items:lifecycle.interviewerList(actor).items};return {mode:'managed',deliveryMode,testDeliveryEnabled:liveTestEmails.length>0,retention:'permanent',items:db.prepare("SELECT json_remove(data,'$.draftHistory','$.interviewHistory','$.assignmentHistory','$.resultNotification.html','$.resultNotification.body','$.assignment.feedback.note','$.notification.html','$.events','$.notification.body','$.notification.variables','$.summary','$.assessment.note','$.interview.note','$.decisionNote') data FROM candidates ORDER BY rowid DESC LIMIT 10000").all().map(r=>{const c=JSON.parse(r.data);return {...c,receiptStatus:receiptStatus(c.id)};})};},
+    get(actor,id){if(!roles.canManage(actor)){const c=get(id);return lifecycle.interviewerGet(actor,c.assignment?.id||'');}const c=get(id);return {...c,receiptStatus:receiptStatus(c.id),resultDraftValid:c.resultNotification?.status==='draft'&&c.resultNotification.contextHash===decisionContext(c),deliveries:db.prepare('SELECT * FROM deliveries WHERE candidate_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').all(id).map(deliveryView)};},
     settings(actor){requireRecruitmentAdmin(actor);return settingsView();},
     saveSettings(actor,raw){superAdmin(actor);const input=settingsSchema.parse(raw);return mutate(actor,input,'settings',()=>{
       if(input.revision!==settings().revision)fail(409,'配置已更新 请刷新后重试');
@@ -190,7 +197,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
     create(actor,raw){const input=createSchema.parse(raw);return mutate(actor,input,'create',()=>{
       const {requestId,...fields}=input,c=baseCandidate(randomUUID(),fields,'manual');event(c,actor,'create');put(c);return c;
     });},
-    readResume(actor,id){requireRecruitmentAdmin(actor);return readResume(id);},
+    readResume(actor,id){if(!roles.canManage(actor))return lifecycle.interviewerResume(actor,id);return readResume(id);},
     attachResume(actor,id,upload){
       const input=z.object({...common,filename:text(180,1),bytes:z.number().int().min(1).max(MAX_FILE_BYTES),extension:z.enum(['pdf','docx']),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict().parse({requestId:upload.requestId,revision:upload.revision,filename:upload.filename,bytes:upload.bytes,extension:upload.extension,sha256:upload.sha256});
       return mutate(actor,input,'resume:'+id,()=>{
@@ -244,14 +251,14 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       }else if(action==='retry_delivery'){
         const row=db.prepare('SELECT * FROM deliveries WHERE id=? AND candidate_id=?').get(input.deliveryId,id);
         if(!row||row.status!=='FAILED')fail(409,'仅明确失败的任务可重试 待核实任务不能自动重发');
-        if(db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind=? AND status IN ('QUEUED','SENDING','RETRYING','UNKNOWN')").get(id,row.kind))fail(409,'已有未结束的任务 请先核实');
+        if(!AUTOMATIC_RECRUITMENT_KINDS.includes(row.kind)&&db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind=? AND status IN ('QUEUED','SENDING','RETRYING','UNKNOWN')").get(id,row.kind))fail(409,'已有未结束的任务 请先核实');
         if(row.kind==='interview'&&c.notification?.deliveryId!==row.id)fail(409,'面试通知已重新生成 请使用最新预览');
         if(row.kind==='outcome'&&c.resultNotification?.deliveryId!==row.id)fail(409,'结果邮件已重新生成 请使用最新预览');
         if(row.kind==='interviewer'&&c.assignment?.deliveryId!==row.id)fail(409,'面试官通知已重新生成');
         if(row.kind==='receipt'&&db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind='receipt' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(id)?.id!==row.id)fail(409,'已有更新的回执 请使用最新任务');
         if(row.mode!==modeFor(c))fail(409,'发送模式已改变 请生成新的预览');
         if(row.attempts>=8)fail(429,'此任务已达到重试上限');
-        const payload=JSON.parse(row.payload);if(payload.settingsRevision!==settings().revision)fail(409,'配置已改变 请重新生成预览');
+        const payload=JSON.parse(row.payload);if(!AUTOMATIC_RECRUITMENT_KINDS.includes(row.kind)&&payload.settingsRevision!==settings().revision)fail(409,'配置已改变 请重新生成预览');
         db.prepare("UPDATE deliveries SET status='QUEUED',actor=?,updated_at=?,next_at=?,error=NULL WHERE id=?").run(actor.subject,now(),now(),row.id);deliveryEvent(row.id,'QUEUED');
         if(row.kind==='interview')c.notification={...c.notification,status:'queued',deliveryId:row.id};
         if(row.kind==='outcome'&&c.resultNotification?.deliveryId===row.id)c.resultNotification.status='queued';
@@ -284,19 +291,21 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
     });},
     claim({mode=deliveryMode,intervalMs=60000}={}){return tx(()=>{
       if(db.prepare("SELECT id FROM deliveries WHERE status='SENDING'").get()||db.prepare('SELECT next_at FROM delivery_clock WHERE id=1').get().next_at>now())return null;
-      const row=db.prepare("SELECT * FROM deliveries WHERE mode=? AND status IN ('QUEUED','RETRYING') AND next_at<=? ORDER BY created_at,rowid LIMIT 1").get(mode,now());if(!row)return null;
+      const row=db.prepare("SELECT * FROM deliveries WHERE mode=? AND status IN ('QUEUED','RETRYING') AND next_at<=? ORDER BY CASE WHEN actor='recruitment-system' THEN 1 ELSE 0 END,created_at,rowid LIMIT 1").get(mode,now());if(!row)return null;
       const lease=randomUUID();db.prepare("UPDATE deliveries SET status='SENDING',attempts=attempts+1,lease=?,lease_until=?,updated_at=? WHERE id=?").run(lease,now()+300000,now(),row.id);
       db.prepare('UPDATE delivery_clock SET next_at=? WHERE id=1').run(now()+intervalMs);deliveryEvent(row.id,'SENDING');
       return {...row,status:'SENDING',attempts:row.attempts+1,lease,payload:JSON.parse(row.payload)};
     });},
     validateDelivery(row,role){
-      if(!(['application','receipt'].includes(row.kind)&&row.actor==='website')&&!['admin','super_admin'].includes(role))fail(403,'确认人的管理员权限已撤销');
-      const c=get(row.candidate_id),s=settings();if(c.archived)fail(409,'候选人已归档');
+      const c=get(row.candidate_id),s=settings();
+      if(notifications.validateNotification(row,c))return null;
+      if(!(['application','receipt'].includes(row.kind)&&row.actor==='website')&&!roles.canManage({subject:row.actor,role}))fail(403,'确认人的招新权限已撤销');
+      if(c.archived)fail(409,'候选人已归档');
       if(row.payload.settingsRevision!==s.revision)fail(409,'配置已改变 请重新预览');
       if(row.kind==='interview'&&(c.stage!=='interview'||c.notification?.deliveryId!==row.id||getTemplate(row.payload.templateId).revision!==row.payload.templateRevision))fail(409,'邮件模板或预览已改变');
       if(row.kind==='feishu')fail(409,'表格同步已停用');
       if(row.kind==='application'&&row.payload.attachment?.sha256!==c.resume?.sha256)fail(409,'简历附件已改变');
-      if(!['feishu','interviewer'].includes(row.kind)&&!s.mailboxes.some(m=>m.enabled&&m.address===row.payload.from))fail(409,'发件邮箱已停用');
+      if(!isRecruitmentIm(row.kind)&&!s.mailboxes.some(m=>m.enabled&&m.address===row.payload.from))fail(409,'发件邮箱已停用');
       if(row.kind==='receipt'&&getTemplate(row.payload.templateId).revision!==row.payload.templateRevision)fail(409,'回执模板已改变');
       if(row.kind==='outcome'&&(c.stage!==row.payload.outcome||c.resultNotification?.deliveryId!==row.id||getTemplate(row.payload.templateId).revision!==row.payload.templateRevision))fail(409,'结果邮件已改变');
       if(row.kind==='interviewer'&&(c.stage!=='interview'||c.assignment?.id!==row.payload.assignmentId||c.assignment?.subject!==row.payload.subject||c.assignment?.deliveryId!==row.id||!['requested','changes_requested'].includes(c.assignment?.status)))fail(409,'面试官安排已改变');
@@ -312,7 +321,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       if(row.kind==='outcome'&&c.resultNotification?.deliveryId===row.id)c.resultNotification.status=({SENT:'sent',SIMULATED:'simulated',FAILED:'failed',RETRYING:'queued',UNKNOWN:'unknown'})[status];
       if(row.kind==='interviewer'&&c.assignment?.deliveryId===row.id)c.assignment.notificationStatus=status;
       if(row.kind==='feishu'&&status==='SENT'&&result?.recordId)c.feishu={recordId:result.recordId,target:row.payload.target,at:stamp()};
-      c.revision++;event(c,{subject:'system',name:'发送服务'},['feishu','interviewer'].includes(row.kind)?'飞书通知结果':'邮件处理结果',({SENT:'服务商已接收',SIMULATED:'模拟完成 未对外发送',FAILED:'发送失败',RETRYING:'暂时失败 等待重试',UNKNOWN:'结果待核实 已停止自动重试'})[status]);put(c);return true;
+      c.revision++;event(c,{subject:'system',name:'发送服务'},isRecruitmentIm(row.kind)?'飞书通知结果':'邮件处理结果',({SENT:'服务商已接收',SIMULATED:'模拟完成 未对外发送',FAILED:'发送失败',RETRYING:'暂时失败 等待重试',UNKNOWN:'结果待核实 已停止自动重试'})[status]);put(c);return true;
     });},
     commandCommitted(actor,requestId){requireRecruitmentAdmin(actor);return !!db.prepare('SELECT 1 FROM requests WHERE actor=? AND request_id=?').get(actor.subject,requestId);},
     inspectDelivery(actor,id){requireRecruitmentAdmin(actor);const row=db.prepare('SELECT * FROM deliveries WHERE id=?').get(id);if(!row)fail(404,'任务不存在');return deliveryView(row);},

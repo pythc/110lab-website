@@ -14,13 +14,13 @@ import {businessReference as reference,parseBusinessReference} from './business-
 const has=(r,q)=>!q||JSON.stringify(r).toLocaleLowerCase().includes(q.toLocaleLowerCase());
 const revision=(r,v)=>{if(r.revision!==v)fail('REVISION_CONFLICT','内容已更新 请重新读取');};
 const inDates=(value,a)=>!((a.from&&String(value).slice(0,10)<a.from)||(a.to&&String(value).slice(0,10)>a.to));
-const publicActor=a=>({subject:a.subject,name:a.name,email:a.email,role:a.role});
+const publicActor=a=>({subject:a.subject,name:a.name,email:a.email,role:a.role,recruitmentRole:a.recruitmentRole});
 const UUID=z.uuid();
 
 export function createBusinessService({mail,workspace,honors,recruitment,updates,updatesEnabled,directory,freezeFile=process.env.PORTAL_BUSINESS_FREEZE_FILE||join(directory,'frozen'),mailProvider=createBusinessMailProvider(),now=Date.now}) {
   const state=openBusinessState({directory,now}),w=workspace.store,h=honors.store,r=recruitment.store;
   let busy=false,closing=false,activeJob;const throttle=new Map();
-  const latest=actor=>({...mail.profile(actor.subject),clientId:actor.clientId,scopes:actor.scopes});
+  const latest=actor=>({...((r?.recruitmentSession||((a)=>a))(mail.profile(actor.subject))),clientId:actor.clientId,scopes:actor.scopes});
   function check(a,scope){const next=latest(a);assertBusinessScope(next,scope);return next;}
   function requireStore(store){if(!store)fail('PROVIDER_NOT_READY','此应用尚未启用',503);return store;}
   function mailbox(a,address,kind='canRead') {
@@ -43,7 +43,7 @@ export function createBusinessService({mail,workspace,honors,recruitment,updates
     if(p.kind==='mail.send'){const d=state.draft(a,p.preview.id);revision(d,p.preview.expectedRevision);mailbox(a,d.fields.mailbox,'canSend');if(p.preview.providerRevision!==mailProvider.revision||p.preview.mode!==mailProvider.mode||digest(d.fields)!==digest(p.preview.fields))fail('PREVIEW_STALE','邮件或发信配置已改变');for(const id of d.fields.attachments)state.artifact(a,id,'mail_attachment');}
   };
   const calls={
-    lab_whoami(a){return {...publicActor(a),scopes:a.scopes,capabilities:BUSINESS_TOOLS.filter(t=>t.scope&&a.scopes.includes(t.scope)&&(!/^(recruitment|mail|updates):/.test(t.scope)&&!t.scope.endsWith(':review')||isLabAdmin(a))).map(t=>t.name),applications:{projects:!!w,honors:!!h,recruitment:!!r,updates:!!updatesEnabled,mail:mailProvider.mailboxes().some(p=>p.enabled)},mailMode:mailProvider.mode};},
+    lab_whoami(a){return {...publicActor(a),scopes:a.scopes,capabilities:BUSINESS_TOOLS.filter(t=>t.scope&&a.scopes.includes(t.scope)&&(!/^(recruitment|mail|updates):/.test(t.scope)&&!t.scope.endsWith(':review')||isLabAdmin(a)||t.scope.startsWith('recruitment:')&&(t.scope==='recruitment:read'||a.recruitmentRole==='hr'))).map(t=>t.name),applications:{projects:!!w,honors:!!h,recruitment:!!r,updates:!!updatesEnabled,mail:mailProvider.mailboxes().some(p=>p.enabled)},mailMode:mailProvider.mode};},
     async lab_members_search(a,args){const result=await mail.projectMembers(a.subject);check(a,'lab:directory:read');return {...paginate(result.members.filter(m=>has([m.name,m.email],args.query)),args,a.subject),source:result.source,unavailable:result.unavailable};},
     lab_projects_list(a,args){const rows=requireStore(w).list(a).projects.filter(p=>p.archived===args.archived&&(!args.phase||p.phase===args.phase)&&(!args.mine||p.ownerSubject===a.subject||p.members.some(m=>m.subject===a.subject))&&has([p.name,p.summary],args.query));return paginate(rows.map(p=>({id:p.id,name:p.name,summary:p.summary,phase:p.phase,ownerName:p.ownerName,revision:p.revision,updatedAt:p.updatedAt})),args,a.subject);},
     lab_project_get(a,{id}){return entry(a,id);},
@@ -99,7 +99,7 @@ export function createBusinessService({mail,workspace,honors,recruitment,updates
     else if(url.hostname==='mail'&&parts.length===3&&/^\d{1,3}$/.test(parts[2])){scope='mail:read';a=check(a,scope);mailbox(a,parts[0]);f=await mailProvider.attachment(parts[0],parts[1],Number(parts[2]));a=check(a,scope);mailbox(a,parts[0]);}
     else fail('NOT_FOUND','附件不存在',404);
     if(f.buffer.length>10*1024*1024)fail('ATTACHMENT_TOO_LARGE','附件过大 请在原应用查看',413);
-    const extraction=await extractAttachmentText(f.buffer,f.mime);check(a,scope);if(url.hostname==='honor')h.get(a,parts[0]);if(url.hostname==='mail')mailbox(a,parts[0]);
+    const extraction=await extractAttachmentText(f.buffer,f.mime);a=check(a,scope);if(url.hostname==='resume')r.get(a,parts[0]);if(url.hostname==='honor')h.get(a,parts[0]);if(url.hostname==='mail')mailbox(a,parts[0]);
     return {extraction,reference:reference(url.hostname,...parts),filename:f.filename,mime:f.mime,bytes:f.buffer.length,contentBase64:f.buffer.toString('base64'),untrustedContent:true};
   }
   calls.lab_attachment_read=attachment;

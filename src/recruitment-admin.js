@@ -1,3 +1,4 @@
+import {createRecruitmentRoleWorkspace} from './recruitment-roles.js';
 import Uppy from '@uppy/core';
 import Dashboard from '@uppy/dashboard';
 import zhCN from '@uppy/locales/lib/zh_CN.js';
@@ -18,7 +19,7 @@ const el=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.cla
 const button=(text,fn,cls='rt-button')=>{const b=el('button',cls,text);b.type='button';b.addEventListener('click',fn);return b;};
 const date=value=>value?new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'';
 const terminal=c=>['accepted','rejected'].includes(c.stage);
-const canManage=profile=>['admin','super_admin'].includes(profile?.role);
+const canManage=profile=>profile?.recruitmentCapabilities?.manage===true;
 const status=(text='',error=false)=>{const n=$('rt-status');n.textContent=text;n.hidden=!text;n.dataset.error=String(error);};
 const destroyUpload=()=>{state.abort?.abort();state.abort=null;state.uppy?.destroy();state.uppy=null;};
 function closeForm(force=false){if(state.busy&&!force)return;clearTimeout(state.form?.previewTimer);$('rt-form-dialog').close();state.form?.editor?.destroy();state.form=null;}
@@ -33,31 +34,33 @@ function setBusy(value){
 }
 function clearPrivate(){
   status();
-  state.epoch++;state.load++;state.opening++;state.openedLinked=false;templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;$('rw-templates').replaceChildren();$('rw-interview-list').replaceChildren();
+  state.epoch++;state.load++;state.opening++;state.openedLinked=false;roleWorkspace?.destroy();roleWorkspace=null;templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;$('rw-templates').replaceChildren();$('rw-interview-list').replaceChildren();
   closeForm(true);closeDetail(true);state.items=[];state.profile=null;setBusy(false);
   $('rt-deliveries').replaceChildren();$('rt-rows').replaceChildren();$('rt-count').textContent='';$('rt-metrics').replaceChildren();$('rt-detail-info').replaceChildren();$('rt-events').replaceChildren();$('rt-current').replaceChildren();$('rt-detail-actions').replaceChildren();$('rt-form-fields').replaceChildren();$('rt-resume-info').replaceChildren();$('rt-upload').replaceChildren();
   for(const id of ['rt-detail-title','rt-detail-stage','rt-notice-body','rt-notice-subject','rt-upload-status','rt-detail-updated'])$(id).textContent='';
   $('rt-search').value='';$('rt-stage').value='';$('rt-group').replaceChildren(new Option('所有组别',''));
 }
-let templateWorkspace=null,interviewWorkspace=null,resumeCleanup=null,resumeGeneration=0;
+let roleWorkspace=null,templateWorkspace=null,interviewWorkspace=null,resumeCleanup=null,resumeGeneration=0;
 function clearResumePreview(){resumeGeneration++;resumeCleanup?.();resumeCleanup=null;$('rw-resume-preview').replaceChildren();}
 const session=createLabSession({apiRoot:'/api/recruitment-admin/',onStatus:status,onChange:profile=>{
-  const changed=profile?.subject!==state.profile?.subject||profile?.role!==state.profile?.role;
+  const changed=profile?.subject!==state.profile?.subject||profile?.role!==state.profile?.role||profile?.recruitmentRole!==state.profile?.recruitmentRole;
   if(changed||!profile)clearPrivate();
   state.profile=profile;
   const allowed=canManage(profile);
   $('rt-content').hidden=!allowed||state.view!=='candidates'||!!state.selected;$('rt-locked').hidden=!!profile;$('rw-nav').hidden=!profile;
-  for(const n of document.querySelectorAll('[data-view]'))n.hidden=!allowed&&n.dataset.view!=='interviews';
+  for(const n of document.querySelectorAll('[data-view]'))n.hidden=n.dataset.view==='hr'?!profile?.recruitmentCapabilities?.manageHr:!allowed&&n.dataset.view!=='interviews';
   if(profile?.role!=='super_admin')$('rt-settings').hidden=true;
-  if(!profile){$('rw-interviews').hidden=true;$('rw-templates').hidden=true;}
+  if(!profile){$('rw-interviews').hidden=true;$('rw-templates').hidden=true;$('rw-hr').hidden=true;}
   $('rt-login').hidden=!!profile;$('rt-logout').hidden=!profile;
   $('rt-login-main').hidden=!!profile;$('rt-settings').hidden=profile?.role!=='super_admin';
-  $('rt-person').textContent=profile?profile.name+' · '+({super_admin:'超级管理员',admin:'管理员',member:'普通成员'}[profile.role]||'成员'):'未登录';
+  $('rt-person').textContent=profile?profile.name+' · '+(profile.recruitmentRole==='hr'?'HR':{super_admin:'超级管理员',admin:'管理员',member:'面试官'}[profile.role]||'面试官'):'未登录';
   $('rt-locked-title').textContent=profile?'暂无招新管理权限':'登录后管理招新';
   $('rt-locked-description').textContent=profile?'请联系实验室超级管理员开通管理员权限':'通过飞书登录后 实验室管理员可处理招新流程';
   if(allowed)void loadCandidates();
   if(profile&&!allowed&&state.view!=='interviews')void setView('interviews');
   else if(profile&&state.view==='interviews'&&!interviewWorkspace)void setView('interviews');
+  else if(profile?.recruitmentCapabilities?.manageHr&&state.view==='hr'&&!roleWorkspace)void setView('hr');
+  else if(state.view==='hr'&&!profile?.recruitmentCapabilities?.manageHr)void setView(allowed?'candidates':'interviews');
   else if(allowed&&state.view==='templates'&&!templateWorkspace)void setView('templates');
   if(!allowed)$('rt-mode').textContent=profile?'面试官工作区':'未连接';
 }});
@@ -83,7 +86,7 @@ function replaceCandidate(candidate){
 }
 function renderTable(){
   const active=state.items.filter(c=>!c.archived),needsAdmin=active.filter(c=>['screening','assessment','assign','review','decision'].includes(candidateTask(c).key)).length;
-  $('rt-metrics').replaceChildren(...[['待管理员处理',needsAdmin],['等待面试官',active.filter(c=>candidateTask(c).key==='waiting').length],['通知异常',active.filter(notificationIssue).length],['已录取',active.filter(c=>c.stage==='accepted').length]].map(([label,count])=>{const n=el('div','rw-metric');n.append(el('span','',label),el('strong','',count));return n;}));
+  $('rt-metrics').replaceChildren(...[['待 HR 处理',needsAdmin],['等待面试官',active.filter(c=>candidateTask(c).key==='waiting').length],['通知异常',active.filter(notificationIssue).length],['已录取',active.filter(c=>c.stage==='accepted').length]].map(([label,count])=>{const n=el('div','rw-metric');n.append(el('span','',label),el('strong','',count));return n;}));
   $('rw-queues').replaceChildren(...[...taskViews.slice(0,4),['waiting','待面试官填写'],...taskViews.slice(4)].map(([key,title])=>{const count=active.filter(c=>key==='all'||key==='attention'?key==='all'||!!notificationIssue(c):candidateTask(c).key===key).length;const b=button(title+' '+count,()=>{state.queue=key;renderTable();},'rw-queue');b.setAttribute('aria-pressed',String(state.queue===key));return b;}));
   const query=$('rt-search').value.trim().toLocaleLowerCase(),group=$('rt-group').value,stage=$('rt-stage').value;
   const filtered=state.items.filter(c=>c.archived===state.archived&&(!stage||c.stage===stage)&&(!group||c.group===group)&&(!query||[c.name,c.email,c.group].some(v=>v.toLocaleLowerCase().includes(query)))&&(state.archived||state.queue==='all'||(state.queue==='attention'?!!notificationIssue(c):candidateTask(c).key===state.queue))).sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt));
@@ -117,8 +120,8 @@ function renderDetail(){
   $('rt-detail-info').replaceChildren(grid);$('rw-summary').textContent=c.summary||'可结合简历查看项目经历与能力';$('rw-task-title').textContent=candidateTask(c).label;
   const summary=[];
   if(c.assessment)summary.push('考核 '+c.assessment.score+' 分 · '+c.assessment.note);
-  if(c.interview&&(!c.assignment||c.assignment.status==='approved')){summary.push('面试 '+date(c.interview.at)+' · '+c.interview.interviewer+' · '+c.interview.location);if(c.interview.score!==undefined&&!c.assignment?.feedback)summary.push('面试反馈 '+c.interview.score+' 分 · '+c.interview.note);}
-  if(c.assignment){const a=c.assignment;summary.push('面试官 '+a.name+' · '+({requested:'等待面试官填写',submitted:'待管理员审核',changes_requested:'已退回修改',approved:'安排已确认'}[a.status]||a.status));if(a.proposal&&a.status!=='approved')summary.push('待审核安排 '+date(a.proposal.at)+' · '+a.proposal.location+' · '+a.proposal.contact);}
+  if(c.interview&&(!c.assignment||c.assignment.status==='approved')){summary.push('面试 '+date(c.interview.at)+' · '+(c.interview.durationMinutes||30)+' 分钟 · '+c.interview.interviewer+' · '+c.interview.location);if(c.interview.score!==undefined&&!c.assignment?.feedback)summary.push('面试反馈 '+c.interview.score+' 分 · '+c.interview.note);}
+  if(c.assignment){const a=c.assignment;summary.push('面试官 '+a.name+' · '+({requested:'等待面试官填写',submitted:'待管理员审核',changes_requested:'已退回修改',approved:'安排已确认'}[a.status]||a.status));if(a.proposal&&a.status!=='approved')summary.push('待审核安排 '+date(a.proposal.at)+' · '+(a.proposal.durationMinutes||30)+' 分钟 · '+a.proposal.location+' · '+a.proposal.contact);}
   if(c.decisionNote)summary.push('决策记录 '+c.decisionNote);
   if(!summary.length)summary.push(({screening:'查看资料后 完成初筛并选择后续安排',assessment:'考核进行中 完成后记录成绩',interview:'安排面试并审核通知内容',decision:'根据评价记录确认本次决策'})[c.stage]||'流程已结束');
   $('rt-current').replaceChildren(...summary.map(v=>el('p','rt-current-summary',v)));
@@ -244,7 +247,7 @@ function openForm(action,values={}){
     else fields.append(el('p','rt-form-intro',`发件人 ${p.payload.from}\n收件人 ${p.payload.to}\n回复地址 ${p.payload.replyTo}`),el('strong','',p.payload.subject));
     if(p.payload.html)void mailPreview(session,p.payload,fields);else fields.append(el('pre','rt-form-preview',p.payload.body));
     const wrap=el('label','rt-checkbox'),check=el('input');check.type='checkbox';check.required=true;wrap.append(check,el('span','','我已逐项检查此候选人的收件地址和内容'));fields.append(wrap);
-  }else if(action==='retry_delivery'){const job=c.deliveries.find(d=>d.id===values.deliveryId);intro('仅重试该任务的原始内容 不修改收件人和模板');fields.append(el('pre','rt-form-preview',['feishu','interviewer'].includes(job.kind)?JSON.stringify(job.payload.fields||job.payload,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));const wrap=el('label','rt-checkbox'),check=el('input');check.type='checkbox';check.required=true;wrap.append(check,el('span','','我已检查此候选人的重试内容'));fields.append(wrap);
+  }else if(action==='retry_delivery'){const job=c.deliveries.find(d=>d.id===values.deliveryId);intro('仅重试该任务的原始内容 不修改收件人和模板');fields.append(el('pre','rt-form-preview',['feishu','interviewer','hr_intake','hr_feedback_reminder','interviewer_feedback_reminder'].includes(job.kind)?JSON.stringify(job.payload.fields||job.payload,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));const wrap=el('label','rt-checkbox'),check=el('input');check.type='checkbox';check.required=true;wrap.append(check,el('span','','我已检查此候选人的重试内容'));fields.append(wrap);
   }else if(action==='resolve_delivery'){
     selectField('outcome','核实结果',[['not_sent','确认未发送'],['sent','确认服务商已接收']]);field('note','核实依据',{type:'textarea'});
   }else if(action==='settings'){renderSettings(values.settings);
@@ -319,10 +322,10 @@ async function previewDelivery(kind){
 function renderDeliveries(c){
   $('rt-deliveries').replaceChildren(...(c.deliveries||[]).map(job=>{
     const box=el('article','rt-delivery'),head=el('div','rt-section-heading');
-    head.append(el('strong','',({interview:'面试邮件',receipt:'投递回执',outcome:'结果邮件',interviewer:'面试官通知',application:'简历转送',feishu:'历史表格同步'})[job.kind]),el('span','rt-pill',deliveryLabels[job.status]));
-    box.append(head,el('p','rt-help',date(job.updatedAt)+' · '+(job.mode==='live'?'正式任务':'模拟任务')+' · 尝试 '+job.attempts+' 次'),el('p','rt-help','任务 '+job.id+(job.error?' · '+job.error:'')));
+    head.append(el('strong','',({interview:'面试邮件',receipt:'投递回执',outcome:'结果邮件',interviewer:'面试官通知',hr_intake:'HR 新投递提醒',hr_feedback_reminder:'HR 面评跟进提醒',interviewer_feedback_reminder:'面试官面评提醒',application:'简历转送',feishu:'历史表格同步'})[job.kind]),el('span','rt-pill',deliveryLabels[job.status]));
+    box.append(head,el('p','rt-help',date(job.updatedAt)+(job.payload.recipientName?' · '+job.payload.recipientName:'')+' · '+(job.mode==='live'?'正式任务':'模拟任务')+' · 尝试 '+job.attempts+' 次'),el('p','rt-help','任务 '+job.id+(job.error?' · '+job.error:'')));
     const detail=el('details'),summary=el('summary','','查看已确认内容和处理记录');
-    detail.append(summary,el('pre','rt-form-preview',['feishu','interviewer'].includes(job.kind)?JSON.stringify(job.payload.fields||job.payload,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));
+    detail.append(summary,el('pre','rt-form-preview',['feishu','interviewer','hr_intake','hr_feedback_reminder','interviewer_feedback_reminder'].includes(job.kind)?JSON.stringify(job.payload.fields||job.payload,null,2):`发件 ${job.payload.from}\n收件 ${job.payload.to}\n回复 ${job.payload.replyTo}\n\n${job.payload.subject}\n\n${job.payload.body}`));
     for(const e of job.events||[])detail.append(el('p','rt-help',date(e.at)+' · '+(deliveryLabels[e.status]||e.status)+(e.code?' · '+e.code:'')));
     box.append(detail);
     if(!c.archived&&job.kind==='receipt'&&['FAILED','HELD','SIMULATED'].includes(job.status)&&c.deliveries.find(d=>d.kind==='receipt')?.id===job.id)box.append(button('重新预览回执',()=>void previewDelivery('receipt')));
@@ -386,14 +389,16 @@ async function interviewerSelect(context){
 }
 
 async function setView(view){
-  if(state.busy||templateWorkspace?.busy()||interviewWorkspace?.busy())return;
+  if(state.busy||templateWorkspace?.busy()||interviewWorkspace?.busy()||roleWorkspace?.busy())return;
+  if(view==='hr'&&!state.profile?.recruitmentCapabilities?.manageHr)return;
   if(templateWorkspace?.dirty()&&!confirm('模板有未保存的内容。离开并放弃这些修改？'))return;
   if(interviewWorkspace?.dirty()&&!confirm('面试表单有未保存的内容。离开并放弃这些修改？'))return;
-  templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;
+  roleWorkspace?.destroy();roleWorkspace=null;templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;
   closeDetail(true);state.view=view;
-  $('rt-content').hidden=view!=='candidates'||!canManage(state.profile);$('rw-interviews').hidden=view!=='interviews';$('rw-templates').hidden=view!=='templates';
+  $('rt-content').hidden=view!=='candidates'||!canManage(state.profile);$('rw-interviews').hidden=view!=='interviews';$('rw-templates').hidden=view!=='templates';$('rw-hr').hidden=view!=='hr';
   for(const b of document.querySelectorAll('[data-view]')){if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
   status();
+  if(view==='hr'){roleWorkspace=createRecruitmentRoleWorkspace({session,root:$('rw-hr'),onStatus:status});await roleWorkspace.load();}
   if(view==='candidates')await loadCandidates();
   if(view==='interviews'){interviewWorkspace=createInterviewWorkspace({session,root:$('rw-interview-list'),route:'my-interviews',onStatus:status});await interviewWorkspace.load();}
   if(view==='templates'){templateWorkspace=createTemplateWorkspace({session,root:$('rw-templates'),onStatus:status});await templateWorkspace.load();}

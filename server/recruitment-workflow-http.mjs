@@ -68,7 +68,7 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
       const prefix=interviewerRoute?'/api/recruitment-interviewer/':'/api/recruitment-admin/',embedded=path.startsWith(prefix+'embedded/'),route=path.slice((prefix+(embedded?'embedded/':'')).length),write=req.method==='POST';
       if(write&&(!(req.headers.origin==='https://internal.110-lab.cn'||local&&req.headers.origin==='http://'+req.headers.host)||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin')))throw new RecruitmentTestError(403,'请在招新管理页面操作');
       let actor=mail.identity(req,{embedded,write});if(write)assertWritable();
-      if(!write&&route==='session'){json(res,200,actor);return true;}
+      if(!write&&route==='session'){json(res,200,store.recruitmentSession(actor));return true;}
       if(interviewerRoute||route==='my-interviews'||route.startsWith('my-interviews/')){
         const ownRoute=interviewerRoute?route:route.replace(/^my-interviews/,'assignments');
         if(!write&&ownRoute==='assignments')json(res,200,store.interviewerList(actor));
@@ -81,9 +81,22 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
           else throw new RecruitmentTestError(404,'Not found');
         }return true;
       }
-      requireRecruitmentAdmin(actor);
+      if(route==='hr'){
+        // Directory membership is canonical and checked again after asynchronous lookup.
+        requireRecruitmentAdmin(actor);
+        if(!write)json(res,200,{...store.listHr(actor),...store.notificationStatus()});
+        else{
+          countWrite(actor);const input=await body(req),subject=actor.subject;
+          if(!input||typeof input!=='object')throw new RecruitmentTestError(400,'请求格式无效');
+          const directory=input.enabled?await mail.projectMembers(subject):null;
+          actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));assertWritable();
+          if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');
+          json(res,200,store.setHr(actor,input,directory?.members.find(m=>m.subject===input.subject)));void tick();
+        }return true;
+      }
+      store.requireOperator(actor);
       if(!write){
-        if(route==='members'){const members=await mail.projectMembers(actor.subject);const latest=requireRecruitmentAdmin(mail.identity(req,{embedded}));if(latest.subject!==actor.subject)throw new RecruitmentTestError(403,'登录身份已改变');json(res,200,members);}
+        if(route==='members'){const members=await mail.projectMembers(actor.subject);const latest=store.requireOperator(mail.identity(req,{embedded}));if(latest.subject!==actor.subject)throw new RecruitmentTestError(403,'登录身份已改变');json(res,200,members);}
         else if(/^images\/[a-f0-9]{64}$/.test(route)){const f=store.readImage(actor,route.slice(7));res.writeHead(200,{'Content-Type':f.mime,'Content-Length':f.bytes,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"});res.end(f.buffer);}
         else if(route==='candidates')json(res,200,store.list(actor));
         else if(route==='settings')json(res,200,store.settings(actor));
@@ -102,9 +115,9 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
           if(uploads.size>=2||uploads.has(actor.subject))throw new RecruitmentTestError(429,'已有简历正在上传');
           const candidate=store.get(actor,attachment[1]);if(candidate.archived)throw new RecruitmentTestError(409,'候选人已归档');
           const subject=actor.subject;uploads.add(subject);
-          try{const upload=await readTestResume(req);assertWritable();actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');json(res,200,store.attachResume(actor,candidate.id,upload));}finally{uploads.delete(subject);}
+          try{const upload=await readTestResume(req);assertWritable();actor=store.requireOperator(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');json(res,200,store.attachResume(actor,candidate.id,upload));}finally{uploads.delete(subject);}
         }else{
-          const input=await body(req,route==='images'?2900000:route.startsWith('templates')?262144:131072);assertWritable();actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));
+          const input=await body(req,route==='images'?2900000:route.startsWith('templates')?262144:131072);assertWritable();actor=store.requireOperator(mail.identity(req,{embedded,write:true}));
           const rendering=route==='templates/preview'||input?.action==='preview_composition';countWrite(actor,rendering);
           if(route==='images')json(res,201,store.saveImage(actor,input));
           else if(route==='candidates')json(res,201,store.create(actor,input));
@@ -112,7 +125,7 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
           else if(route==='templates')json(res,200,store.saveTemplate(actor,input));
           else if(route==='templates/preview')json(res,200,store.previewTemplate(actor,input));
           else{const match=/^candidates\/([a-f0-9-]{36})\/actions$/.exec(route);if(!match)throw new RecruitmentTestError(404,'Not found');let result;const {action,...data}=input;
-            if(action==='assign_interviewer'){const members=await mail.projectMembers(actor.subject);const subject=actor.subject;actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');assertWritable();result=store.assignInterviewer(actor,match[1],data,members.members.find(m=>m.subject===data.subject));}
+            if(action==='assign_interviewer'){const members=await mail.projectMembers(actor.subject);const subject=actor.subject;actor=store.requireOperator(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');assertWritable();result=store.assignInterviewer(actor,match[1],data,members.members.find(m=>m.subject===data.subject));}
             else if(action==='return_interview')result=store.returnInterview(actor,match[1],data);
             else if(action==='prepare_outcome')result=store.prepareOutcome(actor,match[1],data);
             else if(action==='send_outcome')result=store.confirmOutcome(actor,match[1],data);

@@ -40,7 +40,7 @@ test('intake is atomic, private, idempotent, bounded and permanently retained',t
  assert.equal(s.list(owner).items.length,1);assert.deepEqual(s.readResume(owner,r.id).buffer,pdf);
  assert.throws(()=>accept(s,{authorization,fields:{...fields,name:'其他人'}}),/回执/);
  assert.throws(()=>accept(s),/重复/);assert.throws(()=>s.receipt(r.id,key()),/回执/);
- assert.throws(()=>s.get({...owner,role:'member'},r.id),/管理员/);
+ assert.throws(()=>s.get({...owner,role:'member'},r.id),{status:404});
  assert.throws(()=>accept(s,{fields:{...fields,email:'other@example.com'},intakeRevision:0}),/更新/);
  now+=20*365*86400000;s.cleanup();assert.equal(s.receipt(r.id,authorization).status,'RECEIVED');assert.deepEqual(s.readResume(owner,r.id).buffer,pdf);
 });
@@ -84,7 +84,7 @@ test('Feishu adapter sends only an idempotent interviewer message through recrui
  const requests=[];const provider=createRecruitmentFeishuProvider({appId:RECRUITMENT_FEISHU_APP_ID,appSecret:'fictional-secret-for-tests'},{fetchImpl:async(url,opts)=>{requests.push({url,opts,body:JSON.parse(opts.body)});return {ok:true,status:200,json:async()=>url.endsWith('/internal')?{code:0,tenant_access_token:'fictional-token',expire:7200}:{code:0,data:{message_id:'om_fake'}}};}});
  const id=randomUUID(),assignmentId=randomUUID();const result=await provider.send({id,kind:'interviewer',payload:{assignmentId,subject:'tenant:on_fictional00001',name:'虚构面试官',candidateName:'虚构候选人',group:'开发组',url:'https://internal.110-lab.cn/recruitment/interviewer?assignment='+assignmentId}});
  assert.equal(result.messageId,'om_fake');assert.equal(requests.length,2);assert.equal(requests[0].body.app_id,RECRUITMENT_FEISHU_APP_ID);assert.equal(requests[1].body.uuid,id);assert.equal(requests[1].body.receive_id,'on_fictional00001');assert.match(requests[1].url,/im\/v1\/messages\?receive_id_type=union_id/);assert.ok(requests.every(r=>!r.url.includes('bitable')&&!r.url.includes('event')));
- await assert.rejects(provider.send({id,kind:'feishu',payload:{}}),/Invalid interviewer/);
+ await assert.rejects(provider.send({id,kind:'feishu',payload:{}}),/Invalid recruitment/);
 });
 test('HTTP website intake reaches admin list and template simulation, without exposing private files',async t=>{
  const s=fixture(t);let role='super_admin';const mail={enabled:true,workspaceDirectory:s.root,roleForSubject:()=>role,identity(req,{write}={}){if(req.headers.authorization!=='Bearer fixture-admin')throw new MailAuthError(401,'登录');if(write&&req.headers['x-csrf-token']!==owner.csrf)throw new MailAuthError(403,'CSRF');return {...owner,role};}};

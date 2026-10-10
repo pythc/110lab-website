@@ -17,11 +17,14 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
   };
   const assignmentView=(actor,c)=>{
     const a=assignment(c);if(!a||a.subject!==actor.subject)fail(404,'找不到分配给你的面试');
-    return {id:c.id,name:c.name,group:c.group,summary:c.summary,resume:c.resume,assignment:a,interview:c.interview,stage:c.stage,archived:c.archived};
+    return {id:c.id,revision:c.revision,createdAt:c.createdAt,updatedAt:c.updatedAt,name:c.name,group:c.group,summary:c.summary,resume:c.resume,assignment:a,interview:c.interview,stage:c.stage,archived:c.archived};
   };
   const journal=(actor,input,target,fn)=>{
     if(!actor?.subject)fail(401,'请先通过飞书登录');
     return tx(()=>{
+      // Cached submissions must not restore access after reassignment.
+      const assignmentId=target.slice(target.lastIndexOf(':')+1);
+      if(!db.prepare("SELECT 1 FROM candidates WHERE json_extract(data,'$.assignment.id')=? AND json_extract(data,'$.assignment.subject')=?").get(assignmentId,actor.subject))fail(404,'找不到分配给你的面试');
       const fingerprint=previewHash({target,input}),old=db.prepare('SELECT fingerprint,result FROM requests WHERE actor=? AND request_id=?').get(actor.subject,input.requestId);
       if(old){if(old.fingerprint!==fingerprint)fail(409,'请求内容已改变');return JSON.parse(old.result);}
       const value=fn();db.prepare('INSERT INTO requests VALUES(?,?,?,?)').run(actor.subject,input.requestId,fingerprint,JSON.stringify(value));return value;
@@ -41,12 +44,12 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
     mailImages(payload){return imageIds(payload.html).map(id=>{const row=db.prepare('SELECT metadata,content FROM mail_images WHERE id=?').get(id);if(!row)fail(409,'邮件图片不存在');return {...JSON.parse(row.metadata),buffer:Buffer.from(row.content)};});},
     interviewerList(actor){if(!actor?.subject)fail(401,'请先登录');return {items:db.prepare("SELECT data FROM candidates WHERE json_extract(data,'$.assignment.subject')=? ORDER BY rowid DESC LIMIT 1000").all(actor.subject).map(r=>assignmentView(actor,JSON.parse(r.data)))};},
     interviewerGet(actor,id){const row=db.prepare("SELECT data FROM candidates WHERE json_extract(data,'$.assignment.id')=? AND json_extract(data,'$.assignment.subject')=?").get(id,actor.subject);if(!row)fail(404,'找不到分配给你的面试');return assignmentView(actor,JSON.parse(row.data));},
-    proposeInterview(actor,id,raw){const input=z.object({...common,at:z.iso.datetime(),email:mailboxSchema,contact:text(500,1),location:z.url().max(500).refine(v=>new URL(v).protocol==='https:'&&!new URL(v).username&&!new URL(v).password,'请填写 HTTPS 面试链接')}).strict().parse(raw);
+    proposeInterview(actor,id,raw){const input=z.object({...common,at:z.iso.datetime(),durationMinutes:z.number().int().min(5).max(240).default(30),email:mailboxSchema,contact:text(500,1),location:z.url().max(500).refine(v=>new URL(v).protocol==='https:'&&!new URL(v).username&&!new URL(v).password,'请填写 HTTPS 面试链接')}).strict().parse(raw);
       return journal(actor,input,'interview-proposal:'+id,()=>{
         const row=db.prepare("SELECT data FROM candidates WHERE json_extract(data,'$.assignment.id')=? AND json_extract(data,'$.assignment.subject')=?").get(id,actor.subject);if(!row)fail(404,'找不到分配给你的面试');const c=JSON.parse(row.data),a=c.assignment;
         if(c.archived||c.stage!=='interview'||!['requested','changes_requested','submitted'].includes(a.status))fail(409,'这项面试安排已结束或审核 请联系管理员');
         if(a.revision!==input.revision)fail(409,'安排已更新 请刷新');const at=Date.parse(input.at);if(at<=now()||at>now()+366*86400000)fail(400,'请选择未来一年内的面试时间');
-        a.proposal={at:input.at,interviewer:a.name,email:input.email,contact:input.contact,location:input.location};a.status='submitted';a.revision++;a.submittedAt=stamp();c.notification=null;invalidateOutcome(c,stamp());c.revision++;event(c,actor,'面试官提交安排');put(c);return assignmentView(actor,c);
+        a.proposal={at:input.at,durationMinutes:input.durationMinutes,interviewer:a.name,email:input.email,contact:input.contact,location:input.location};a.status='submitted';a.revision++;a.submittedAt=stamp();c.notification=null;invalidateOutcome(c,stamp());c.revision++;event(c,actor,'面试官提交安排');put(c);return assignmentView(actor,c);
       });
     },
     assignInterviewer(actor,id,raw,member){const input=z.object({...common,subject:text(200,1)}).strict().parse(raw);if(!member||member.subject!==input.subject)fail(400,'请选择飞书通讯录中的成员');

@@ -1,3 +1,4 @@
+import {isRecruitmentIm} from './recruitment-notifications.mjs';
 import SMTPConnection from 'nodemailer/lib/smtp-connection';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import {readFileSync,lstatSync} from 'node:fs';
@@ -45,11 +46,11 @@ export function createWorkflowSmtpProvider(profiles,{localTest=false}={}){
 }
 export async function runWorkflowDeliveryOnce(store,{mode='dry-run',smtp,feishu,roleForSubject,simulate,allowedEmails,allowedSubjects,intervalMs=60000,deadlineMs=180000}={}){
   if(!['dry-run','live'].includes(mode))throw new Error('Invalid delivery mode');
-  store.recoverInterrupted();const job=store.claim({mode,intervalMs});if(!job)return null;
+  store.recoverInterrupted();store.scheduleNotifications?.();const job=store.claim({mode,intervalMs});if(!job)return null;
   let timer,result;const abort=new AbortController();
   try{
-    const role=job.actor==='website'?'member':await roleForSubject(job.actor),attachment=store.validateDelivery(job,role);
-    const im=['feishu','interviewer'].includes(job.kind);
+    const role=['website','recruitment-system'].includes(job.actor)?'member':await roleForSubject(job.actor),attachment=store.validateDelivery(job,role);
+    const im=isRecruitmentIm(job.kind);
     const message=im?null:await composeWorkflowMail(job,attachment,store.mailImages?.(job.payload)||[]);
     if(mode==='live'&&((im&&allowedSubjects&&!allowedSubjects.includes(job.payload.subject))||(!im&&allowedEmails&&!allowedEmails.includes(job.payload.to))))throw Object.assign(new Error('Test recipient is outside allowlist'),{code:'RECIPIENT_NOT_ALLOWED',command:'CONN'});
     if(mode==='dry-run'){
@@ -59,7 +60,7 @@ export async function runWorkflowDeliveryOnce(store,{mode='dry-run',smtp,feishu,
       result={status:'SIMULATED'};
     }else{
       // Validate again immediately before the network operation, after MIME work.
-      store.validateDelivery(job,job.actor==='website'?'member':await roleForSubject(job.actor));
+      store.validateDelivery(job,['website','recruitment-system'].includes(job.actor)?'member':await roleForSubject(job.actor));
       const operation=im?feishu?.send(job,{signal:abort.signal}):smtp?.send(job,message);
       if(!operation)throw Object.assign(new Error('Provider unavailable'),{code:'PROVIDER_NOT_CONFIGURED',command:'CONN'});
       const value=await Promise.race([operation,new Promise((_,reject)=>{timer=setTimeout(()=>{abort.abort();smtp?.abort();reject(Object.assign(new Error('Provider confirmation timeout'),{code:'SEND_TIMEOUT',command:'DATA'}));},deadlineMs);})]);
@@ -67,7 +68,7 @@ export async function runWorkflowDeliveryOnce(store,{mode='dry-run',smtp,feishu,
     }
   }catch(e){
     if(e.status===403||e.status===409||['PROVIDER_NOT_CONFIGURED','SENDER_NOT_CONFIGURED','FEISHU_NOT_CONFIGURED','INVALID_MAIL','RECIPIENT_NOT_ALLOWED'].includes(e.code))result={status:'FAILED',code:e.status===403?'PERMISSION_REVOKED':e.status===409?'PREVIEW_CHANGED':e.code};
-    else if(['feishu','interviewer'].includes(job.kind))result={status:e.confirmedRejected?'FAILED':'UNKNOWN',code:e.code||'FEISHU_UNCONFIRMED'};
+    else if(isRecruitmentIm(job.kind))result={status:e.confirmedRejected?'FAILED':'UNKNOWN',code:e.code||'FEISHU_UNCONFIRMED'};
     else result=classifyDeliveryError(e);
     if(result.status==='RETRYING'){if(job.attempts>=8)result.status='FAILED';else result.retryDelay=Math.min(12*3600000,60000*5**Math.min(job.attempts-1,5));}
   }finally{clearTimeout(timer);}

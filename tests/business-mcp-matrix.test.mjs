@@ -383,7 +383,7 @@ test('JSON-RPC tools/call covers every business MCP tool on loopback fixtures', 
 
   assert.equal((await h.tool(null, 'lab_whoami')).status, 401);
   assert.equal((await h.tool(narrow.token, 'lab_projects_list')).status, 403);
-  await failTool(member.token, 'lab_candidates_list', {}, body => assert.equal(body.code, 'FORBIDDEN'));
+  assert.equal(data(await ok(member.token, 'lab_candidates_list')).items.length, 0);
   await failTool(member.token, 'lab_updates_list', {}, body => assert.equal(body.code, 'FORBIDDEN'));
 
   const ownerMe = data(await ok(owner.token, 'lab_whoami'));
@@ -399,7 +399,8 @@ test('JSON-RPC tools/call covers every business MCP tool on loopback fixtures', 
   const memberMe = data(await ok(member.token, 'lab_whoami'));
   assert.equal(memberMe.role, 'member');
   assert.equal(memberMe.subject, memberIdentity.subject);
-  assert.equal(memberMe.capabilities.includes('lab_candidates_list'), false);
+  assert.equal(memberMe.capabilities.includes('lab_candidates_list'), true);
+  assert.equal(memberMe.capabilities.includes('lab_candidate_record'), false);
   assert.ok(memberMe.capabilities.includes('lab_project_save'));
 
   const found = data(await ok(owner.token, 'lab_members_search', {query: '虚构成员'}));
@@ -617,7 +618,7 @@ test('JSON-RPC tools/call covers every business MCP tool on loopback fixtures', 
   assert.equal(resumeRead.bytes, fictionalPdf().length);
   assert.equal(resumeRead.extraction.status, 'EXTRACTED');
   assert.match(resumeRead.extraction.segments[0].text, /Fictional resume/);
-  await failTool(member.token, 'lab_attachment_read', {reference: resumeDetail.resume.reference}, body => assert.equal(body.code, 'FORBIDDEN'));
+  await failTool(member.token, 'lab_attachment_read', {reference: resumeDetail.resume.reference}, body => {assert.equal(body.code, 'BUSINESS_ERROR');assert.match(body.message, /找不到分配给你的面试/);});
   const template = data(await ok(owner.token, 'lab_recruitment_template_save', {
     requestId: randomUUID(),
     template: {

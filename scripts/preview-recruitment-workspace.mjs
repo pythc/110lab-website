@@ -11,7 +11,7 @@ import {serveAsset} from '../server/assets.mjs';
 import {MailAuthError} from '../server/mail-auth.mjs';
 const directory=await mkdtemp(join(tmpdir(),'110lab-workspace-preview-'));
 let clock=Date.now()-86400000;
-const actor={subject:'fixture:preview',name:'林老师（虚构）',email:'interviewer@example.com',role:'super_admin',csrf:randomBytes(24).toString('hex')};
+const actor={subject:'fixture:on_preview0000001',name:'林老师（虚构）',email:'interviewer@example.com',role:'super_admin',csrf:randomBytes(24).toString('hex')};
 const s=openRecruitmentWorkflowStore({directory,deliveryMode:'dry-run',now:()=>clock});
 const action=(c,name,values={})=>s.act(actor,c.id,{requestId:randomUUID(),revision:c.revision,action:name,...values});
 const command=(c,name,values={})=>s[name](actor,c.id,{requestId:randomUUID(),revision:c.revision,...values});
@@ -32,7 +32,7 @@ for(let i=0;i<names.length;i++){
  if(i===6){const old=clock;clock+=7200000;c=s.get(actor,c.id);s.submitFeedback(actor,c.assignment.id,{requestId:randomUUID(),revision:c.assignment.revision,score:86,note:'项目讲解清晰，具备实践能力。仅为虚构评价。',recommendation:'recommend'});clock=old;}
 }
 clock=Date.now();
-const mail={enabled:true,workspaceDirectory:directory,roleForSubject:()=>actor.role,projectMembers:async()=>({members:[actor],source:'fixture'}),identity(req,{write}={}){if(write&&req.headers['x-csrf-token']!==actor.csrf)throw new MailAuthError(403,'CSRF');return actor;}};
+const mail={enabled:true,workspaceDirectory:directory,roleForSubject:()=>actor.role,projectMembers:async()=>({members:[actor,{subject:'fixture:on_hrpreview00001',name:'陈老师（虚构）',email:'hr@example.test'}],source:'fixture'}),identity(req,{write}={}){if(write&&req.headers['x-csrf-token']!==actor.csrf)throw new MailAuthError(403,'CSRF');return actor;}};
 const workflow=createRecruitmentWorkflowHttp({mail,enabled:true,store:s,localTest:true,deliveryMode:'dry-run'});
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
 const server=createServer(async(req,res)=>{try{

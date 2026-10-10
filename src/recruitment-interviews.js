@@ -33,7 +33,7 @@ export function createInterviewWorkspace({session,root,route='assignments',assig
     if(a.reviewNote)card.append(el('p','管理员说明：'+a.reviewNote,'rw-callout'));
     if(a.status==='approved'||c.stage!=='interview'||c.archived){
       const info=el('dl',undefined,'rw-facts');
-      for(const[label,value]of [['面试时间',date(c.interview?.at||p.at)],['面试官',a.name],['联系邮箱',c.interview?.email||p.email||a.email||'—']])info.append(el('dt',label),el('dd',value));
+      for(const[label,value]of [['面试时间',date(c.interview?.at||p.at)],['时长',(c.interview?.durationMinutes||p.durationMinutes||30)+' 分钟'],['面试官',a.name],['联系邮箱',c.interview?.email||p.email||a.email||'—']])info.append(el('dt',label),el('dd',value));
       const url=c.interview?.location||p.location;if(/^https:\/\//.test(url||'')){const link=el('a','打开会议链接','rt-button');link.href=url;link.target='_blank';link.rel='noopener noreferrer';link.onclick=e=>{if(session.embedded&&parent!==window){e.preventDefault();parent.postMessage({type:'110lab-workspace-open-link',url},'*');}};const cell=el('dd');cell.append(link);info.append(el('dt','会议'),cell);}
       card.append(info);
       if(a.feedback){const feedback=el('section',undefined,'rw-callout');feedback.append(el('h3','已提交的评价'),el('p',a.feedback.score+' 分 · '+({recommend:'建议录取',consider:'建议进一步讨论',decline:'建议不录取'}[a.feedback.recommendation])),el('p',a.feedback.note),el('small',date(a.feedback.at)+' · '+a.feedback.by));card.append(feedback);}
@@ -51,17 +51,17 @@ export function createInterviewWorkspace({session,root,route='assignments',assig
     if(kind==='feedback'){
       const score=add('score','综合评分（0–100）','number');score.min=0;score.max=100;
       const recommendation=add('recommendation','面试建议','select');recommendation.append(new Option('请选择',''),new Option('建议录取','recommend'),new Option('建议进一步讨论','consider'),new Option('建议不录取','decline'));
-      add('note','评价依据与建议','textarea');f.append(el('p','评价仅管理员和本次面试官可见，录取由管理员决定。','rt-help'));
+      add('note','评价依据与建议','textarea');f.append(el('p','评价仅 HR、管理员和本次面试官可见，录取由 HR 或管理员决定。','rt-help'));
     }else{
-      add('at','面试时间','datetime-local',p.at?local(p.at):'');add('location','会议链接（HTTPS）','url',p.location||'');add('email','候选人回复邮箱','email',p.email||a.email||'');add('contact','对外联系方式','text',p.contact||a.email||'');
-      f.append(el('p','时间按 '+Intl.DateTimeFormat().resolvedOptions().timeZone+' 填写。管理员审核后才会通知候选人。','rt-help'));
+      add('at','面试时间','datetime-local',p.at?local(p.at):'');const duration=add('durationMinutes','面试时长（分钟）','number',p.durationMinutes||30);duration.min=5;duration.max=240;duration.step=1;add('location','会议链接（HTTPS）','url',p.location||'');add('email','候选人回复邮箱','email',p.email||a.email||'');add('contact','对外联系方式','text',p.contact||a.email||'');
+      f.append(el('p','计划结束后未提交面评，将通过飞书提醒一次。时间按 '+Intl.DateTimeFormat().resolvedOptions().timeZone+' 填写。管理员审核后才会通知候选人。','rt-help'));
     }
     const error=el('p',undefined,'rt-form-error');error.setAttribute('role','alert');error.hidden=true;
     const submit=el('button',kind==='feedback'?'提交评价':a.status==='submitted'?'更新待审核安排':'提交安排','rt-button rt-primary');submit.type='submit';f.append(error,submit);
     let request=null;f.oninput=()=>{dirty=true;};
     f.onsubmit=async e=>{e.preventDefault();if(submitting||!f.reportValidity())return;const data=new FormData(f),payload={revision:a.revision};
       if(kind==='feedback')Object.assign(payload,{score:Number(data.get('score')),recommendation:data.get('recommendation'),note:data.get('note')});
-      else Object.assign(payload,{at:new Date(data.get('at')).toISOString(),location:data.get('location'),email:data.get('email'),contact:data.get('contact')});
+      else Object.assign(payload,{at:new Date(data.get('at')).toISOString(),durationMinutes:Number(data.get('durationMinutes')),location:data.get('location'),email:data.get('email'),contact:data.get('contact')});
       const fingerprint=JSON.stringify(payload);if(request?.fingerprint!==fingerprint)request={fingerprint,id:crypto.randomUUID()};
       submitting=true;submit.disabled=true;for(const n of fields)n.disabled=true;error.hidden=true;
       try{await session.request(route+'/'+a.id+(kind==='feedback'?'/feedback':''),{method:'POST',data:{...payload,requestId:request.id}});dirty=false;submitting=false;await load(true);onStatus(kind==='feedback'?'评价已提交，等待管理员决定':'安排已提交，等待管理员审核');}
