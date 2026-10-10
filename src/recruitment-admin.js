@@ -1,6 +1,6 @@
 import {createRecruitmentRoleWorkspace} from './recruitment-roles.js';
 import {saveResumeFile} from './resume-download.js';
-import {openResumePreview} from './resume-preview.js';
+import {createResumePreviewController} from './resume-preview.js';
 import Uppy from '@uppy/core';
 import Dashboard from '@uppy/dashboard';
 import zhCN from '@uppy/locales/lib/zh_CN.js';
@@ -42,8 +42,9 @@ function clearPrivate(){
   for(const id of ['rt-detail-title','rt-detail-stage','rt-notice-body','rt-notice-subject','rt-upload-status','rt-detail-updated'])$(id).textContent='';
   $('rt-search').value='';$('rt-stage').value='';$('rt-group').replaceChildren(new Option('所有组别',''));
 }
-let roleWorkspace=null,templateWorkspace=null,interviewWorkspace=null,resumeCleanup=null,resumeGeneration=0;
-function clearResumePreview(){resumeGeneration++;resumeCleanup?.();resumeCleanup=null;$('rw-resume-preview').replaceChildren();}
+let roleWorkspace=null,templateWorkspace=null,interviewWorkspace=null;
+const resumePreview=createResumePreviewController();
+function clearResumePreview(){resumePreview.destroy();$('rw-resume-preview').replaceChildren();}
 const session=createLabSession({apiRoot:'/api/recruitment-admin/',onStatus:status,onChange:profile=>{
   const changed=profile?.subject!==state.profile?.subject||profile?.role!==state.profile?.role||profile?.recruitmentRole!==state.profile?.recruitmentRole;
   if(changed||!profile)clearPrivate();
@@ -165,7 +166,7 @@ function renderDetail(){
 }
 function renderUpload(c){
   $('rt-resume-info').replaceChildren();$('rt-upload').replaceChildren();$('rt-upload-status').textContent='';
-  clearResumePreview();$('rw-upload-disclosure').hidden=c.archived;
+  resumePreview.sync(c);$('rw-upload-disclosure').hidden=c.archived;
   if(c.resume){const box=el('div','rt-resume-file');box.append(el('strong','',c.resume.filename),el('p','',Math.ceil(c.resume.bytes/1024)+' KB · '+'永久保留'),button('预览简历',()=>previewResume(c)));if(!session.embedded)box.append(button('下载',()=>void downloadResume(c)));$('rt-resume-info').append(box);}
   $('rt-upload').hidden=c.archived;$('rt-upload-actions').hidden=c.archived;
   if(c.archived){if(!c.resume)$('rt-resume-info').append(el('p','rt-help','没有保存的简历'));return;}
@@ -411,7 +412,6 @@ $('rw-interviews-refresh').onclick=()=>{if(interviewWorkspace?.busy())return;if(
 for(const[id,step]of [['rw-previous',-1],['rw-next',1]])$(id).onclick=()=>{const index=state.filtered.findIndex(c=>c.id===state.selected?.id);const c=state.filtered[index+step];if(c)void openCandidate(c.id);};
 window.addEventListener('beforeunload',e=>{if(templateWorkspace?.dirty()||interviewWorkspace?.dirty()){e.preventDefault();e.returnValue='';}});
 function previewResume(c){
-  clearResumePreview();const id=c.id,epoch=state.epoch,generation=resumeGeneration;
-  const current=()=>epoch===state.epoch&&state.selected?.id===id&&generation===resumeGeneration;
-  const viewer=openResumePreview({filename:c.resume.filename,load:()=>session.download('candidates/'+id+'/resume'),current});resumeCleanup=viewer.destroy;
+  const id=c.id,epoch=state.epoch;
+  resumePreview.show(c,{load:()=>session.download('candidates/'+id+'/resume'),current:()=>epoch===state.epoch&&state.selected?.id===id});
 }

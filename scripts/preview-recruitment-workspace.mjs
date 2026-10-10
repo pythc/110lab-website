@@ -5,6 +5,7 @@ import {readFile,mkdtemp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
 import {openRecruitmentWorkflowStore} from '../server/recruitment-workflow-store.mjs';
 import {createRecruitmentWorkflowHttp} from '../server/recruitment-workflow-http.mjs';
 import {runWorkflowDeliveryOnce} from '../server/recruitment-workflow-worker.mjs';
@@ -32,6 +33,16 @@ for(let i=0;i<names.length;i++){
  if(i===6){const old=clock;clock+=7200000;c=s.get(actor,c.id);s.submitFeedback(actor,c.assignment.id,{requestId:randomUUID(),revision:c.assignment.revision,score:86,note:'项目讲解清晰，具备实践能力。仅为虚构评价。',recommendation:'recommend'});clock=old;}
 }
 clock=Date.now();
+// Keep local-only deliveries queued to exercise the real 10-second detail poll.
+// No external provider runs in this preview server.
+if(process.argv.includes('--pending-delivery'))for(let c of s.list(actor).items.filter(c=>/^(陈|沈)/.test(c.name))){
+ if(c.stage==='screening')c=action(c,'screen',{assessmentRequired:false,note:'轮询预览回归'});
+ c=s.assignInterviewer(actor,c.id,{requestId:randomUUID(),revision:c.revision,subject:actor.subject},actor);
+ // Dry-run jobs normally finish immediately. Hold only these temporary fixture
+ // rows in QUEUED so the unmodified frontend takes its background refresh path.
+ const db=new DatabaseSync(join(s.root,'recruitment.sqlite'));
+ try{db.prepare("UPDATE deliveries SET status='QUEUED',next_at=? WHERE id=?").run(clock+86400000,c.assignment.deliveryId);}finally{db.close();}
+}
 const mail={enabled:true,workspaceDirectory:directory,roleForSubject:()=>actor.role,projectMembers:async()=>({members:[actor,{subject:'fixture:on_hrpreview00001',name:'陈老师（虚构）',email:'hr@example.test'}],source:'fixture'}),identity(req,{write}={}){if(write&&req.headers['x-csrf-token']!==actor.csrf)throw new MailAuthError(403,'CSRF');return actor;}};
 const workflow=createRecruitmentWorkflowHttp({mail,enabled:true,store:s,localTest:true,deliveryMode:'dry-run'});
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";

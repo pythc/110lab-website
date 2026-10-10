@@ -2,6 +2,22 @@
 // existing authenticated route, never a public or third-party document URL.
 const moduleUrl='/assets/recruitment-pdf-preview-v1.mjs?v=resume-preview-3';
 const renderers=()=>import(moduleUrl);
+
+// Candidate status polling must not reset the document, page or zoom. Only a
+// different candidate/assignment/attachment (or explicit teardown) invalidates it.
+export function createResumePreviewController(open=openResumePreview){
+  let key=null,viewer=null,generation=0;
+  const identity=c=>c?.resume?JSON.stringify([c.id,c.assignment?.id,c.resume.sha256,c.resume.uploadedAt,c.resume.filename]):null;
+  const destroy=()=>{generation++;viewer?.destroy();viewer=null;key=null;};
+  return {
+    show(candidate,{load,current=()=>true}){
+      destroy();key=identity(candidate);const gen=generation;
+      viewer=open({filename:candidate.resume.filename,load,current:()=>gen===generation&&current()});
+    },
+    sync(candidate){if(key!==identity(candidate))destroy();},
+    destroy
+  };
+}
 export function openResumePreview({filename,load,current=()=>true},env=globalThis,loadRenderers=renderers){
   const document=env.document,dialog=document.createElement('dialog');dialog.className='rw-resume-dialog';
   const header=document.createElement('header'),title=document.createElement('h2'),close=document.createElement('button'),body=document.createElement('div');

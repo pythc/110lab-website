@@ -1,10 +1,11 @@
 import {saveResumeFile} from './resume-download.js';
-import {openResumePreview} from './resume-preview.js';
+import {createResumePreviewController} from './resume-preview.js';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const date=s=>s?new Date(s).toLocaleString('zh-CN',{hour12:false}):'待填写';
 const local=s=>{const d=new Date(s);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
 export function createInterviewWorkspace({session,root,route='assignments',assignment=null,onStatus=()=>{}}){
-  let generation=0,dirty=false,submitting=false,disposed=false,downloading=false,selected=assignment,items=[],filter='active',preview=null;
+  let generation=0,dirty=false,submitting=false,disposed=false,downloading=false,selected=assignment,items=[],filter='active';
+  const preview=createResumePreviewController();
   const button=(label,fn,cls='rt-button')=>{const b=el('button',label,cls);b.type='button';b.onclick=fn;return b;};
   async function download(c){if(downloading)return;downloading=true;try{onStatus('正在下载简历');const blob=await session.download(route+'/'+c.assignment.id+'/resume');if(disposed)return;await saveResumeFile(blob,c.resume.filename,{embedded:session.embedded,current:()=>!disposed,onStatus});if(!disposed)onStatus('已发起简历下载，请查看客户端保存窗口或下载列表');}catch(e){if(!disposed)onStatus(e.message,true);}finally{downloading=false;}}
   async function load(force=false){
@@ -16,7 +17,7 @@ export function createInterviewWorkspace({session,root,route='assignments',assig
     }catch(e){if(gen===generation)onStatus(e.message,true);}finally{if(gen===generation)root.removeAttribute('aria-busy');}
   }
   function renderWorkspace(){
-    preview?.destroy();preview=null;
+    preview.sync(items.find(c=>c.assignment.id===selected));
     root.replaceChildren();
     if(selected){const c=items.find(c=>c.assignment.id===selected);if(c){if(!assignment)root.append(button('返回我的面试',()=>{if(submitting)return;if(dirty&&!confirm('填写内容尚未提交，确定返回列表？'))return;dirty=false;selected=null;renderWorkspace();},'rt-button rw-interview-back'));root.append(render(c));return;}selected=null;}
     const tabs=el('div',undefined,'rw-detail-tabs');for(const[key,label]of [['active','待处理与已安排'],['finished','已完成']]){const b=button(label,()=>{filter=key;renderWorkspace();});b.setAttribute('aria-pressed',String(filter===key));tabs.append(b);}root.append(tabs);
@@ -32,7 +33,7 @@ export function createInterviewWorkspace({session,root,route='assignments',assig
     const label=c.archived?'已归档':a.feedback?'评价已提交':c.stage!=='interview'?'流程已结束':({requested:'待填写安排',submitted:'等待管理员审核',changes_requested:'待修改安排',approved:'已确认面试'}[a.status]);
     header.append(name,el('span',label,'rt-pill'));card.append(header);
     if(c.summary)card.append(el('p',c.summary,'rw-summary'));
-    if(c.resume){const actions=el('div',undefined,'rt-inline-actions');actions.append(button('预览简历',()=>{preview?.destroy();const gen=generation;preview=openResumePreview({filename:c.resume.filename,load:()=>session.download(route+'/'+c.assignment.id+'/resume'),current:()=>!disposed&&generation===gen&&selected===c.assignment.id});}));if(!session.embedded)actions.append(button('下载简历',()=>void download(c)));card.append(actions);}
+    if(c.resume){const actions=el('div',undefined,'rt-inline-actions');actions.append(button('预览简历',()=>preview.show(c,{load:()=>session.download(route+'/'+c.assignment.id+'/resume'),current:()=>!disposed&&selected===c.assignment.id})));if(!session.embedded)actions.append(button('下载简历',()=>void download(c)));card.append(actions);}
     if(a.reviewNote)card.append(el('p','管理员说明：'+a.reviewNote,'rw-callout'));
     if(a.status==='approved'||c.stage!=='interview'||c.archived){
       const info=el('dl',undefined,'rw-facts');
@@ -73,5 +74,5 @@ export function createInterviewWorkspace({session,root,route='assignments',assig
     };
     return f;
   }
-  return {load,dirty:()=>dirty,busy:()=>submitting,destroy(){disposed=true;generation++;preview?.destroy();root.replaceChildren();}};
+  return {load,dirty:()=>dirty,busy:()=>submitting,destroy(){disposed=true;generation++;preview.destroy();root.replaceChildren();}};
 }
