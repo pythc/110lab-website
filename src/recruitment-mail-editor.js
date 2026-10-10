@@ -7,7 +7,7 @@ export async function mailPreview(session,payload,container){
   frame.srcdoc='<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'"><style>body{font:15px/1.75 system-ui;padding:20px;color:#243047}img{max-width:100%;height:auto}table{border-collapse:collapse}td,th{padding:8px}a{color:#5145ba}</style>'+doc.body.innerHTML;
 }
 const dataUrl=blob=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(blob);});
-export function mailEditor(session,template,container,onError){
+export function mailEditor(session,template,container,onError,onChange=()=>{}){
   const events=new AbortController();let savedRange=null,pickerRange=null,uploading=false,disabled=false,disposed=false;
   const toolbar=node('div');toolbar.className='rt-editor-toolbar';toolbar.setAttribute('role','toolbar');toolbar.setAttribute('aria-label','邮件正文排版');
   const editor=node('div');editor.className='rt-rich-editor';editor.contentEditable='true';editor.setAttribute('role','textbox');editor.setAttribute('aria-label','邮件富文本正文');editor.setAttribute('aria-multiline','true');
@@ -25,24 +25,35 @@ export function mailEditor(session,template,container,onError){
   const group=label=>{const g=node('div');g.className='rt-editor-group';g.setAttribute('role','group');g.setAttribute('aria-label',label);toolbar.append(g);return g;};
   const styles=group('文字样式'),alignment=group('段落与图片对齐'),insert=group('插入内容');
   const toggles=[];
-  const command=(name,value)=>{restore();document.execCommand(name,false,value);remember();update();};
+  const command=(name,value)=>{restore();document.execCommand(name,false,value);remember();update();onChange();};
   for(const [label,name]of [['加粗','bold'],['斜体','italic'],['下划线','underline'],['列表','insertUnorderedList']]){
     const b=add(styles,label,()=>command(name));toggles.push([b,name]);
   }
   for(const [label,name]of [['左对齐','justifyLeft'],['居中','justifyCenter'],['右对齐','justifyRight']]){
     const b=add(alignment,label,()=>{restore();const previous=document.queryCommandState('styleWithCSS');document.execCommand('styleWithCSS',false,true);try{command(name);}finally{document.execCommand('styleWithCSS',false,previous);}});toggles.push([b,name]);
   }
+  const history=group('撤销与恢复');add(history,'撤销',()=>command('undo'));add(history,'重做',()=>command('redo'));
+  const format=node('select');format.setAttribute('aria-label','段落格式');format.append(new Option('正文','p'),new Option('大标题','h2'),new Option('小标题','h3'),new Option('引用','blockquote'));format.addEventListener('change',()=>command('formatBlock',format.value));styles.append(format);
+  const imageTools=node('div');imageTools.className='rw-image-tools';imageTools.hidden=true;
+  const width=node('select');width.setAttribute('aria-label','图片显示宽度');width.append(...[160,240,360,480,600].map(v=>new Option(v+' px',String(v))));
+  const alt=node('input');alt.type='text';alt.maxLength=180;alt.placeholder='图片说明';alt.setAttribute('aria-label','图片说明');
+  let selectedImage=null;
+  width.onchange=()=>{if(selectedImage&&!disabled){selectedImage.width=Number(width.value);onChange();}};
+  alt.oninput=()=>{if(selectedImage&&!disabled){selectedImage.alt=alt.value;onChange();}};
+  imageTools.append(node('span','选中图片'),width,alt);add(imageTools,'删除图片',()=>{if(selectedImage){const r=document.createRange();r.selectNode(selectedImage);restore(r);command('delete');imageTools.hidden=true;}});
   function update(){
     if(disposed)return;
     const selection=getSelection(),range=selection.rangeCount?selection.getRangeAt(0):null;
     for(const [b,name]of toggles)b.setAttribute('aria-pressed',String(!!contains(range)&&document.queryCommandState(name)));
     for(const img of editor.querySelectorAll('img'))img.classList.remove('rt-selected-image');
+    if(imageTools.contains(document.activeElement))return;
+    selectedImage=null;imageTools.hidden=true;
     if(contains(range)&&range.startContainer===range.endContainer&&range.endOffset===range.startOffset+1){
-      const selected=range.startContainer.childNodes[range.startOffset];if(selected?.tagName==='IMG')selected.classList.add('rt-selected-image');
+      const selected=range.startContainer.childNodes[range.startOffset];if(selected?.tagName==='IMG'){selected.classList.add('rt-selected-image');selectedImage=selected;imageTools.hidden=false;width.value=String(selected.width||480);alt.value=selected.alt;}
     }
   }
   document.addEventListener('selectionchange',()=>{remember();update();},{signal:events.signal});
-  editor.addEventListener('input',()=>{remember();update();});
+  editor.addEventListener('input',()=>{remember();update();onChange();});
   editor.addEventListener('paste',e=>{e.preventDefault();if(!disabled)command('insertText',e.clipboardData.getData('text/plain'));});
   editor.addEventListener('drop',e=>e.preventDefault());
   editor.addEventListener('click',e=>{
@@ -67,7 +78,7 @@ export function mailEditor(session,template,container,onError){
       // Block markup lets the image align independently; native editing keeps undo/redo.
       const html='<p><img src="'+escape(url)+'" alt="'+escape(f.name)+'" width="480" data-mail-image="'+meta.id+'"></p><p><br></p>';
       if(!document.execCommand('insertHTML',false,html))throw Error('无法插入图片 请重新选择正文位置');
-      remember();update();notice.textContent='图片已插入';
+      remember();update();notice.textContent='图片已插入';onChange();
     }catch(e){if(!disposed){notice.hidden=true;onError(e.message);}}
     finally{uploading=false;file.disabled=disabled;upload.disabled=disabled;file.value='';pickerRange=null;}
   });
@@ -76,10 +87,12 @@ export function mailEditor(session,template,container,onError){
     img.dataset.mailImage=id;session.download('images/'+id).then(dataUrl).then(url=>{if(!disposed)img.src=url;}).catch(()=>{if(!disposed)img.alt='图片加载失败';});
   }
   const help=node('p','在正文中放置光标后插入图片 选中文字或点击图片可设置对齐 每张图片不超过 2 MB');help.className='rt-help';
-  container.append(toolbar,editor,file,notice,help);
+  container.append(toolbar,imageTools,editor,file,notice,help);
   return {
     destroy(){disposed=true;events.abort();},
-    setDisabled(value){disabled=value;editor.contentEditable=String(!value);for(const b of buttons)b.disabled=value;file.disabled=value||uploading;upload.disabled=value||uploading;},
+    setDisabled(value){disabled=value;editor.contentEditable=String(!value);for(const b of buttons)b.disabled=value;format.disabled=value;width.disabled=value;alt.disabled=value;file.disabled=value||uploading;upload.disabled=value||uploading;},
+    insertVariable(key){if(!disabled&&/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(key))command('insertText','{{'+key+'}}');},
+    get pending(){return uploading;},
     value(){
       if(uploading)throw Error('请等待图片上传完成');
       const clone=editor.cloneNode(true);

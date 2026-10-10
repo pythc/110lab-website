@@ -1,4 +1,5 @@
 import {createRecruitmentLifecycle} from './recruitment-lifecycle.mjs';
+import {invalidateOutcome,decisionContext} from './recruitment-workspace.mjs';
 import {cleanMailHtml,imageIds} from './recruitment-rich-mail.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync,lstatSync,chmodSync,openSync,closeSync,readFileSync,writeFileSync,readdirSync,unlinkSync} from 'node:fs';
@@ -70,6 +71,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
     CREATE INDEX IF NOT EXISTS intake_fingerprints ON intake_receipts(fingerprint,created_at);
     CREATE TABLE IF NOT EXISTS budgets(scope TEXT NOT NULL,key TEXT NOT NULL,bucket INTEGER NOT NULL,count INTEGER NOT NULL,PRIMARY KEY(scope,key,bucket));
     CREATE TABLE IF NOT EXISTS deliveries(id TEXT PRIMARY KEY,candidate_id TEXT NOT NULL,kind TEXT NOT NULL,mode TEXT NOT NULL,status TEXT NOT NULL,payload TEXT NOT NULL,actor TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,lease TEXT,lease_until INTEGER,next_at INTEGER NOT NULL,error TEXT,result TEXT);
+    CREATE INDEX IF NOT EXISTS delivery_candidate_kind_time ON deliveries(candidate_id,kind,created_at DESC);
     CREATE TABLE IF NOT EXISTS delivery_events(id INTEGER PRIMARY KEY,delivery_id TEXT NOT NULL,at INTEGER NOT NULL,status TEXT NOT NULL,code TEXT);
     CREATE TABLE IF NOT EXISTS delivery_clock(id INTEGER PRIMARY KEY CHECK(id=1),next_at INTEGER NOT NULL);
     INSERT OR IGNORE INTO delivery_clock VALUES(1,0);`);
@@ -134,7 +136,8 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
   };
   const modeFor=c=>liveTestEmails.includes(c.email)?'live':deliveryMode;
   const validateReceiptTemplate=t=>{if(t.kind!=='receipt')fail(400,'请选择投递回执模板');try{renderInterviewTemplate(t,{id:randomUUID(),name:'候选人',group:'组别',email:'fixture@example.com'});}catch{fail(400,'自动回执仅可使用投递信息 自定义必填变量需设置默认值');}};
-  const lifecycle=createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate,enqueue,settings,getTemplate,fail,requireAdmin:requireRecruitmentAdmin,mode:deliveryMode,modeFor,deliveryEvent});
+  const receiptStatus=id=>db.prepare("SELECT status FROM deliveries WHERE candidate_id=? AND kind='receipt' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(id)?.status||null;
+  const lifecycle=createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate,enqueue,settings,getTemplate,fail,requireAdmin:requireRecruitmentAdmin,mode:deliveryMode,modeFor,deliveryEvent,readResume});
   return {
     ...lifecycle,
     root:directory,mode:deliveryMode,close:()=>db.close(),
@@ -167,8 +170,8 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
     },
     hasReceipt(id,authorization){const supplied=keyHash(authorization);return !!(id===null?db.prepare('SELECT id FROM intake_receipts WHERE key_hash=?').get(supplied):db.prepare('SELECT id FROM intake_receipts WHERE id=? AND key_hash=?').get(id,supplied));},
     labInbox(){return {state:'ready',items:db.prepare('SELECT data FROM candidates ORDER BY rowid DESC LIMIT 1000').all().map(({data})=>{const c=JSON.parse(data);return {id:c.id,name:c.name,group:c.group,receivedAt:c.createdAt,deliveryStatus:'RECEIVED'};})};},
-    list(actor){requireRecruitmentAdmin(actor);return {mode:'managed',deliveryMode,testDeliveryEnabled:liveTestEmails.length>0,retention:'permanent',items:db.prepare("SELECT json_remove(data,'$.events','$.notification.body','$.notification.variables','$.summary','$.assessment.note','$.interview.note','$.decisionNote') data FROM candidates ORDER BY rowid DESC LIMIT 10000").all().map(r=>JSON.parse(r.data))};},
-    get(actor,id){requireRecruitmentAdmin(actor);return {...get(id),deliveries:db.prepare('SELECT * FROM deliveries WHERE candidate_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').all(id).map(deliveryView)};},
+    list(actor){requireRecruitmentAdmin(actor);return {mode:'managed',deliveryMode,testDeliveryEnabled:liveTestEmails.length>0,retention:'permanent',items:db.prepare("SELECT json_remove(data,'$.draftHistory','$.interviewHistory','$.assignmentHistory','$.resultNotification.html','$.resultNotification.body','$.assignment.feedback.note','$.notification.html','$.events','$.notification.body','$.notification.variables','$.summary','$.assessment.note','$.interview.note','$.decisionNote') data FROM candidates ORDER BY rowid DESC LIMIT 10000").all().map(r=>{const c=JSON.parse(r.data);return {...c,receiptStatus:receiptStatus(c.id)};})};},
+    get(actor,id){requireRecruitmentAdmin(actor);const c=get(id);return {...c,receiptStatus:receiptStatus(c.id),resultDraftValid:c.resultNotification?.status==='draft'&&c.resultNotification.contextHash===decisionContext(c),deliveries:db.prepare('SELECT * FROM deliveries WHERE candidate_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100').all(id).map(deliveryView)};},
     settings(actor){requireRecruitmentAdmin(actor);return settingsView();},
     saveSettings(actor,raw){superAdmin(actor);const input=settingsSchema.parse(raw);return mutate(actor,input,'settings',()=>{
       if(input.revision!==settings().revision)fail(409,'配置已更新 请刷新后重试');
@@ -206,6 +209,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       const action=input.action;
       if(action==='reject'&&db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind='interview' AND status='SENDING'").get(id))fail(409,'面试邮件正在交付 请等待结果后再结束流程');
       if(action==='prepare_notice'){
+        invalidateOutcome(c,stamp());
         if(c.assignment){if(c.assignment.status!=='submitted')fail(409,'请等待面试官提交安排');c.interview={...c.assignment.proposal};}
         if(c.stage!=='interview'||!c.interview)fail(409,'请先安排面试');
         if(db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind='interview' AND status IN ('QUEUED','SENDING','RETRYING','UNKNOWN')").get(id))fail(409,'邮件任务尚未结束 请先处理原任务');
@@ -220,6 +224,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
         if(payload.settingsRevision!==settings().revision)fail(409,'邮箱或联动配置已改变 请重新预览');
         if(kind==='interview'){
           if(c.stage!=='interview'||payload.status!=='draft')fail(409,'请先生成新的面试邮件预览');
+          if(Date.parse(c.interview.at)<=now())fail(409,'面试时间已过 请让面试官更新安排后重新审核');
           if(getTemplate(payload.templateId).revision!==payload.templateRevision)fail(409,'模板已改变 请重新生成预览');
         }
         if(kind==='receipt'){const last=db.prepare("SELECT status FROM deliveries WHERE candidate_id=? AND kind='receipt' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(c.id);if(!last||!['FAILED','HELD','SIMULATED'].includes(last.status))fail(409,'回执已发送或尚在处理 不可重复发送');}
@@ -252,10 +257,14 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
         if(row.kind==='outcome'&&c.resultNotification?.deliveryId===row.id)c.resultNotification.status='queued';
         if(row.kind==='interviewer'&&c.assignment?.deliveryId===row.id)c.assignment.notificationStatus='QUEUED';
       }else{
+        // Assigned interviewers own feedback. Legacy unassigned interviews keep
+        // their administrator entrypoint for backwards compatibility.
+        if(action==='interview'&&c.assignment)fail(409,'请由已分配的面试官填写评价');
         if(action==='schedule'&&c.assignment)fail(409,'已分配的面试须由面试官回填');
         if(action==='schedule'&&db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind='interview' AND status IN ('QUEUED','SENDING','RETRYING','UNKNOWN')").get(id))fail(409,'邮件任务尚未结束 暂不能调整面试');
         const machineCandidate={...c,notification:c.notification&&{...c.notification,status:c.notification.status==='sent'?'simulated':c.notification.status}};
         const next=nextRecruitmentStage(machineCandidate,input);if(!next)fail(409,'当前阶段不允许此操作');c.stage=next;
+        if(['screen','assessment','schedule','interview'].includes(action))invalidateOutcome(c,stamp());
         if(action==='screen')note=(input.assessmentRequired?'进入考核':'进入面试')+(note?' · '+note:'');
         if(action==='assessment')c.assessment={score:input.score,note};
         if(action==='schedule'){

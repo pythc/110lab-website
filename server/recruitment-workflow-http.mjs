@@ -31,7 +31,7 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
   const proxies=new Set(trustedProxies);if([...proxies].some(ip=>!isIP(ip)))throw new Error('Invalid recruitment trusted proxy');
   const assertWritable=()=>{if(freezeFile&&existsSync(freezeFile))throw new RecruitmentTestError(503,'招新操作暂时维护中 请稍后重试');};
   const writes=new Map(),uploads=new Set();let active=0,busy=false,stopped=false,activeJob;
-  const countWrite=actor=>{const time=now();for(const [key,value]of writes)if(time-value.at>=60000)writes.delete(key);const count=writes.get(actor.subject)||{at:time,count:0};if(++count.count>60)throw new RecruitmentTestError(429,'操作频繁 请稍后再试');writes.set(actor.subject,count);};
+  const countWrite=(actor,preview=false)=>{const time=now();for(const [key,value]of writes)if(time-value.at>=60000)writes.delete(key);const key=actor.subject+(preview?':preview':':write'),count=writes.get(key)||{at:time,count:0};if(++count.count>(preview?120:60))throw new RecruitmentTestError(429,'操作频繁 请稍后再试');writes.set(key,count);};
   const tick=async()=>{if(!store||busy||stopped||deliveryMode!=='dry-run'||freezeFile&&existsSync(freezeFile))return;busy=true;try{activeJob=runWorkflowDeliveryOnce(store,{mode:'dry-run',roleForSubject:s=>mail.roleForSubject(s),intervalMs:0});await activeJob;}catch(e){console.error('Recruitment simulation failed',e.code||e.name);}finally{busy=false;}};
   const timer=store&&deliveryMode==='dry-run'?setInterval(tick,1000):null;timer?.unref();
   const cleanup=store?setInterval(()=>{try{store.cleanup();}catch(e){console.error('Recruitment workflow cleanup failed',e.code||e.name);}},300000):null;cleanup?.unref();
@@ -69,11 +69,16 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
       if(write&&(!(req.headers.origin==='https://internal.110-lab.cn'||local&&req.headers.origin==='http://'+req.headers.host)||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin')))throw new RecruitmentTestError(403,'请在招新管理页面操作');
       let actor=mail.identity(req,{embedded,write});if(write)assertWritable();
       if(!write&&route==='session'){json(res,200,actor);return true;}
-      if(interviewerRoute){
-        if(!write&&route==='assignments')json(res,200,store.interviewerList(actor));
-        else{const match=/^assignments\/([a-f0-9-]{36})$/.exec(route);if(!match)throw new RecruitmentTestError(404,'Not found');
-          if(write){countWrite(actor);const input=await body(req);actor=mail.identity(req,{embedded,write:true});assertWritable();json(res,200,store.proposeInterview(actor,match[1],input));}
-          else json(res,200,store.interviewerGet(actor,match[1]));
+      if(interviewerRoute||route==='my-interviews'||route.startsWith('my-interviews/')){
+        const ownRoute=interviewerRoute?route:route.replace(/^my-interviews/,'assignments');
+        if(!write&&ownRoute==='assignments')json(res,200,store.interviewerList(actor));
+        else{const match=/^assignments\/([a-f0-9-]{36})(?:\/(feedback|resume))?$/.exec(ownRoute);if(!match)throw new RecruitmentTestError(404,'Not found');
+          if(!write&&match[2]==='resume'){
+            const c=store.interviewerGet(actor,match[1]),f=store.interviewerResume(actor,c.id);
+            res.writeHead(200,{'Content-Type':resumeTypes[f.extension],'Content-Length':f.bytes,'Content-Disposition':"attachment; filename=resume."+f.extension+"; filename*=UTF-8''"+encodeURIComponent(f.filename),'Cache-Control':'private, no-store','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-Type-Options':'nosniff'});res.end(f.buffer);
+          }else if(write&&match[2]!=='resume'){countWrite(actor);const input=await body(req);actor=mail.identity(req,{embedded,write:true});assertWritable();json(res,200,match[2]==='feedback'?store.submitFeedback(actor,match[1],input):store.proposeInterview(actor,match[1],input));}
+          else if(!write&&!match[2])json(res,200,store.interviewerGet(actor,match[1]));
+          else throw new RecruitmentTestError(404,'Not found');
         }return true;
       }
       requireRecruitmentAdmin(actor);
@@ -91,26 +96,30 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
           }else json(res,200,match[2]==='preview-outcome'?store.previewOutcome(actor,match[1]):match[2]?store.preview(actor,match[1],match[2].slice(8)):store.get(actor,match[1]));
         }
       }else{
-        countWrite(actor);
         const attachment=/^candidates\/([a-f0-9-]{36})\/resume$/.exec(route);
         if(attachment){
+          countWrite(actor);
           if(uploads.size>=2||uploads.has(actor.subject))throw new RecruitmentTestError(429,'已有简历正在上传');
           const candidate=store.get(actor,attachment[1]);if(candidate.archived)throw new RecruitmentTestError(409,'候选人已归档');
           const subject=actor.subject;uploads.add(subject);
           try{const upload=await readTestResume(req);assertWritable();actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');json(res,200,store.attachResume(actor,candidate.id,upload));}finally{uploads.delete(subject);}
         }else{
-          const input=await body(req,route==='images'?2900000:131072);assertWritable();actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));
+          const input=await body(req,route==='images'?2900000:route.startsWith('templates')?262144:131072);assertWritable();actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));
+          const rendering=route==='templates/preview'||input?.action==='preview_composition';countWrite(actor,rendering);
           if(route==='images')json(res,201,store.saveImage(actor,input));
           else if(route==='candidates')json(res,201,store.create(actor,input));
           else if(route==='settings')json(res,200,store.saveSettings(actor,input));
           else if(route==='templates')json(res,200,store.saveTemplate(actor,input));
+          else if(route==='templates/preview')json(res,200,store.previewTemplate(actor,input));
           else{const match=/^candidates\/([a-f0-9-]{36})\/actions$/.exec(route);if(!match)throw new RecruitmentTestError(404,'Not found');let result;const {action,...data}=input;
             if(action==='assign_interviewer'){const members=await mail.projectMembers(actor.subject);const subject=actor.subject;actor=requireRecruitmentAdmin(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');assertWritable();result=store.assignInterviewer(actor,match[1],data,members.members.find(m=>m.subject===data.subject));}
             else if(action==='return_interview')result=store.returnInterview(actor,match[1],data);
             else if(action==='prepare_outcome')result=store.prepareOutcome(actor,match[1],data);
             else if(action==='send_outcome')result=store.confirmOutcome(actor,match[1],data);
+            else if(action==='reschedule')result=store.requestReschedule(actor,match[1],data);
+            else if(action==='preview_composition')result=store.previewComposition(actor,match[1],data);
             else result=store.act(actor,match[1],input);json(res,200,result);}
-          void tick();
+          if(!rendering)void tick();
         }
       }
     }catch(e){

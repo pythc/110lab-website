@@ -2,9 +2,10 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {workflowText as text,mailboxSchema,renderRecruitmentTemplate,previewHash} from './recruitment-templates.mjs';
 import {imageIds,validateMailImage} from './recruitment-rich-mail.mjs';
+import {createRecruitmentWorkspace,decisionContext,invalidateOutcome} from './recruitment-workspace.mjs';
 
 // Uses the existing transaction and outbox. Nothing here calls a network API.
-export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate,enqueue,settings,getTemplate,fail,requireAdmin,mode,modeFor,deliveryEvent}){
+export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate,enqueue,settings,getTemplate,fail,requireAdmin,mode,modeFor,deliveryEvent,readResume}){
   const common={requestId:z.uuid(),revision:z.number().int().positive()};
   const assignment=c=>c.assignment;
   const cancelPending=(id,kinds,code)=>{for(const row of db.prepare("SELECT id,kind,status FROM deliveries WHERE candidate_id=? AND status IN ('QUEUED','RETRYING','SENDING','UNKNOWN')").all(id)){if(!kinds.includes(row.kind))continue;if(['SENDING','UNKNOWN'].includes(row.status))fail(409,'已有发送任务结果待核实');db.prepare("UPDATE deliveries SET status='FAILED',error=?,updated_at=? WHERE id=?").run(code,now(),row.id);deliveryEvent(row.id,'FAILED',code);}};
@@ -16,7 +17,7 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
   };
   const assignmentView=(actor,c)=>{
     const a=assignment(c);if(!a||a.subject!==actor.subject)fail(404,'找不到分配给你的面试');
-    return {id:c.id,name:c.name,group:c.group,assignment:a,interview:c.interview,stage:c.stage,archived:c.archived};
+    return {id:c.id,name:c.name,group:c.group,summary:c.summary,resume:c.resume,assignment:a,interview:c.interview,stage:c.stage,archived:c.archived};
   };
   const journal=(actor,input,target,fn)=>{
     if(!actor?.subject)fail(401,'请先通过飞书登录');
@@ -26,7 +27,7 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
       const value=fn();db.prepare('INSERT INTO requests VALUES(?,?,?,?)').run(actor.subject,input.requestId,fingerprint,JSON.stringify(value));return value;
     });
   };
-  return {
+  const lifecycle={
     mailPayload,
     receiptPayload(c){const t=getTemplate(settings().receiptTemplateId||'11011011-0110-4110-8110-110110110111');if(t.kind!=='receipt')fail(409,'请选择投递回执模板');return mailPayload(c,t);},
     saveImage(actor,raw){requireAdmin(actor);const input=z.object({requestId:z.uuid(),data:z.string().min(16).max(2800000).regex(/^[A-Za-z0-9+/]+={0,2}$/)}).strict().parse(raw);
@@ -45,7 +46,7 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
         const row=db.prepare("SELECT data FROM candidates WHERE json_extract(data,'$.assignment.id')=? AND json_extract(data,'$.assignment.subject')=?").get(id,actor.subject);if(!row)fail(404,'找不到分配给你的面试');const c=JSON.parse(row.data),a=c.assignment;
         if(c.archived||c.stage!=='interview'||!['requested','changes_requested','submitted'].includes(a.status))fail(409,'这项面试安排已结束或审核 请联系管理员');
         if(a.revision!==input.revision)fail(409,'安排已更新 请刷新');const at=Date.parse(input.at);if(at<=now()||at>now()+366*86400000)fail(400,'请选择未来一年内的面试时间');
-        a.proposal={at:input.at,interviewer:a.name,email:input.email,contact:input.contact,location:input.location};a.status='submitted';a.revision++;a.submittedAt=stamp();c.notification=null;c.revision++;event(c,actor,'面试官提交安排');put(c);return assignmentView(actor,c);
+        a.proposal={at:input.at,interviewer:a.name,email:input.email,contact:input.contact,location:input.location};a.status='submitted';a.revision++;a.submittedAt=stamp();c.notification=null;invalidateOutcome(c,stamp());c.revision++;event(c,actor,'面试官提交安排');put(c);return assignmentView(actor,c);
       });
     },
     assignInterviewer(actor,id,raw,member){const input=z.object({...common,subject:text(200,1)}).strict().parse(raw);if(!member||member.subject!==input.subject)fail(400,'请选择飞书通讯录中的成员');
@@ -54,7 +55,8 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
         if(c.notification?.status==='sent')fail(409,'面试邀请已发送 请先人工联系候选人调整');
         cancelPending(id,['interview','interviewer'],'ASSIGNMENT_REPLACED');
         const a={id:randomUUID(),subject:member.subject,name:member.name,email:member.email||'',status:'requested',revision:1,requestedAt:stamp()};
-        c.assignment=a;c.interview=null;c.notification=null;c.revision++;
+        if(c.assignment)(c.assignmentHistory||=[]).push({...c.assignment,replacedAt:stamp()});
+        c.assignment=a;c.interview=null;c.notification=null;invalidateOutcome(c,stamp());c.revision++;
         const payload={assignmentId:a.id,subject:a.subject,name:a.name,candidateName:c.name,group:c.group,settingsRevision:settings().revision,url:'https://internal.110-lab.cn/recruitment/interviewer?assignment='+a.id};
         a.deliveryId=enqueue(c,actor,'interviewer',payload);event(c,actor,'分配面试官',member.name);put(c);return c;
       });
@@ -62,7 +64,7 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
     returnInterview(actor,id,raw){const input=z.object({...common,note:text(2000,1)}).strict().parse(raw);return mutate(actor,input,'return:'+id,()=>{
       const c=get(id),a=assignment(c);if(c.revision!==input.revision||c.archived||c.stage!=='interview'||a?.status!=='submitted')fail(409,'面试安排已改变');
       cancelPending(id,['interview','interviewer'],'ARRANGEMENT_RETURNED');
-      a.status='changes_requested';a.revision++;a.reviewNote=input.note;c.notification=null;c.revision++;
+      a.status='changes_requested';a.revision++;a.reviewNote=input.note;c.notification=null;invalidateOutcome(c,stamp());c.revision++;
       a.deliveryId=enqueue(c,actor,'interviewer',{assignmentId:a.id,subject:a.subject,name:a.name,candidateName:c.name,group:c.group,note:input.note,settingsRevision:settings().revision,url:'https://internal.110-lab.cn/recruitment/interviewer?assignment='+a.id});event(c,actor,'退回面试安排',input.note);put(c);return c;
     });},
     prepareOutcome(actor,id,raw){const input=z.object({...common,outcome:z.enum(['accepted','rejected']),note:text(2000,1),templateId:z.uuid(),templateRevision:z.number().int().positive(),values:z.record(z.string(),text(1000))}).strict().parse(raw);
@@ -70,11 +72,12 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
         if(c.stage===input.outcome? !['failed','draft'].includes(c.resultNotification?.status) : input.outcome==='accepted'?c.stage!=='decision':['accepted','rejected'].includes(c.stage))fail(409,'当前阶段不能执行此决定');
         if(db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind IN ('outcome','interview') AND status IN ('SENDING','UNKNOWN')").get(id))fail(409,'先核实正在发送的邮件');
         const t=getTemplate(input.templateId);if(t.kind!==input.outcome||t.revision!==input.templateRevision)fail(409,'请选择对应的最新结果模板');
-        c.resultNotification={...mailPayload({...c,decisionNote:input.note},t,input.values),outcome:input.outcome,decisionNote:input.note,status:'draft'};c.revision++;event(c,actor,'生成结果邮件预览');put(c);return c;
+        invalidateOutcome(c,stamp());c.resultNotification={...mailPayload({...c,decisionNote:input.note},t,input.values),outcome:input.outcome,decisionNote:input.note,contextHash:decisionContext(c),status:'draft'};c.revision++;event(c,actor,'生成结果邮件预览');put(c);return c;
       });
     },
     confirmOutcome(actor,id,raw){const input=z.object({...common,previewHash:z.string().regex(/^[a-f0-9]{64}$/)}).strict().parse(raw);return mutate(actor,input,'confirm-outcome:'+id,()=>{
       const c=get(id),p=c.resultNotification;if(c.revision!==input.revision||c.archived||!p||p.status!=='draft'||previewHash(p)!==input.previewHash)fail(409,'结果预览已改变');
+      if(p.contextHash!==decisionContext(c))fail(409,'候选人情况已改变或草稿来自旧版本 请重新生成结果通知');
       if(c.stage!==p.outcome&&(p.outcome==='accepted'?c.stage!=='decision':['accepted','rejected'].includes(c.stage)))fail(409,'候选人阶段已改变');
       if(p.settingsRevision!==settings().revision||getTemplate(p.templateId).revision!==p.templateRevision)fail(409,'模板或邮箱已改变 请重新预览');
       if(db.prepare("SELECT id FROM deliveries WHERE candidate_id=? AND kind IN ('interview','interviewer') AND status IN ('SENDING','UNKNOWN')").get(id))fail(409,'面试通知正在发送或待核实');
@@ -83,4 +86,5 @@ export function createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate
     });},
     previewOutcome(actor,id){requireAdmin(actor);const c=get(id);if(!c.resultNotification)fail(409,'请先生成结果邮件');return {payload:c.resultNotification,previewHash:previewHash(c.resultNotification),mode:modeFor(c)};},
   };
+  return {...lifecycle,...createRecruitmentWorkspace({db,now,stamp,get,put,event,mutate,enqueue,settings,getTemplate,fail,requireAdmin,readResume,lifecycle,journal,assignmentView,cancelPending})};
 }

@@ -34,18 +34,21 @@ await writeFile(resolve(root,'dist/mail.html'),mailHTML.replace('/* MAIL_CSS */'
 const [recruitmentTestHTML,recruitmentTestCSS,recruitmentTestJS]=await Promise.all([readFile(resolve(root,'src/recruitment-test.html'),'utf8'),readFile(resolve(root,'src/recruitment-test.css'),'utf8'),bundle('src/recruitment-test.js')]);
 const uppyCSS=(await Promise.all(['node_modules/@uppy/core/dist/style.min.css','node_modules/@uppy/dashboard/dist/style.min.css'].map(p=>readFile(resolve(root,p),'utf8')))).join('\n');
 await writeFile(resolve(root,'dist/recruitment-test.html'),recruitmentTestHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentTestJS));
-const [recruitmentHTML,recruitmentJS,mailEditorCSS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js'),readFile(resolve(root,'src/recruitment-mail-editor.css'),'utf8')]);
-await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS+'\n'+mailEditorCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
+const [recruitmentHTML,recruitmentJS,mailEditorCSS,recruitmentWorkspaceCSS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js'),readFile(resolve(root,'src/recruitment-mail-editor.css'),'utf8'),readFile(resolve(root,'src/recruitment-workspace.css'),'utf8')]);
+await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS+'\n'+mailEditorCSS+'\n'+recruitmentWorkspaceCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
 const [honorsHTML,honorsCSS,honorsJS]=await Promise.all([readFile(resolve(root,'src/honors.html'),'utf8'),readFile(resolve(root,'src/honors.css'),'utf8'),bundle('src/honors.js')]);
 await writeFile(resolve(root,'dist/honors.html'),honorsHTML.replace('/* HONORS_CSS */',()=>honorsCSS).replace('/* HONORS_SCRIPT */',()=>honorsJS));
 await rm(resolve(root,'dist/assets'),{recursive:true,force:true});
 await cp(resolve(root,'src/assets'),resolve(root,'dist/assets'),{recursive:true});
+await writeFile(resolve(root,'dist/assets/recruitment-pdf-preview-v1.mjs'),await bundle('src/recruitment-pdf-preview.js'));
+await cp(resolve(root,'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),resolve(root,'dist/assets/recruitment-pdf-worker-6.4.299.mjs'));
+await cp(resolve(root,'node_modules/pdfjs-dist/LICENSE'),resolve(root,'dist/assets/recruitment-pdf-LICENSE.txt'));
 const localBridge=await build({entryPoints:[resolve(root,'server/local-portal-bridge.mjs')],outfile:resolve(root,'plugin/110lab/mcp/portal-bridge.mjs'),bundle:true,metafile:true,format:'esm',platform:'node',target:'node20',minify:true,banner:{js:'import {createRequire as __createRequire} from "node:module";const require=__createRequire(import.meta.url);'}});
 const packages=new Set(Object.keys(localBridge.metafile.inputs).filter(p=>p.includes('node_modules/')).map(p=>{const parts=p.split('node_modules/').at(-1).split('/');return parts[0].startsWith('@')?parts.slice(0,2).join('/'):parts[0];})),notices=[];
 for(const name of packages){let found=false;for(const file of ['LICENSE','LICENSE.md','LICENSE.txt','LICENSE-MIT','LICENCE']){try{notices.push('Package: '+name+'\n'+await readFile(resolve(root,'node_modules',name,file),'utf8'));found=true;break;}catch(e){if(e.code!=='ENOENT')throw e;}}if(!found)throw new Error('Missing license notice for '+name);}
 await writeFile(resolve(root,'plugin/110lab/mcp/NOTICE.txt'),notices.join('\n\n'));
 
 const interviewerHTML=await readFile(resolve(root,'src/recruitment-interviewer.html'),'utf8'),interviewerJS=await bundle('src/recruitment-interviewer.js');
-await writeFile(resolve(root,'dist/recruitment-interviewer.html'),interviewerHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>interviewerJS));
+await writeFile(resolve(root,'dist/recruitment-interviewer.html'),interviewerHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>recruitmentTestCSS+'\n'+recruitmentWorkspaceCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>interviewerJS));
 
 console.log('110lab built: static homepage + workbench + MCP App');
