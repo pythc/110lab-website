@@ -1,4 +1,5 @@
 import {createRecruitmentRoleWorkspace} from './recruitment-roles.js';
+import {saveResumeFile} from './resume-download.js';
 import Uppy from '@uppy/core';
 import Dashboard from '@uppy/dashboard';
 import zhCN from '@uppy/locales/lib/zh_CN.js';
@@ -201,7 +202,7 @@ function renderUpload(c){
 }
 async function downloadResume(c){
   if(state.busy)return;const epoch=state.epoch;setBusy(true);
-  try{const blob=await session.download('candidates/'+c.id+'/resume');if(epoch!==state.epoch)return;const url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=c.resume.filename;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}
+  try{status('正在下载简历');const blob=await session.download('candidates/'+c.id+'/resume');if(epoch!==state.epoch)return;await saveResumeFile(blob,c.resume.filename,{embedded:session.embedded,current:()=>epoch===state.epoch,onStatus:status});if(epoch===state.epoch)status('已发起简历下载，请查看客户端保存窗口或下载列表');}
   catch(error){if(epoch===state.epoch)status(error.message,true);}finally{if(epoch===state.epoch)setBusy(false);}
 }
 const actionTitles={reschedule:'发起面试改期',send_receipt:'检查并发送投递回执',assign_interviewer:'分配飞书面试官',return_interview:'退回面试安排',prepare_outcome:'结果邮件预览',send_outcome:'确认决定并发送结果邮件',create:'新建候选人',screen:'完成初筛',assessment:'记录考核结果',schedule:'安排面试',interview:'记录面试反馈',accept:'确认录取',reject:'结束为未通过',archive:'归档候选人',prepare_notice:'审核面试安排',send_notice:'审核并发送面试邀请',confirm_forward:'确认简历转送',sync_feishu:'确认飞书联动',retry_delivery:'重试投递',resolve_delivery:'核实投递结果',settings:'邮箱设置',templates:'邮件模板'};

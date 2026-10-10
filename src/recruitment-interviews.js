@@ -1,10 +1,11 @@
+import {saveResumeFile} from './resume-download.js';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
 const date=s=>s?new Date(s).toLocaleString('zh-CN',{hour12:false}):'待填写';
 const local=s=>{const d=new Date(s);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);};
 export function createInterviewWorkspace({session,root,route='assignments',assignment=null,onStatus=()=>{}}){
-  let generation=0,dirty=false,submitting=false,disposed=false,selected=assignment,items=[],filter='active';
+  let generation=0,dirty=false,submitting=false,disposed=false,downloading=false,selected=assignment,items=[],filter='active';
   const button=(label,fn,cls='rt-button')=>{const b=el('button',label,cls);b.type='button';b.onclick=fn;return b;};
-  async function download(c){try{const blob=await session.download(route+'/'+c.assignment.id+'/resume');if(disposed)return;const url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=c.resume.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(e){onStatus(e.message,true);}}
+  async function download(c){if(downloading)return;downloading=true;try{onStatus('正在下载简历');const blob=await session.download(route+'/'+c.assignment.id+'/resume');if(disposed)return;await saveResumeFile(blob,c.resume.filename,{embedded:session.embedded,current:()=>!disposed,onStatus});if(!disposed)onStatus('已发起简历下载，请查看客户端保存窗口或下载列表');}catch(e){if(!disposed)onStatus(e.message,true);}finally{downloading=false;}}
   async function load(force=false){
     if(disposed||submitting||dirty&&!force)return;
     const gen=++generation;root.setAttribute('aria-busy','true');
