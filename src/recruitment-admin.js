@@ -18,10 +18,10 @@ const terminal=c=>['accepted','rejected'].includes(c.stage);
 const canManage=profile=>['admin','super_admin'].includes(profile?.role);
 const status=(text='',error=false)=>{const n=$('rt-status');n.textContent=text;n.hidden=!text;n.dataset.error=String(error);};
 const destroyUpload=()=>{state.abort?.abort();state.abort=null;state.uppy?.destroy();state.uppy=null;};
-function closeForm(force=false){if(state.busy&&!force)return;$('rt-form-dialog').close();state.form=null;}
+function closeForm(force=false){if(state.busy&&!force)return;$('rt-form-dialog').close();state.form?.editor?.destroy();state.form=null;}
 function closeDetail(force=false){if(state.busy&&!force)return;state.opening++;destroyUpload();$('rt-detail').close();state.selected=null;}
 function setBusy(value){
-  state.busy=value;
+  state.busy=value;state.form?.editor?.setDisabled(value);
   for(const id of ['rt-new','rt-new-empty','rt-templates','rt-settings','rt-refresh','rt-logout','rt-form-submit','rt-form-cancel','rt-form-close','rt-detail-close','rt-detail-done','rt-upload-submit'])$(id).disabled=value;
   for(const b of $('rt-detail-actions').querySelectorAll('button'))b.disabled=value;
   for(const b of $('rt-resume-info').querySelectorAll('button'))b.disabled=value;
@@ -335,7 +335,7 @@ function renderTemplateEditor(templates){
   const content=el('div','rt-form-fields');$('rt-form-fields').append(content);
   const render=()=>{
     const t=templates.find(t=>t.id===selector.value)||{id:crypto.randomUUID(),revision:0,name:'',subject:'[110实验室面试邀请] {{name}}',body:'{{name}} 同学你好\n\n面试时间：{{interviewTime}}\n面试官：{{interviewerName}}\n联系方式：{{interviewerContact}}\n地点：{{location}}',variables:[]};context.editingTemplate=t;
-    content.replaceChildren();
+    context.editor?.destroy();content.replaceChildren();
     const kind=selectField('kind','模板用途',[['interview','面试邀请'],['receipt','投递回执'],['accepted','录取通知'],['rejected','未通过通知']],t.kind||'interview');content.append(kind.parentElement);
     for(const [key,label,type,maxLength]of [['name','模板名称','text',80],['subject','主题','text',180]]){const n=field(key,label,{value:t[key],type,maxLength});content.append(n.parentElement);}
     context.editor=mailEditor(session,t,content,message=>{ $('rt-form-error').hidden=false;$('rt-form-error').textContent=message;});

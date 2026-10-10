@@ -1,0 +1,12 @@
+/* Mail template controls retain the caret while formatting or uploading. */
+.rt-editor-toolbar{gap:8px 12px;padding:10px;background:#f7f8fc;border:1px solid #dce2eb;border-radius:10px}
+.rt-editor-group{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.rt-editor-group+.rt-editor-group{border-left:1px solid #dce2eb;padding-left:12px}
+.rt-editor-toolbar .rt-button{padding:7px 10px;font-size:13px;min-height:34px}
+.rt-editor-toolbar .rt-button[aria-pressed="true"]{background:#eeebff;border-color:#b9b0ec;color:#4632a5}
+.rt-rich-editor{font:15px/1.75 system-ui;color:#243047;max-height:440px;overflow-wrap:anywhere}
+.rt-rich-editor:focus{outline:2px solid #b5a9ef;outline-offset:2px}
+.rt-rich-editor img{cursor:pointer;vertical-align:middle}
+.rt-rich-editor img.rt-selected-image{outline:2px solid #6b50ce;outline-offset:3px}
+.rt-editor-status{margin:0;font-size:13px;color:#526079}
+@media(max-width:520px){.rt-editor-group+.rt-editor-group{border-left:0;padding-left:0}.rt-editor-toolbar{gap:8px}.rt-rich-editor{padding:12px}}

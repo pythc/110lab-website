@@ -34,8 +34,8 @@ await writeFile(resolve(root,'dist/mail.html'),mailHTML.replace('/* MAIL_CSS */'
 const [recruitmentTestHTML,recruitmentTestCSS,recruitmentTestJS]=await Promise.all([readFile(resolve(root,'src/recruitment-test.html'),'utf8'),readFile(resolve(root,'src/recruitment-test.css'),'utf8'),bundle('src/recruitment-test.js')]);
 const uppyCSS=(await Promise.all(['node_modules/@uppy/core/dist/style.min.css','node_modules/@uppy/dashboard/dist/style.min.css'].map(p=>readFile(resolve(root,p),'utf8')))).join('\n');
 await writeFile(resolve(root,'dist/recruitment-test.html'),recruitmentTestHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentTestJS));
-const [recruitmentHTML,recruitmentJS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js')]);
-await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
+const [recruitmentHTML,recruitmentJS,mailEditorCSS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js'),readFile(resolve(root,'src/recruitment-mail-editor.css'),'utf8')]);
+await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS+'\n'+mailEditorCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
 const [honorsHTML,honorsCSS,honorsJS]=await Promise.all([readFile(resolve(root,'src/honors.html'),'utf8'),readFile(resolve(root,'src/honors.css'),'utf8'),bundle('src/honors.js')]);
 await writeFile(resolve(root,'dist/honors.html'),honorsHTML.replace('/* HONORS_CSS */',()=>honorsCSS).replace('/* HONORS_SCRIPT */',()=>honorsJS));
 await rm(resolve(root,'dist/assets'),{recursive:true,force:true});
