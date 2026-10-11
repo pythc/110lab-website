@@ -1,3 +1,4 @@
+import {createOfferWorkspace} from './recruitment-offers.js';
 import {createRecruitmentRoleWorkspace} from './recruitment-roles.js';
 import {saveResumeFile} from './resume-download.js';
 import {createResumePreviewController} from './resume-preview.js';
@@ -36,13 +37,13 @@ function setBusy(value){
 }
 function clearPrivate(){
   status();
-  state.epoch++;state.load++;state.opening++;state.openedLinked=false;roleWorkspace?.destroy();roleWorkspace=null;templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;$('rw-templates').replaceChildren();$('rw-interview-list').replaceChildren();
+  state.epoch++;state.load++;state.opening++;state.openedLinked=false;offerWorkspace?.destroy();offerWorkspace=null;roleWorkspace?.destroy();roleWorkspace=null;templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;$('rw-templates').replaceChildren();$('rw-interview-list').replaceChildren();
   closeForm(true);closeDetail(true);state.items=[];state.profile=null;setBusy(false);
   $('rt-deliveries').replaceChildren();$('rt-rows').replaceChildren();$('rt-count').textContent='';$('rt-metrics').replaceChildren();$('rt-detail-info').replaceChildren();$('rt-events').replaceChildren();$('rt-current').replaceChildren();$('rt-detail-actions').replaceChildren();$('rt-form-fields').replaceChildren();$('rt-resume-info').replaceChildren();$('rt-upload').replaceChildren();
   for(const id of ['rt-detail-title','rt-detail-stage','rt-notice-body','rt-notice-subject','rt-upload-status','rt-detail-updated'])$(id).textContent='';
   $('rt-search').value='';$('rt-stage').value='';$('rt-group').replaceChildren(new Option('所有组别',''));
 }
-let roleWorkspace=null,templateWorkspace=null,interviewWorkspace=null;
+let offerWorkspace=null,roleWorkspace=null,templateWorkspace=null,interviewWorkspace=null;
 const resumePreview=createResumePreviewController();
 function clearResumePreview(){resumePreview.destroy();$('rw-resume-preview').replaceChildren();}
 const session=createLabSession({apiRoot:'/api/recruitment-admin/',onStatus:status,onChange:profile=>{
@@ -53,7 +54,7 @@ const session=createLabSession({apiRoot:'/api/recruitment-admin/',onStatus:statu
   $('rt-content').hidden=!allowed||state.view!=='candidates'||!!state.selected;$('rt-locked').hidden=!!profile;$('rw-nav').hidden=!profile;
   for(const n of document.querySelectorAll('[data-view]'))n.hidden=n.dataset.view==='hr'?!profile?.recruitmentCapabilities?.manageHr:!allowed&&n.dataset.view!=='interviews';
   if(profile?.role!=='super_admin')$('rt-settings').hidden=true;
-  if(!profile){$('rw-interviews').hidden=true;$('rw-templates').hidden=true;$('rw-hr').hidden=true;}
+  if(!profile){$('rw-offers').hidden=true;$('rw-interviews').hidden=true;$('rw-templates').hidden=true;$('rw-hr').hidden=true;}
   $('rt-login').hidden=!!profile;$('rt-logout').hidden=!profile;
   $('rt-login-main').hidden=!!profile;$('rt-settings').hidden=profile?.role!=='super_admin';
   $('rt-person').textContent=profile?profile.name+' · '+(profile.recruitmentRole==='hr'?'HR':{super_admin:'超级管理员',admin:'管理员',member:'面试官'}[profile.role]||'面试官'):'未登录';
@@ -64,6 +65,7 @@ const session=createLabSession({apiRoot:'/api/recruitment-admin/',onStatus:statu
   else if(profile&&state.view==='interviews'&&!interviewWorkspace)void setView('interviews');
   else if(profile?.recruitmentCapabilities?.manageHr&&state.view==='hr'&&!roleWorkspace)void setView('hr');
   else if(state.view==='hr'&&!profile?.recruitmentCapabilities?.manageHr)void setView(allowed?'candidates':'interviews');
+  else if(allowed&&state.view==='offers'&&!offerWorkspace)void setView('offers');
   else if(allowed&&state.view==='templates'&&!templateWorkspace)void setView('templates');
   if(!allowed)$('rt-mode').textContent=profile?'面试官工作区':'未连接';
 }});
@@ -392,15 +394,17 @@ async function interviewerSelect(context){
 }
 
 async function setView(view){
-  if(state.busy||templateWorkspace?.busy()||interviewWorkspace?.busy()||roleWorkspace?.busy())return;
+  if(state.busy||offerWorkspace?.busy()||templateWorkspace?.busy()||interviewWorkspace?.busy()||roleWorkspace?.busy())return;
   if(view==='hr'&&!state.profile?.recruitmentCapabilities?.manageHr)return;
+  if(view==='offers'&&!canManage(state.profile))return;
   if(templateWorkspace?.dirty()&&!confirm('模板有未保存的内容。离开并放弃这些修改？'))return;
   if(interviewWorkspace?.dirty()&&!confirm('面试表单有未保存的内容。离开并放弃这些修改？'))return;
-  roleWorkspace?.destroy();roleWorkspace=null;templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;
+  offerWorkspace?.destroy();offerWorkspace=null;roleWorkspace?.destroy();roleWorkspace=null;templateWorkspace?.destroy();templateWorkspace=null;interviewWorkspace?.destroy();interviewWorkspace=null;
   closeDetail(true);state.view=view;
-  $('rt-content').hidden=view!=='candidates'||!canManage(state.profile);$('rw-interviews').hidden=view!=='interviews';$('rw-templates').hidden=view!=='templates';$('rw-hr').hidden=view!=='hr';
+  $('rt-content').hidden=view!=='candidates'||!canManage(state.profile);$('rw-interviews').hidden=view!=='interviews';$('rw-templates').hidden=view!=='templates';$('rw-hr').hidden=view!=='hr';$('rw-offers').hidden=view!=='offers';
   for(const b of document.querySelectorAll('[data-view]')){if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');}
   status();
+  if(view==='offers'){offerWorkspace=createOfferWorkspace({session,root:$('rw-offers'),onStatus:status});await offerWorkspace.load();}
   if(view==='hr'){roleWorkspace=createRecruitmentRoleWorkspace({session,root:$('rw-hr'),onStatus:status});await roleWorkspace.load();}
   if(view==='candidates')await loadCandidates();
   if(view==='interviews'){interviewWorkspace=createInterviewWorkspace({session,root:$('rw-interview-list'),route:'my-interviews',onStatus:status});await interviewWorkspace.load();}

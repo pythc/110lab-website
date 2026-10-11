@@ -44,7 +44,9 @@ if(process.argv.includes('--pending-delivery'))for(let c of s.list(actor).items.
  try{db.prepare("UPDATE deliveries SET status='QUEUED',next_at=? WHERE id=?").run(clock+86400000,c.assignment.deliveryId);}finally{db.close();}
 }
 const mail={enabled:true,workspaceDirectory:directory,roleForSubject:()=>actor.role,projectMembers:async()=>({members:[actor,{subject:'fixture:on_hrpreview00001',name:'陈老师（虚构）',email:'hr@example.test'}],source:'fixture'}),identity(req,{write}={}){if(write&&req.headers['x-csrf-token']!==actor.csrf)throw new MailAuthError(403,'CSRF');return actor;}};
-const workflow=createRecruitmentWorkflowHttp({mail,enabled:true,store:s,localTest:true,deliveryMode:'dry-run'});
+const offerAccounts=[{id:randomUUID(),name:'陈知夏（虚构）',studentNo:'TEST20260001',email:'candidate0@example.test'},{id:randomUUID(),name:'周一凡（虚构）',studentNo:'TEST20260002',email:'candidate1@example.test'}];
+const offerIntegration={configured:true,authenticate(){throw new MailAuthError(401,'Local preview has no service access');},async search({query}){return {items:offerAccounts.filter(a=>[a.name,a.studentNo,a.email].join(' ').includes(query)),hasMore:false};},async get(id){const a=offerAccounts.find(a=>a.id===id);if(!a)throw new MailAuthError(404,'测试账号不存在');return a;}};
+const workflow=createRecruitmentWorkflowHttp({mail,enabled:true,store:s,localTest:true,deliveryMode:'dry-run',offerIntegration});
 const csp="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'";
 const server=createServer(async(req,res)=>{try{
  if(req.headers.host!=='127.0.0.1:4196'){res.writeHead(421);res.end();return;}

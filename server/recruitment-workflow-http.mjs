@@ -10,6 +10,8 @@ import {MailAccessError} from './mail-access-store.mjs';
 import {readApplication,resumeTypes} from './recruitment-files.mjs';
 import {readTestResume} from './recruitment-test-upload.mjs';
 import {runWorkflowDeliveryOnce} from './recruitment-workflow-worker.mjs';
+import {createOfferIntegration,offerAccountQuerySchema} from './offer-integration.mjs';
+import {offerChangeSchema,assessmentUserIdSchema} from './recruitment-offers.mjs';
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store','X-Robots-Tag':'noindex'});res.end(JSON.stringify(value));};
 async function body(req,limit=131072){
   if(String(req.headers['content-type']||'').split(';')[0]!=='application/json')throw new RecruitmentTestError(415,'请求格式无效');
@@ -25,9 +27,10 @@ async function body(req,limit=131072){
   });
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new RecruitmentTestError(400,'请求格式无效');}
 }
-export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_RECRUITMENT_WORKFLOW_ENABLED==='true',directory=process.env.PORTAL_RECRUITMENT_WORKFLOW_DATA||(mail?.workspaceDirectory&&join(mail.workspaceDirectory,'recruitment')),deliveryMode=process.env.PORTAL_RECRUITMENT_WORKFLOW_MODE||'dry-run',store:provided,freezeFile=process.env.PORTAL_BUSINESS_FREEZE_FILE||(mail?.workspaceDirectory&&join(mail.workspaceDirectory,'mcp-business/frozen')),liveTestEmails=(process.env.PORTAL_RECRUITMENT_TEST_EMAILS||'').split(',').filter(Boolean),liveTestSubjects=(process.env.PORTAL_RECRUITMENT_TEST_SUBJECTS||'').split(',').filter(Boolean),mailProfiles=(process.env.PORTAL_RECRUITMENT_WORKFLOW_SENDERS||'').split(',').filter(Boolean).map(address=>({address,configured:true})),legacyReceipt,localTest=false,origins=['https://110-lab.cn'],trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean),now=Date.now}={}){
+export function createRecruitmentWorkflowHttp({mail,offerIntegration:providedOffers,enabled=process.env.PORTAL_RECRUITMENT_WORKFLOW_ENABLED==='true',directory=process.env.PORTAL_RECRUITMENT_WORKFLOW_DATA||(mail?.workspaceDirectory&&join(mail.workspaceDirectory,'recruitment')),deliveryMode=process.env.PORTAL_RECRUITMENT_WORKFLOW_MODE||'dry-run',store:provided,freezeFile=process.env.PORTAL_BUSINESS_FREEZE_FILE||(mail?.workspaceDirectory&&join(mail.workspaceDirectory,'mcp-business/frozen')),liveTestEmails=(process.env.PORTAL_RECRUITMENT_TEST_EMAILS||'').split(',').filter(Boolean),liveTestSubjects=(process.env.PORTAL_RECRUITMENT_TEST_SUBJECTS||'').split(',').filter(Boolean),mailProfiles=(process.env.PORTAL_RECRUITMENT_WORKFLOW_SENDERS||'').split(',').filter(Boolean).map(address=>({address,configured:true})),legacyReceipt,localTest=false,origins=['https://110-lab.cn'],trustedProxies=(process.env.PORTAL_RECRUITMENT_TRUSTED_PROXY_IPS||'').split(',').filter(Boolean),now=Date.now}={}){
   if(enabled&&(!mail?.enabled||!directory))throw new Error('Recruitment workflow requires laboratory identity and private storage');
   const store=enabled?(provided||openRecruitmentWorkflowStore({directory,deliveryMode,mailProfiles,liveTestEmails,liveTestSubjects,now})):null;
+  const offerIntegration=providedOffers||createOfferIntegration();
   const proxies=new Set(trustedProxies);if([...proxies].some(ip=>!isIP(ip)))throw new Error('Invalid recruitment trusted proxy');
   const assertWritable=()=>{if(freezeFile&&existsSync(freezeFile))throw new RecruitmentTestError(503,'招新操作暂时维护中 请稍后重试');};
   const writes=new Map(),uploads=new Set();let active=0,busy=false,stopped=false,activeJob;
@@ -36,12 +39,21 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
   const timer=store&&deliveryMode==='dry-run'?setInterval(tick,1000):null;timer?.unref();
   const cleanup=store?setInterval(()=>{try{store.cleanup();}catch(e){console.error('Recruitment workflow cleanup failed',e.code||e.name);}},300000):null;cleanup?.unref();
   return {enabled:!!store,store,labInbox:()=>store?.labInbox()||{state:'disabled',items:[]},async close(){stopped=true;clearInterval(timer);clearInterval(cleanup);await activeJob?.catch(()=>{});if(!provided)store?.close();},async handle(req,res,path,host){
+    const offerRoute=path.startsWith('/api/recruitment-offer/');
     const publicRoute=path.startsWith('/api/recruitment/'),interviewerRoute=path.startsWith('/api/recruitment-interviewer/'),privateRoute=path.startsWith('/api/recruitment-admin/')||interviewerRoute;
-    if(!privateRoute&&!(store&&publicRoute))return false;
+    if(!privateRoute&&!offerRoute&&!(store&&publicRoute))return false;
     try{
       const local=localTest&&['localhost','127.0.0.1'].includes(host);
       if(publicRoute?host!=='110-lab.cn'&&!local:host!=='internal.110-lab.cn'&&!local)throw new RecruitmentTestError(404,'Not found');
       if(!store)throw new RecruitmentTestError(503,'招新管理尚未启用');
+      if(offerRoute){
+        offerIntegration.authenticate(req);
+        if(req.method!=='POST'||!['/api/recruitment-offer/access','/api/recruitment-offer/respond'].includes(path))throw new RecruitmentTestError(404,'Not found');
+        const input=await body(req,2048);
+        if(path.endsWith('/access')){const {userId}=z.object({userId:assessmentUserIdSchema}).strict().parse(input);json(res,200,store.offerAccess(userId));}
+        else{assertWritable();json(res,200,store.respondOffer(input));}
+        return true;
+      }
       if(publicRoute){
         if(req.method==='GET'&&path==='/api/recruitment/config'){json(res,200,{...store.publicConfig(),groups:GROUPS});return true;}
         if(req.method!=='POST'||!['/api/recruitment/submissions','/api/recruitment/status','/api/recruitment/retry'].includes(path))throw new RecruitmentTestError(404,'Not found');
@@ -95,6 +107,20 @@ export function createRecruitmentWorkflowHttp({mail,enabled=process.env.PORTAL_R
         }return true;
       }
       store.requireOperator(actor);
+      if(route==='offer-accounts/search'&&write){
+        countWrite(actor,true);const input=offerAccountQuerySchema.parse(await body(req,2048)),subject=actor.subject,result=await offerIntegration.search(input);
+        actor=store.requireOperator(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');
+        json(res,200,result);return true;
+      }
+      if(route==='offers'){
+        if(!write)json(res,200,store.listOffers(actor));
+        else{
+          countWrite(actor);const input=offerChangeSchema.parse(await body(req,8192)),subject=actor.subject;
+          const account=input.enabled?await offerIntegration.get(input.assessmentUserId):null;
+          actor=store.requireOperator(mail.identity(req,{embedded,write:true}));assertWritable();if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');
+          json(res,200,store.setOffer(actor,input,account));
+        }return true;
+      }
       if(!write){
         if(route==='members'){const members=await mail.projectMembers(actor.subject);const latest=store.requireOperator(mail.identity(req,{embedded}));if(latest.subject!==actor.subject)throw new RecruitmentTestError(403,'登录身份已改变');json(res,200,members);}
         else if(/^images\/[a-f0-9]{64}$/.test(route)){const f=store.readImage(actor,route.slice(7));res.writeHead(200,{'Content-Type':f.mime,'Content-Length':f.bytes,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"});res.end(f.buffer);}

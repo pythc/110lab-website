@@ -1,4 +1,5 @@
 import {createRecruitmentRoles} from './recruitment-roles.mjs';
+import {createRecruitmentOffers} from './recruitment-offers.mjs';
 import {createRecruitmentNotifications,isRecruitmentIm,AUTOMATIC_RECRUITMENT_KINDS} from './recruitment-notifications.mjs';
 import {createRecruitmentLifecycle} from './recruitment-lifecycle.mjs';
 import {invalidateOutcome,decisionContext} from './recruitment-workspace.mjs';
@@ -99,6 +100,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       const result=fn();db.prepare('INSERT INTO requests VALUES(?,?,?,?)').run(actor.subject,input.requestId,fingerprint,JSON.stringify(result));return result;
     });
   };
+  const offers=createRecruitmentOffers({db,stamp,tx,mutate,requireOperator:requireRecruitmentAdmin,audit,fail});
   const file=(id,buffer,metadata)=>{
     if(!Buffer.isBuffer(buffer)||buffer.length!==metadata.bytes||previewHashBytes(buffer)!==metadata.sha256)fail(400,'简历完整性校验失败');
     const previous=db.prepare('SELECT content FROM resumes WHERE candidate_id=?').get(id);
@@ -145,7 +147,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
   const notifications=createRecruitmentNotifications({db,now,tx,get,roles,modeFor,deliveryEvent,fail});
   const lifecycle=createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate,enqueue,settings,getTemplate,fail,requireAdmin:requireRecruitmentAdmin,mode:deliveryMode,modeFor,deliveryEvent,readResume});
   return {
-    ...lifecycle,...notifications,
+    ...lifecycle,...notifications,...offers,
     canManage:roles.canManage,requireOperator:roles.requireOperator,recruitmentSession:roles.session,listHr:roles.listHr,setHr:roles.setHr,
     root:directory,mode:deliveryMode,close:()=>db.close(),
     publicConfig:()=>({workflow:true,enabled:true,available:true,maxFileBytes:MAX_FILE_BYTES,recipient:settings().recipient,intakeRevision:settings().revision,retention:'permanent',deliveryMode}),
