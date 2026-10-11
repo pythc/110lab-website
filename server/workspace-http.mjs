@@ -24,7 +24,7 @@ async function body(req){
 export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTest=false,now=Date.now,directory=mail?.workspaceDirectory}={}){
   const enabled=!!mail?.enabled&&!!directory;
   const store=enabled?openWorkspaceStore({directory,now}):null;
-  let inbox;try{inbox=enabled?openWorkspaceRecruitment({directory,source:()=>recruitment.labInbox(),now}):null;}catch(e){store?.close();throw e;}
+  let inbox;try{inbox=enabled?openWorkspaceRecruitment({directory,source:()=>recruitment.labInbox(),canManage:a=>recruitment.store?.canManage?.(a)||['admin','super_admin'].includes(a.role),now}):null;}catch(e){store?.close();throw e;}
   const writes=new Map();
   function throttle(actor){const time=now(),old=writes.get(actor.subject),v=old&&time-old.at<60000?old:{at:time,count:0};
     if(++v.count>60)throw new WorkspaceError(429,'操作频繁 请稍后再试');
@@ -55,7 +55,7 @@ export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTe
         else if(route==='members')json(res,200,await mail.projectMembers(actor.subject));
         else if(route==='projects')json(res,200,store.list(actor));
         else if(route==='todos'){
-          const admin=['admin','super_admin'].includes(actor.role),recruit=admin?inbox.list(actor):{state:'restricted',items:[],partial:false};
+          const admin=['admin','super_admin'].includes(actor.role),recruit=(admin||recruitment.store?.canManage?.(actor))?inbox.list(actor):{state:'restricted',items:[],partial:false};
           json(res,200,{items:[...store.listTodos(actor).items,...recruit.items,...honorsTodos(actor)],sources:{recruitment:{state:recruit.state,partial:recruit.partial},assessment:{state:'external'}}});
         }else if(route==='recruitment/history')json(res,200,inbox.history(actor));
         else{const match=/^projects\/([\w-]+)(\/audit)?$/.exec(route);if(!match)throw new WorkspaceError(404,'Not found');

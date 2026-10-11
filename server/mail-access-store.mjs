@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
   target_email TEXT
 ) STRICT;
 
+-- Directory grants are bound to a provider identity, never a guessed email.
+-- Login later materializes the existing administrator row atomically.
+CREATE TABLE IF NOT EXISTS directory_admin_grants (
+  subject TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS directory_admin_audit (
+  audit_id INTEGER PRIMARY KEY REFERENCES audit_log(id),
+  target_subject TEXT NOT NULL,
+  target_name TEXT NOT NULL
+) STRICT;
+
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_super
   ON administrators(role)
   WHERE role = 'super_admin' AND active = 1;
@@ -173,7 +186,7 @@ function createApi(db, path, now) {
       END,
       email ASC
   `);
-  const countAdmins = db.prepare(`SELECT COUNT(*) AS c FROM administrators`);
+  const countAdmins = db.prepare(`SELECT (SELECT COUNT(*) FROM administrators) + (SELECT COUNT(*) FROM directory_admin_grants) AS c`);
   const countSupers = db.prepare(`
     SELECT COUNT(*) AS c
     FROM administrators
@@ -216,9 +229,9 @@ function createApi(db, path, now) {
     VALUES (?, ?, ?, ?, ?)
   `);
   const readAudit = db.prepare(`
-    SELECT at, action, actor_subject, actor_email, target_email
-    FROM audit_log
-    ORDER BY id DESC
+    SELECT a.at, a.action, a.actor_subject, a.actor_email, a.target_email, d.target_subject, d.target_name
+    FROM audit_log a LEFT JOIN directory_admin_audit d ON d.audit_id = a.id
+    ORDER BY a.id DESC
     LIMIT ?
   `);
 
@@ -333,6 +346,7 @@ function createApi(db, path, now) {
       actorSubject: row.actor_subject == null ? null : row.actor_subject,
       actorEmail: row.actor_email == null ? null : row.actor_email,
       targetEmail: row.target_email == null ? null : row.target_email,
+      ...(row.target_subject ? {targetSubject: row.target_subject, targetName: row.target_name} : {}),
     };
   }
 
@@ -354,6 +368,7 @@ function createApi(db, path, now) {
         }
         updateIdentityName.run(name, ts, subject);
         updateAdminNameByEmail.run(name, ts, email);
+        materializeDirectoryGrant(subject, email, name, ts);
         const profile = profileBySubject.get(subject);
         return profileFrom(profile);
       }
@@ -366,8 +381,16 @@ function createApi(db, path, now) {
       }
 
       insertIdentity.run(subject, email, name, ts, ts);
+      materializeDirectoryGrant(subject, email, name, ts);
       return profileFrom(profileBySubject.get(subject));
     });
+  }
+
+  function materializeDirectoryGrant(subject, email, name, ts) {
+    if (!db.prepare('SELECT subject FROM directory_admin_grants WHERE subject=?').get(subject)) return;
+    insertAdmin.run(email, name, subject, ts, ts);
+    db.prepare('DELETE FROM directory_admin_grants WHERE subject=?').run(subject);
+    bumpRevision();
   }
 
   function me(subject) {
@@ -386,8 +409,44 @@ function createApi(db, path, now) {
       requireSuper(subjectValue);
       return {
         revision: revision(),
-        administrators: listAdmins.all().map(toAdmin),
+        administrators: [...listAdmins.all().map(row=>({...toAdmin(row),identityVerified:true})),
+          ...db.prepare('SELECT subject,name FROM directory_admin_grants ORDER BY name,subject').all().map(row=>({...row,email:null,role:'admin',active:true,identityVerified:false}))],
       };
+    });
+  }
+
+  // Only pass a member freshly verified by the server's Feishu directory.
+  // This is deliberately not a public "register arbitrary identity" endpoint.
+  function grantDirectoryAdministrator(actorSubject, member, expectedRevision) {
+    const actor = validateSubject(actorSubject), subject = validateSubject(member?.subject), name = validateName(member?.name);
+    const expected = validateRevision(expectedRevision), ts = readNow(now);
+    return transaction(() => {
+      const superRow = requireSuper(actor);assertRevision(expected);
+      if (db.prepare('SELECT 1 FROM administrators WHERE subject=? UNION ALL SELECT 1 FROM directory_admin_grants WHERE subject=?').get(subject,subject)) throw new MailAccessError(409,'administrator already exists');
+      if (countAdmins.get().c >= MAX_ADMINISTRATORS) throw new MailAccessError(409,'administrator limit reached');
+      const identity = identityBySubject.get(subject);
+      if (identity) insertAdmin.run(identity.email, identity.name, subject, ts, ts);
+      else db.prepare('INSERT INTO directory_admin_grants VALUES(?,?,?)').run(subject,name,ts);
+      const event=insertAudit.run(ts,'grant',superRow.subject,superRow.email,identity?.email??null);
+      db.prepare('INSERT INTO directory_admin_audit VALUES(?,?,?)').run(event.lastInsertRowid,subject,identity?.name??name);
+      const next=bumpRevision();assertOneSuper();
+      return {revision:next,subject,name:identity?.name??name,email:identity?.email??null,role:'admin',active:true};
+    });
+  }
+
+  function revokeAdministratorBySubject(actorSubject, targetSubject, expectedRevision) {
+    const actor=validateSubject(actorSubject),subject=validateSubject(targetSubject),expected=validateRevision(expectedRevision),ts=readNow(now);
+    ensureOpen();
+    const registered=db.prepare('SELECT email FROM administrators WHERE subject=?').get(subject);
+    if(registered)return revokeAdministrator(actor,registered.email,expected);
+    return transaction(()=>{
+      const superRow=requireSuper(actor);assertRevision(expected);
+      const target=db.prepare('SELECT name FROM directory_admin_grants WHERE subject=?').get(subject);
+      if(!target)throw new MailAccessError(404,'administrator not found');
+      db.prepare('DELETE FROM directory_admin_grants WHERE subject=?').run(subject);
+      const event=insertAudit.run(ts,'revoke',superRow.subject,superRow.email,null);
+      db.prepare('INSERT INTO directory_admin_audit VALUES(?,?,?)').run(event.lastInsertRowid,subject,target.name);
+      const next=bumpRevision();assertOneSuper();return {revision:next,subject,active:false};
     });
   }
 
@@ -540,7 +599,7 @@ function createApi(db, path, now) {
   return {
     // Internal worker API; never expose the desired member set to ordinary users.
     membershipSnapshot() {
-      return readTransaction(() => ({revision: revision(), subjects: listAdmins.all().map(row => row.subject).sort()}));
+      return readTransaction(() => ({revision: revision(), subjects: [...listAdmins.all(),...db.prepare('SELECT subject FROM directory_admin_grants').all()].map(row => row.subject).sort()}));
     },
     registerIdentity,
     // Tenant-verified identities only, without role grants or mailbox membership.
@@ -552,6 +611,8 @@ function createApi(db, path, now) {
     listAdministrators,
     listMembers,
     grantAdministrator,
+    grantDirectoryAdministrator,
+    revokeAdministratorBySubject,
     revokeAdministrator,
     transferSuperAdministrator,
     audit,

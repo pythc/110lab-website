@@ -2,6 +2,7 @@ import {readFile,mkdir,writeFile,cp,rm} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {build} from 'esbuild';
+import {createHash} from 'node:crypto';
 import {renderWorkbench} from '../server/render.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const config=JSON.parse(await readFile(resolve(root,'src/projects.json'),'utf8'));
@@ -9,7 +10,7 @@ const ids=new Set();for(const p of config.apps){if(!p.id||ids.has(p.id))throw ne
 for(const value of [...Object.values(config.systems),...config.apps.map(p=>p.url),...config.projects.map(p=>p.url)].filter(Boolean)){
  const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password)throw new Error('Destinations must be HTTPS without embedded credentials');
 }
-const bundle=async entry=>(await build({entryPoints:[resolve(root,entry)],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',minify:true})).outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
+const bundle=async(entry,define={})=>(await build({entryPoints:[resolve(root,entry)],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',minify:true,define})).outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
 await mkdir(resolve(root,'dist'),{recursive:true});
 const confirmScript=await bundle('src/mcp-confirm.js');
 await writeFile(resolve(root,'dist/mcp-confirm.html'),(await readFile(resolve(root,'src/mcp-confirm.html'),'utf8')).replace('/* MCP_CONFIRM_SCRIPT */',()=>confirmScript));
@@ -34,14 +35,23 @@ await writeFile(resolve(root,'dist/mail.html'),mailHTML.replace('/* MAIL_CSS */'
 const [recruitmentTestHTML,recruitmentTestCSS,recruitmentTestJS]=await Promise.all([readFile(resolve(root,'src/recruitment-test.html'),'utf8'),readFile(resolve(root,'src/recruitment-test.css'),'utf8'),bundle('src/recruitment-test.js')]);
 const uppyCSS=(await Promise.all(['node_modules/@uppy/core/dist/style.min.css','node_modules/@uppy/dashboard/dist/style.min.css'].map(p=>readFile(resolve(root,p),'utf8')))).join('\n');
 await writeFile(resolve(root,'dist/recruitment-test.html'),recruitmentTestHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentTestJS));
-const [recruitmentHTML,recruitmentJS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js')]);
-await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
+const [recruitmentHTML,recruitmentJS,mailEditorCSS,recruitmentWorkspaceCSS]=await Promise.all([readFile(resolve(root,'src/recruitment-admin.html'),'utf8'),bundle('src/recruitment-admin.js'),readFile(resolve(root,'src/recruitment-mail-editor.css'),'utf8'),readFile(resolve(root,'src/recruitment-workspace.css'),'utf8')]);
+await writeFile(resolve(root,'dist/recruitment.html'),recruitmentHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>uppyCSS+'\n'+recruitmentTestCSS+'\n'+mailEditorCSS+'\n'+recruitmentWorkspaceCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>recruitmentJS));
 const [honorsHTML,honorsCSS,honorsJS]=await Promise.all([readFile(resolve(root,'src/honors.html'),'utf8'),readFile(resolve(root,'src/honors.css'),'utf8'),bundle('src/honors.js')]);
 await writeFile(resolve(root,'dist/honors.html'),honorsHTML.replace('/* HONORS_CSS */',()=>honorsCSS).replace('/* HONORS_SCRIPT */',()=>honorsJS));
 await rm(resolve(root,'dist/assets'),{recursive:true,force:true});
 await cp(resolve(root,'src/assets'),resolve(root,'dist/assets'),{recursive:true});
+const docxScript=await bundle('src/recruitment-docx-frame.js');
+const docxCSP="default-src 'none'; script-src 'sha256-"+createHash('sha256').update(docxScript).digest('base64')+"'; img-src data:; style-src 'unsafe-inline'; font-src 'none'; form-action 'none'; base-uri 'none'";
+await writeFile(resolve(root,'dist/assets/recruitment-pdf-preview-v1.mjs'),await bundle('src/recruitment-pdf-preview.js',{__DOCX_PREVIEW_SCRIPT__:JSON.stringify(docxScript),__DOCX_PREVIEW_CSP__:JSON.stringify(docxCSP)}));
+await cp(resolve(root,'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),resolve(root,'dist/assets/recruitment-pdf-worker-6.4.299.mjs'));
+await cp(resolve(root,'node_modules/pdfjs-dist/LICENSE'),resolve(root,'dist/assets/recruitment-pdf-LICENSE.txt'));
 const localBridge=await build({entryPoints:[resolve(root,'server/local-portal-bridge.mjs')],outfile:resolve(root,'plugin/110lab/mcp/portal-bridge.mjs'),bundle:true,metafile:true,format:'esm',platform:'node',target:'node20',minify:true,banner:{js:'import {createRequire as __createRequire} from "node:module";const require=__createRequire(import.meta.url);'}});
 const packages=new Set(Object.keys(localBridge.metafile.inputs).filter(p=>p.includes('node_modules/')).map(p=>{const parts=p.split('node_modules/').at(-1).split('/');return parts[0].startsWith('@')?parts.slice(0,2).join('/'):parts[0];})),notices=[];
 for(const name of packages){let found=false;for(const file of ['LICENSE','LICENSE.md','LICENSE.txt','LICENSE-MIT','LICENCE']){try{notices.push('Package: '+name+'\n'+await readFile(resolve(root,'node_modules',name,file),'utf8'));found=true;break;}catch(e){if(e.code!=='ENOENT')throw e;}}if(!found)throw new Error('Missing license notice for '+name);}
 await writeFile(resolve(root,'plugin/110lab/mcp/NOTICE.txt'),notices.join('\n\n'));
+
+const interviewerHTML=await readFile(resolve(root,'src/recruitment-interviewer.html'),'utf8'),interviewerJS=await bundle('src/recruitment-interviewer.js');
+await writeFile(resolve(root,'dist/recruitment-interviewer.html'),interviewerHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>recruitmentTestCSS+'\n'+recruitmentWorkspaceCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>interviewerJS));
+
 console.log('110lab built: static homepage + workbench + MCP App');

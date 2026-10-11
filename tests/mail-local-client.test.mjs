@@ -83,6 +83,27 @@ test('cancelled and expired local authorizations do not hang or prevent retry',a
   }finally{await mail.close();await h.close();}
 });
 
+test('a failed silent initialization does not poison the next manual login',async()=>{
+  const h=await harness();let fail=false;
+  const mail=createMailLoginClient({storage:h.storage,fetchImpl:async(input,options)=>{
+    if(fail&&JSON.parse(options?.body||'{}').method==='initialize'){fail=false;throw new TypeError('fixture connection interrupted');}
+    return h.fetchImpl(input,options);
+  }});
+  try{
+    // Saved credentials trigger the automatic restore path on a new process.
+    h.storage.save({client:{client_id:'fixture-client'},tokens:{access_token:'a'.repeat(43),refresh_token:'r'.repeat(43),token_type:'Bearer'}});
+    fail=true;const silent=await h.start();
+    assert.equal((await mail.start({state:silent.state,silent:true}))._meta.mailSessionMissing,true);
+    // Use fresh client registration after the intentionally fictional credentials.
+    h.storage.save({});const manual=await h.start();
+    const resumed=await mail.start({state:manual.state});
+    assert.ok(resumed._meta?.mailAuthorization,'manual retry must open OAuth after transient initialization failure');
+    const callback=await h.approve(resumed._meta.mailAuthorization.url);
+    assert.equal((await fetch(callback)).status,200);
+    const completed=await mail.finish({state:manual.state});assert.ok(completed._meta?.mailHandoff.ticket);
+  }finally{await mail.close();await h.close();}
+});
+
 test('local MCP proxy retains workbench metadata and exposes the login bridge only to apps',async()=>{
   const h=await harness(),bridge=createLocalPortalBridge({fetchImpl:h.fetchImpl,mail:createMailLoginClient({storage:h.storage,fetchImpl:h.fetchImpl})}),client=new Client({name:'fixture-plugin-host',version:'1'});
   const [host,server]=InMemoryTransport.createLinkedPair();await bridge.server.connect(server);await client.connect(host);

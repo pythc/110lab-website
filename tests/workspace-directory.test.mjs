@@ -44,3 +44,10 @@ test('directory fails closed on repeated pagination token, malformed identifiers
     await assert.rejects(d.list(),e=>e instanceof DirectoryError&&!e.message.includes('private'));
   }
 });
+
+test('sensitive grants can bypass the directory cache',async()=>{
+  const provider=fake(),directory=createWorkspaceDirectory({config:fixtureConfig,fetchImpl:provider.fetch});
+  await directory.list();const before=provider.calls.length;
+  await directory.list();assert.equal(provider.calls.length,before);
+  provider.setFail();await assert.rejects(directory.list({fresh:true}),DirectoryError);
+});

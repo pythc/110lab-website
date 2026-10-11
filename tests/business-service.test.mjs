@@ -33,7 +33,7 @@ const article={title:'虚构动态',summary:'测试摘要',body:[{type:'paragrap
 
 test('business identity is live, scopes narrow, projects preserve canonical members and durable retries',async t=>{
   const h=await harness(t),a=h.actor('member');
-  await assert.rejects(h.service.call('lab_candidates_list',{},a),{status:403});
+  assert.equal((await h.service.call('lab_candidates_list',{},a)).items.length,0);
   await assert.rejects(h.service.call('lab_projects_list',{}, {...a,scopes:['mail:session']}),{code:'SCOPE_REQUIRED'});
   await assert.rejects(h.call('project_save',{...ids(),fields:{...project,members:[{subject:'invented:member'}]}},'member'),{status:400});
   const args={...ids(),fields:{...project,members:[{subject:roles.other.subject}]}};
@@ -86,7 +86,7 @@ test('recruitment templates render variables, simulate only after per-person con
   h.service.confirm(h.actor('owner'),p.id,p.fingerprint);const queued=await h.call('recruitment_notice_send',{...ids(),previewId:p.id});assert.equal(queued.mailStatus,'NOT_SENT');
   await runWorkflowDeliveryOnce(h.r,{mode:'dry-run',roleForSubject:()=>h.profiles.owner.role,intervalMs:0});
   assert.equal((await h.call('operation_get',{operationId:queued.operationId})).status,'SIMULATED');assert.equal(h.sends,0);
-  await assert.rejects(h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:h.r.get(h.actor('owner'),c.id).revision}),{code:'PROVIDER_NOT_READY'});
+  await assert.rejects(h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:h.r.get(h.actor('owner'),c.id).revision}),{code:'NOT_FOUND'});
 });
 
 test('mail drafts, attachment transfer, confirmation and simulation never invoke a network sender',async t=>{
@@ -108,14 +108,25 @@ test('mail ambiguous delivery is never retried; queued permission changes preven
   p=await prepare();h.service.confirm(h.actor('owner'),p.id,p.fingerprint);await h.call('mail_send',{...ids(),previewId:p.id});h.profiles.owner.role='member';await h.service.runMail();assert.equal(h.sends,1);
 });
 
-test('Feishu synchronization requires a configured exact target and human preview; dry-run never writes externally',async t=>{
-  const h=await harness(t),a=h.actor('owner');const settings=h.r.settings(a);
+test('retired table tools cannot run even with old configuration and grants',async t=>{
+  const h=await harness(t),a=h.actor('owner'),settings=h.r.settings(a);
   h.r.saveSettings(a,{...ids(),revision:settings.revision,mailboxes:settings.mailboxes,sender:settings.sender,recipient:settings.recipient,feishu:{appToken:'FictionalAppToken2026',tableId:'tblFictional2026'}});
   const c=h.r.create(a,{...ids(),name:'虚构联动候选人',email:'candidate@example.test',group:'开发组',summary:'测试'});
-  const p=await h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:c.revision});
-  assert.equal(p.preview.payload.target.tableId,'tblFictional2026');
-  await assert.rejects(h.call('recruitment_feishu_sync',{...ids(),previewId:p.id}),{code:'CONFIRMATION_REQUIRED'});
-  h.service.confirm(a,p.id,p.fingerprint);const queued=await h.call('recruitment_feishu_sync',{...ids(),previewId:p.id});
-  await runWorkflowDeliveryOnce(h.r,{mode:'dry-run',roleForSubject:()=>a.role,intervalMs:0});
-  assert.equal((await h.call('operation_get',{operationId:queued.operationId})).status,'SIMULATED');assert.equal(h.sends,0);
+  await assert.rejects(h.call('recruitment_feishu_preview',{...ids(),id:c.id,expectedRevision:c.revision}),{code:'NOT_FOUND'});
+  await assert.rejects(h.call('recruitment_feishu_sync',{...ids(),previewId:randomUUID()}),{code:'NOT_FOUND'});
+  assert.throws(()=>h.r.preview(a,c.id,'feishu'),/停用/);assert.equal(h.sends,0);
+});
+
+test('HR MCP capabilities are recruitment-only, live revocation works, and member reads stay assignment-scoped',async t=>{
+ const h=await harness(t);h.profiles.member.subject='tenant:on_fixturehr00001';const member=h.actor('member');
+ h.r.setHr(h.actor('owner'),{...ids(),revision:1,subject:member.subject,enabled:true},member);
+ const who=await h.call('whoami',{},'member');assert.ok(who.capabilities.includes('lab_candidate_record'));assert.ok(!who.capabilities.includes('lab_mail_send'));assert.ok(!who.capabilities.includes('lab_update_publish'));
+ const c=h.r.create(member,{...ids(),name:'虚构 HR 候选人',email:'candidate@example.test',group:'开发组',summary:''});assert.equal((await h.call('candidate_get',{id:c.id},'member')).id,c.id);
+ for(const name of ['mailboxes_list','updates_list'])await assert.rejects(h.call(name,{},'member'),{status:403});
+ const template=(await h.call('recruitment_options',{},'member')).templates[0];await h.call('recruitment_template_save',{...ids(),template:{...template,subject:'测试 {{name}}'}},'member');
+ h.r.setHr(h.actor('owner'),{...ids(),revision:2,subject:member.subject,enabled:false},member);
+ assert.equal((await h.call('candidates_list',{},'member')).items.length,0);await assert.rejects(h.call('candidate_get',{id:c.id},'member'),{status:404});
+ await assert.rejects(h.service.call('lab_recruitment_template_save',{...ids(),template}, {...member,recruitmentRole:'hr'}),{status:403});
+ let assigned=h.r.act(h.actor('owner'),c.id,{...ids(),revision:c.revision,action:'screen',assessmentRequired:false,note:''});assigned=h.r.assignInterviewer(h.actor('owner'),c.id,{...ids(),revision:assigned.revision,subject:member.subject},member);
+ assert.equal((await h.call('candidate_get',{id:c.id},'member')).id,c.id);assert.equal((await h.call('candidates_list',{},'member')).items.length,1);await assert.rejects(h.call('candidate_decide',{...ids(),id:c.id,expectedRevision:assigned.revision,decision:'reject',note:'越权'},'member'),{status:403});
 });

@@ -42,7 +42,8 @@ test('shared live lab roles, cookie contexts, CSRF, project lifecycle and recrui
     const created=await call('/api/workspace/projects',{actor:admin,body:data});assert.equal(created.status,201);let project=created.value;
     assert.equal(project.members[0].name,member.name);
     assert.equal(project.members[1].name,candidate.name);assert.equal(project.members[1].email,'');
-    assert.equal((await call('/api/mail/members',{actor:admin})).value.members.some(m=>m.subject===candidate.subject),false);
+    assert.equal((await call('/api/mail/members',{actor:admin})).value.members.some(m=>m.subject===candidate.subject),true);
+    assert.equal((await call('/api/mail/administrators',{actor:admin})).value.administrators.some(m=>m.subject===candidate.subject),false);
     assert.equal((await call('/api/workspace/projects',{actor:admin,body:{...data,members:[{subject:'fictional_tenant:on_attacker_identity',name:'fake',email:''}]}})).status,400);
     const base='/api/workspace/projects/'+project.id;
     assert.equal((await call(base+'/update',{actor:person,body:{...data,revision:1}})).status,403);

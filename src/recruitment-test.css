@@ -1244,3 +1244,7 @@ body {
 .rt-delivery .rt-help {white-space:normal}
 .rt-form-intro {white-space:pre-line}
 @media(max-width:560px){.rt-config-row{grid-template-columns:minmax(0,1fr)}}
+
+.ri-app{max-width:820px;margin:auto}.ri-card{padding:28px;background:#fff;border:1px solid #e2e7ef;border-radius:18px;margin:22px 0}.ri-card input{display:block;width:100%;box-sizing:border-box;padding:12px;border:1px solid #d6ddea;border-radius:8px;margin-top:8px}.ri-card label{display:block;font-weight:600}.rt-mail-preview{width:100%;min-height:300px;border:1px solid #dce2eb;border-radius:10px;background:white}.rt-rich-editor{min-height:230px;border:1px solid #d6ddea;border-radius:8px;padding:16px;background:white;overflow:auto}.rt-rich-editor img{max-width:100%;height:auto}.rt-editor-toolbar{display:flex;gap:8px;flex-wrap:wrap}.rt-member-select{width:100%;min-height:44px}.ri-card .rt-form-fields{gap:18px}
+
+.rt-dialog.rt-form-dialog.rt-mail-form[open]{width:min(740px,calc(100vw - 24px))}.rt-mail-form .rt-mail-preview{min-height:360px;box-sizing:border-box}

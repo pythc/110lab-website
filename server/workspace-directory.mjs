@@ -54,8 +54,8 @@ export function createWorkspaceDirectory({config,fetchImpl=fetch,now=Date.now}){
     }
     return [...members.values()].sort((a,b)=>a.name.localeCompare(b.name,'zh-CN'));
   }
-  return {async list(){
-    if(cached&&expires>now())return cached.map(m=>({...m}));
+  return {async list({fresh=false}={}){
+    if(!fresh&&cached&&expires>now())return cached.map(m=>({...m}));
     if(pending)return pending;
     if(retryAfter>now())throw new DirectoryError();
     pending=refresh().then(members=>{cached=members;expires=now()+60000;retryAfter=0;return members.map(m=>({...m}));})

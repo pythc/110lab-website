@@ -5,7 +5,7 @@ export function createLabSession({onChange=()=>{},onStatus=()=>{},apiRoot='/api/
   const suffix=embedded?'embedded/':'',prefix=apiRoot+suffix,mail='/api/mail/'+suffix;
   let profile=null,flow=null,timer=null,popup=null,generation=0,poll=null;
   function clear(){generation++;profile=null;onChange(null);}
-  function accept(value){if(value.subject!==profile?.subject||value.role!==profile?.role)generation++;profile=value;onChange(profile);}
+  function accept(value){if(value.subject!==profile?.subject||value.role!==profile?.role||value.recruitmentRole!==profile?.recruitmentRole)generation++;profile=value;onChange(profile);}
   function finish(){flow=null;clearTimeout(timer);clearInterval(poll);timer=null;poll=null;}
   async function call(path,{method='GET',data,form,blob=false,signal}={},isMail=false){
     const gen=generation,headers={};

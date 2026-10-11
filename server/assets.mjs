@@ -3,7 +3,11 @@ import {stat} from 'node:fs/promises';
 import {pipeline} from 'node:stream/promises';
 
 // Explicit filenames keep request paths away from the filesystem namespace.
+const generated=new Set(['recruitment-pdf-preview-v1.mjs','recruitment-pdf-worker-6.4.299.mjs','recruitment-pdf-LICENSE.txt']);
 const types={
+  'recruitment-pdf-preview-v1.mjs':'text/javascript; charset=utf-8',
+  'recruitment-pdf-worker-6.4.299.mjs':'text/javascript; charset=utf-8',
+  'recruitment-pdf-LICENSE.txt':'text/plain; charset=utf-8',
   '110lab-icon.png':'image/png',
   'glass-loop-v2.png':'image/png',
   'zhiping-logo.png':'image/png',
@@ -34,7 +38,7 @@ function byteRange(value,size){
 export async function serveAsset(req,res,name){
   if(!Object.hasOwn(types,name))return false;
   const type=types[name];
-  const path=new URL('../src/assets/'+name,import.meta.url);
+  const path=new URL((generated.has(name)?'../dist/assets/':'../src/assets/')+name,import.meta.url);
   const info=await stat(path);
   const etag='"'+info.size.toString(16)+'-'+Math.trunc(info.mtimeMs).toString(16)+'"';
   const headers={'Content-Type':type,'Cache-Control':'public, max-age=3600','Content-Length':info.size,ETag:etag,'Last-Modified':info.mtime.toUTCString(),'Accept-Ranges':'bytes'};

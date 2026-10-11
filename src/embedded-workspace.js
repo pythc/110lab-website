@@ -1,3 +1,4 @@
+import {handleResumeDownloadRequest} from './resume-download.js';
 // Only these owned applications can become embedded pages. Never accept a
 // frame URL from tool results, query parameters, messages or local storage.
 export const EMBEDDED_APPS = Object.freeze({
@@ -95,6 +96,7 @@ export function initEmbeddedWorkspace() {
   const pages = new Map();
   const controls = new Map();
   let externalOpener=null;
+  let fileDownloader=null,downloadPending=false;
   let toolCaller=null,loginPending=false,resolveToolReady;
   const toolReady=new Promise(resolve=>{resolveToolReady=resolve;});
   const actions=document.createElement('div');
@@ -176,11 +178,17 @@ export function initEmbeddedWorkspace() {
     if(!page||page.hidden||!['public-mail','workbench','projects','recruitment-test','honors','updates-admin','assessment'].includes(currentId))return;
     const frame=page.querySelector('iframe');
     if(event.origin!=='https://internal.110-lab.cn'||event.source!==frame.contentWindow)return;
+    if(currentId==='recruitment-test'&&event.data?.type==='110lab-resume-download'){
+      if(downloadPending){frame.contentWindow.postMessage({type:'110lab-resume-download-result',requestId:event.data.requestId,status:'busy'},event.origin);return;}
+      downloadPending=true;
+      try{await handleResumeDownloadRequest(event,{frame,downloadFile:fileDownloader});}finally{downloadPending=false;}
+      return;
+    }
     if(['workbench','projects','recruitment-test','honors'].includes(currentId)&&await handleWorkspaceRequest(event,{frame,openExternal:externalOpener,callTool:toolCaller,show}))return;
     if(event.data?.type==='110lab-mail-host-login'){
       if(loginPending)return;loginPending=true;
       try{if(!toolCaller)await Promise.race([toolReady,new Promise(resolve=>setTimeout(resolve,15000))]);await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});}finally{loginPending=false;}
     }else await handleMailExternalRequest(event,{frame:page.querySelector('iframe'),openExternal:externalOpener,callTool:toolCaller});
   });
-  return {show,setExternalOpener(opener){externalOpener=opener;},setToolCaller(caller){toolCaller=caller;resolveToolReady();pages.get('workbench')?.querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-ready'},'https://internal.110-lab.cn');}};
+  return {show,setExternalOpener(opener){externalOpener=opener;},setFileDownloader(downloader){fileDownloader=downloader;},setToolCaller(caller){toolCaller=caller;resolveToolReady();pages.get('workbench')?.querySelector('iframe').contentWindow.postMessage({type:'110lab-workspace-ready'},'https://internal.110-lab.cn');}};
 }

@@ -37,7 +37,7 @@ async function jsonBody(req,limit=1024*1024){
 }
 const json=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(body));};
 export async function createHttpServer(options={}){
-  const [homepage,workbench,recruitmentTestPage,recruitmentPage,honorsPage]=await Promise.all(['index','workbench','recruitment-test','recruitment','honors'].map(p=>readFile(new URL('../dist/'+p+'.html',import.meta.url),'utf8')));
+  const [homepage,workbench,recruitmentTestPage,recruitmentPage,honorsPage,interviewerPage]=await Promise.all(['index','workbench','recruitment-test','recruitment','honors','recruitment-interviewer'].map(p=>readFile(new URL('../dist/'+p+'.html',import.meta.url),'utf8')));
   const allowedHosts=new Set(['110-lab.cn','internal.110-lab.cn','110lab-homepage','localhost','127.0.0.1','[::1]']);
   const updates=options.updatesStore||openUpdatesStore(process.env.PORTAL_UPDATES_DATABASE||':memory:');
   const recruitment=createRecruitmentHttp(options.recruitment);
@@ -110,11 +110,12 @@ export async function createHttpServer(options={}){
       let html;
       if(['/workbench','/workbench/','/workbench/embedded','/projects','/projects/','/projects/embedded'].includes(path)&&internalHost)html=workbench;
       else if(['/recruitment-test','/recruitment-test/','/recruitment-test/embedded'].includes(path)&&internalHost)html=recruitmentTestPage;
+      else if(['/recruitment/interviewer','/recruitment/interviewer/embedded'].includes(path)&&internalHost)html=interviewerPage;
       else if(['/recruitment','/recruitment/','/recruitment/embedded'].includes(path)&&internalHost)html=recruitmentPage;
       else if(['/honors','/honors/','/honors/embedded'].includes(path)&&internalHost)html=honorsPage;
       else if(path==='/'||path==='/index.html')html=host==='internal.110-lab.cn'?workbench:homepage;
-      if(html&&options.liveReload){const name=path.startsWith('/honors')?'honors':path.startsWith('/recruitment-test')?'recruitment-test':path.startsWith('/recruitment')?'recruitment':path.startsWith('/workbench')||path.startsWith('/projects')||host==='internal.110-lab.cn'?'workbench':'index';html=await readFile(new URL('../dist/'+name+'.html',import.meta.url),'utf8');}
-      if(html){html=assessmentEntry(html,options.mail?.assessmentSsoEnabled);const policy=['/honors/embedded','/workbench/embedded','/projects/embedded','/recruitment-test/embedded','/recruitment/embedded'].includes(path)?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
+      if(html&&options.liveReload){const name=path.startsWith('/honors')?'honors':path.startsWith('/recruitment-test')?'recruitment-test':path.startsWith('/recruitment/interviewer')?'recruitment-interviewer':path.startsWith('/recruitment')?'recruitment':path.startsWith('/workbench')||path.startsWith('/projects')||host==='internal.110-lab.cn'?'workbench':'index';html=await readFile(new URL('../dist/'+name+'.html',import.meta.url),'utf8');}
+      if(html){html=assessmentEntry(html,options.mail?.assessmentSsoEnabled);const policy=['/honors/embedded','/workbench/embedded','/projects/embedded','/recruitment-test/embedded','/recruitment/embedded','/recruitment/interviewer/embedded'].includes(path)?csp.replace("frame-ancestors 'self'","frame-ancestors 'self' "+ADMIN_FRAME_ANCESTORS.join(' ')):csp;res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':policy});res.end(head?undefined:html);return;}
       if(path==='/robots.txt'){res.writeHead(200,{'Content-Type':'text/plain'});res.end(head?undefined:host==='110-lab.cn'?'User-agent: *\nAllow: /\n':'User-agent: *\nDisallow: /\n');return;}
       throw new HttpError(404,'Not found');
     }catch(error){

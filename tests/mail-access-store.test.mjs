@@ -36,3 +36,31 @@ test('private SQLite files reject symlinks',t=>{
   const {dir,store,options}=fixture(t);assert.equal(lstatSync(dir).mode&0o777,0o700);assert.equal(lstatSync(options.filename).mode&0o777,0o600);store.close();
   const target=join(dir,'target.sqlite');writeFileSync(target,'',{mode:0o600});const link=join(dir,'linked.sqlite');symlinkSync(target,link);assert.throws(()=>openMailAccessStore({...options,filename:link}));
 });
+
+test('directory grants survive restart, bind the exact first login and can be revoked before login',t=>{
+  const {store,options}=fixture(t);
+  const directoryMember={subject:member.subject,name:member.name};
+  assert.throws(()=>store.grantDirectoryAdministrator('fictional:outsider',directoryMember,1),error(403));
+  store.grantDirectoryAdministrator(owner.subject,directoryMember,1);
+  assert.deepEqual(store.membershipSnapshot().subjects,[member.subject,owner.subject].sort());
+  assert.equal(store.listMembers(owner.subject).length,1,'granting never forges a login identity');
+  assert.equal(store.listAdministrators(owner.subject).administrators[1].email,null);
+  assert.equal(store.audit(owner.subject).entries[0].targetSubject,member.subject);
+  assert.throws(()=>store.grantDirectoryAdministrator(owner.subject,directoryMember,2),error(409));
+  const reopened=openMailAccessStore(options);
+  try{
+    assert.equal(reopened.listAdministrators(owner.subject).administrators.length,2);
+    assert.equal(reopened.registerIdentity({...member,subject:'fictional:other',email:'other@110-lab.cn'}).role,'member','same display name does not inherit grant');
+    assert.throws(()=>reopened.registerIdentity({...member,email:owner.email}),error(409));
+    assert.equal(reopened.registerIdentity(member).role,'admin');
+    assert.equal(reopened.listAdministrators(owner.subject).administrators[1].identityVerified,true);
+    assert.equal(reopened.listAdministrators(owner.subject).revision,3);
+    reopened.revokeAdministratorBySubject(owner.subject,member.subject,3);
+    assert.equal(reopened.me(member.subject).role,'member');
+    const absent={subject:'fictional:absent',name:'未登录成员'};
+    reopened.grantDirectoryAdministrator(owner.subject,absent,4);
+    reopened.revokeAdministratorBySubject(owner.subject,absent.subject,5);
+    assert.equal(reopened.registerIdentity({...absent,email:'absent@110-lab.cn'}).role,'member');
+    assert.deepEqual(reopened.membershipSnapshot().subjects,[owner.subject]);
+  }finally{reopened.close();}
+});
