@@ -4,11 +4,24 @@ import {createHash} from 'node:crypto';
 export const escapeHtml=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function cleanMailHtml(value){
   return sanitizeHtml(String(value||''),{
-    allowedTags:['p','br','div','span','strong','b','em','i','u','s','h1','h2','h3','ul','ol','li','blockquote','a','img','table','tbody','tr','td','th','hr'],
-    allowedAttributes:{a:['href','title'],img:['src','alt','width','height'], '*':['style']},
-    transformTags:{img:(_tag,attrs)=>{const {height,...safe}=attrs;return {tagName:'img',attribs:{...safe,width:String(Math.min(600,Math.max(1,Number.parseInt(attrs.width,10)||480))),style:'max-width:100%;height:auto'}};}},
+    allowedTags:['p','br','div','span','strong','b','em','i','u','s','strike','sub','sup','h1','h2','h3','h4','ul','ol','li','blockquote','a','img','table','thead','tbody','tr','td','th','hr'],
+    allowedAttributes:{a:['href','title'],img:['src','alt','width','height'],td:['colspan','rowspan'],th:['colspan','rowspan'], '*':['style']},
+    transformTags:{
+      font:(_tag,attrs)=>({tagName:'span',attribs:{style:`color:${attrs.color||''};font-size:${({1:10,2:13,3:16,4:18,5:24,6:32,7:36})[attrs.size]||16}px`}}),
+      img:(_tag,attrs)=>{const {height,...safe}=attrs;return {tagName:'img',attribs:{...safe,width:String(Math.min(600,Math.max(1,Number.parseInt(attrs.width,10)||480))),style:'max-width:100%;height:auto'}};},
+    },
     allowedSchemes:['https','mailto'],allowedSchemesByTag:{img:['cid']},allowProtocolRelative:false,
-    allowedStyles:{img:{'max-width':[/^100%$/],height:[/^auto$/]},'*':{'text-align':[/^(left|center|right)$/],'color':[/^#[0-9a-f]{3,8}$/i],'background-color':[/^#[0-9a-f]{3,8}$/i],'font-size':[/^(1[0-9]|2[0-9]|3[0-6])px$/],'font-weight':[/^(normal|bold|[1-9]00)$/]}},
+    allowedStyles:{img:{'max-width':[/^100%$/],height:[/^auto$/]},'*':{
+      'text-align':[/^(left|center|right|justify)$/],
+      'color':[/^#[0-9a-f]{3,8}$/i,/^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/],
+      'background-color':[/^#[0-9a-f]{3,8}$/i,/^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/],
+      'font-size':[/^(1[0-9]|2[0-9]|3[0-6])px$/,/^(small|medium|large|x-large|xx-large)$/],
+      'font-weight':[/^(normal|bold|[1-9]00)$/], 'font-style':[/^(normal|italic)$/],
+      'text-decoration':[/^(none|underline|line-through)$/], 'line-height':[/^(1|1\.2|1\.5|1\.6|1\.8|2)$/],
+      'padding':[/^(?:[0-9]|[1-3][0-9])px(?: (?:[0-9]|[1-3][0-9])px){0,3}$/],
+      'border-radius':[/^(?:[0-9]|[1-3][0-9])px$/], 'border':[/^[12]px solid #[0-9a-f]{6}$/i],
+      'border-collapse':[/^collapse$/], 'width':[/^(?:[1-9][0-9]?|100)%$/], 'display':[/^inline-block$/],
+    }},
     exclusiveFilter:frame=>frame.tag==='img'&&!/^cid:lab-[a-f0-9]{64}$/.test(frame.attribs.src||''),
   });
 }

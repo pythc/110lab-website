@@ -127,6 +127,8 @@ export function createRecruitmentWorkflowHttp({mail,offerIntegration:providedOff
         else if(route==='candidates')json(res,200,store.list(actor));
         else if(route==='settings')json(res,200,store.settings(actor));
         else if(route==='templates')json(res,200,store.templates(actor));
+        else if(route==='direct-mail')json(res,200,store.directMailList(actor));
+        else if(/^direct-mail\/[a-f0-9-]{36}$/.test(route))json(res,200,store.directMailGet(actor,route.slice(12)));
         else{
           const match=/^candidates\/([a-f0-9-]{36})(?:\/(resume|preview-application|preview-feishu|preview-interview|preview-outcome|preview-receipt))?$/.exec(route);
           if(!match)throw new RecruitmentTestError(404,'Not found');
@@ -143,13 +145,16 @@ export function createRecruitmentWorkflowHttp({mail,offerIntegration:providedOff
           const subject=actor.subject;uploads.add(subject);
           try{const upload=await readTestResume(req);assertWritable();actor=store.requireOperator(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');json(res,200,store.attachResume(actor,candidate.id,upload));}finally{uploads.delete(subject);}
         }else{
-          const input=await body(req,route==='images'?2900000:route.startsWith('templates')?262144:131072);assertWritable();actor=store.requireOperator(mail.identity(req,{embedded,write:true}));
-          const rendering=route==='templates/preview'||input?.action==='preview_composition';countWrite(actor,rendering);
+          const input=await body(req,route==='images'?2900000:(route.startsWith('templates')||route.startsWith('direct-mail'))?262144:131072);assertWritable();actor=store.requireOperator(mail.identity(req,{embedded,write:true}));
+          const rendering=route==='templates/preview'||route==='direct-mail/preview'||input?.action==='preview_composition';countWrite(actor,rendering);
           if(route==='images')json(res,201,store.saveImage(actor,input));
           else if(route==='candidates')json(res,201,store.create(actor,input));
           else if(route==='settings')json(res,200,store.saveSettings(actor,input));
           else if(route==='templates')json(res,200,store.saveTemplate(actor,input));
           else if(route==='templates/preview')json(res,200,store.previewTemplate(actor,input));
+          else if(route==='direct-mail/preview')json(res,200,store.previewDirectMail(actor,input));
+          else if(route==='direct-mail/send')json(res,200,store.sendDirectMail(actor,input));
+          else if(route==='direct-mail/delivery')json(res,200,store.manageDirectDelivery(actor,input));
           else{const match=/^candidates\/([a-f0-9-]{36})\/actions$/.exec(route);if(!match)throw new RecruitmentTestError(404,'Not found');let result;const {action,...data}=input;
             if(action==='assign_interviewer'){const members=await mail.projectMembers(actor.subject);const subject=actor.subject;actor=store.requireOperator(mail.identity(req,{embedded,write:true}));if(actor.subject!==subject)throw new RecruitmentTestError(403,'登录身份已改变');assertWritable();result=store.assignInterviewer(actor,match[1],data,members.members.find(m=>m.subject===data.subject));}
             else if(action==='return_interview')result=store.returnInterview(actor,match[1],data);

@@ -1,3 +1,4 @@
+import {createDirectMail} from './recruitment-direct-mail.mjs';
 import {createRecruitmentRoles} from './recruitment-roles.mjs';
 import {createRecruitmentOffers} from './recruitment-offers.mjs';
 import {createRecruitmentNotifications,isRecruitmentIm,AUTOMATIC_RECRUITMENT_KINDS} from './recruitment-notifications.mjs';
@@ -146,8 +147,9 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
   const receiptStatus=id=>db.prepare("SELECT status FROM deliveries WHERE candidate_id=? AND kind='receipt' ORDER BY created_at DESC,rowid DESC LIMIT 1").get(id)?.status||null;
   const notifications=createRecruitmentNotifications({db,now,tx,get,roles,modeFor,deliveryEvent,fail});
   const lifecycle=createRecruitmentLifecycle({db,now,stamp,get,put,event,tx,mutate,enqueue,settings,getTemplate,fail,requireAdmin:requireRecruitmentAdmin,mode:deliveryMode,modeFor,deliveryEvent,readResume});
+  const directMail=createDirectMail({db,now,settings,mutate,requireOperator:requireRecruitmentAdmin,canManage:roles.canManage,audit,fail,deliveryMode,liveTestEmails,mailProfiles,readImage:lifecycle.readImage,deliveryEvent,deliveryView});
   return {
-    ...lifecycle,...notifications,...offers,
+    ...lifecycle,...notifications,...offers,...directMail,
     canManage:roles.canManage,requireOperator:roles.requireOperator,recruitmentSession:roles.session,listHr:roles.listHr,setHr:roles.setHr,
     root:directory,mode:deliveryMode,close:()=>db.close(),
     publicConfig:()=>({workflow:true,enabled:true,available:true,maxFileBytes:MAX_FILE_BYTES,recipient:settings().recipient,intakeRevision:settings().revision,retention:'permanent',deliveryMode}),
@@ -288,7 +290,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
     });},
     recoverInterrupted(){return tx(()=>{
       const rows=db.prepare("SELECT * FROM deliveries WHERE status='SENDING' AND lease_until<=?").all(now());
-      for(const row of rows){db.prepare("UPDATE deliveries SET status='UNKNOWN',error='WORKER_INTERRUPTED',lease=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(now(),row.id);deliveryEvent(row.id,'UNKNOWN','WORKER_INTERRUPTED');const c=get(row.candidate_id);if(row.kind==='interview'&&c.notification?.deliveryId===row.id)c.notification.status='unknown';if(row.kind==='outcome'&&c.resultNotification?.deliveryId===row.id)c.resultNotification.status='unknown';if(row.kind==='interviewer'&&c.assignment?.deliveryId===row.id)c.assignment.notificationStatus='UNKNOWN';c.revision++;event(c,{subject:'system',name:'发送服务'},'发送结果待核实');put(c);}
+      for(const row of rows){db.prepare("UPDATE deliveries SET status='UNKNOWN',error='WORKER_INTERRUPTED',lease=NULL,lease_until=NULL,updated_at=? WHERE id=?").run(now(),row.id);deliveryEvent(row.id,'UNKNOWN','WORKER_INTERRUPTED');if(row.kind==='direct')continue;const c=get(row.candidate_id);if(row.kind==='interview'&&c.notification?.deliveryId===row.id)c.notification.status='unknown';if(row.kind==='outcome'&&c.resultNotification?.deliveryId===row.id)c.resultNotification.status='unknown';if(row.kind==='interviewer'&&c.assignment?.deliveryId===row.id)c.assignment.notificationStatus='UNKNOWN';c.revision++;event(c,{subject:'system',name:'发送服务'},'发送结果待核实');put(c);}
       return rows.length;
     });},
     claim({mode=deliveryMode,intervalMs=60000}={}){return tx(()=>{
@@ -299,6 +301,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       return {...row,status:'SENDING',attempts:row.attempts+1,lease,payload:JSON.parse(row.payload)};
     });},
     validateDelivery(row,role){
+      if(row.kind==='direct')return directMail.validateDirectDelivery(row,role);
       const c=get(row.candidate_id),s=settings();
       if(notifications.validateNotification(row,c))return null;
       if(!(['application','receipt'].includes(row.kind)&&row.actor==='website')&&!roles.canManage({subject:row.actor,role}))fail(403,'确认人的招新权限已撤销');
@@ -318,6 +321,7 @@ export function openRecruitmentWorkflowStore({directory,now=Date.now,maxStoredBy
       if(!db.prepare("SELECT id FROM deliveries WHERE id=? AND status='SENDING' AND lease=?").get(row.id,row.lease))return false;
       const safeCode=code&&/^[A-Z0-9_]{1,64}$/.test(code)?code:code?'DELIVERY_ERROR':null;
       db.prepare('UPDATE deliveries SET status=?,error=?,result=?,updated_at=?,next_at=?,lease=NULL,lease_until=NULL WHERE id=?').run(status,safeCode,result?JSON.stringify(result):null,now(),now()+retryDelay,row.id);deliveryEvent(row.id,status,safeCode);
+      if(row.kind==='direct')return true;
       const c=get(row.candidate_id);
       if(row.kind==='interview'&&c.notification?.deliveryId===row.id)c.notification={...c.notification,status:({SENT:'sent',SIMULATED:'simulated',FAILED:'failed',RETRYING:'queued',UNKNOWN:'unknown'})[status],attempts:row.attempts};
       if(row.kind==='outcome'&&c.resultNotification?.deliveryId===row.id)c.resultNotification.status=({SENT:'sent',SIMULATED:'simulated',FAILED:'failed',RETRYING:'queued',UNKNOWN:'unknown'})[status];

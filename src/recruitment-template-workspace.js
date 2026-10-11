@@ -1,3 +1,4 @@
+import {newMailTemplate} from './recruitment-mail-presets.js';
 import {mailEditor,mailPreview} from './recruitment-mail-editor.js';
 import {templateKinds,variableNames} from './recruitment-tasks.js';
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
@@ -16,7 +17,8 @@ export function createTemplateWorkspace({session,root,onStatus=()=>{}}){
     sidebar.replaceChildren();const filter=el('select');filter.setAttribute('aria-label','按模板用途筛选');filter.append(new Option('全部模板','all'),...Object.entries(templateKinds).map(([k,v])=>new Option(v,k)));filter.value=kind;filter.onchange=()=>{kind=filter.value;renderSidebar();};sidebar.append(filter);
     for(const t of templates.filter(t=>kind==='all'||(t.kind||'interview')===kind)){const b=button('',()=>{if(mayLeave())render(t);},'rw-template-item');b.append(el('span',templateKinds[t.kind||'interview'],'rw-eyebrow'),el('strong',t.name));b.setAttribute('aria-current',String(current?.id===t.id));sidebar.append(b);}
   }
-  function openNew(){if(!mayLeave())return;render({id:crypto.randomUUID(),revision:0,name:'新的面试邀请',kind:'interview',subject:'[110实验室面试邀请] {{name}}',body:'{{name}} 同学你好\n\n感谢你申请加入 110 实验室 {{group}}。\n\n面试时间：{{interviewTime}}\n面试官：{{interviewerName}}\n会议链接：{{location}}\n联系方式：{{interviewerContact}}\n\n110 实验室',html:'',variables:[]});dirty=true;updateSavedState();}
+  function openNew(){if(!mayLeave())return;const picker=el('dialog',undefined,'rw-mail-dialog');picker.setAttribute('aria-label','选择模板用途');picker.append(el('h3','从用途开始'));const list=el('div',undefined,'rw-preset-grid');for(const[k,v]of Object.entries(templateKinds))list.append(button(v,()=>{picker.close();picker.remove();render(newMailTemplate(k));dirty=true;updateSavedState();}));picker.append(list,button('取消',()=>{picker.close();picker.remove();}));picker.addEventListener('close',()=>picker.remove());root.append(picker);picker.showModal();}
+
   function render(template){
     previewGeneration++;clearTimeout(timer);editor?.destroy();current={id:template.id,revision:template.revision};dirty=false;request=null;main.replaceChildren();controls={};variables=[];
     const form=el('form',undefined,'rw-template-form'),meta=el('div',undefined,'rw-template-meta');main.append(form);

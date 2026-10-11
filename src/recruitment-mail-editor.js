@@ -1,9 +1,9 @@
 const node=(tag,text)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n;};
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export async function mailPreview(session,payload,container){
+export async function mailPreview(session,payload,container,{strictImages=false}={}){
   const frame=node('iframe');frame.className='rt-mail-preview';frame.title='完整邮件预览';frame.setAttribute('sandbox','');container.append(frame);
   const doc=new DOMParser().parseFromString(payload.html||'<p>'+escape(payload.body).replace(/\n/g,'<br>')+'</p>','text/html');
-  for(const img of doc.querySelectorAll('img')){const id=/^cid:lab-([a-f0-9]{64})$/.exec(img.getAttribute('src')||'')?.[1];if(!id){img.remove();continue;}try{const blob=await session.download('images/'+id);img.src=await dataUrl(blob);}catch{img.replaceWith(document.createTextNode('[图片暂时无法加载]'));}}
+  for(const img of doc.querySelectorAll('img')){const id=/^cid:lab-([a-f0-9]{64})$/.exec(img.getAttribute('src')||'')?.[1];if(!id){img.remove();continue;}try{const blob=await session.download('images/'+id);img.src=await dataUrl(blob);}catch{img.replaceWith(document.createTextNode('[图片暂时无法加载]'));if(strictImages)throw Error('预览图片加载失败 请返回编辑后重新预览');}}
   frame.srcdoc='<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'"><style>body{font:15px/1.75 system-ui;padding:20px;color:#243047}img{max-width:100%;height:auto}table{border-collapse:collapse}td,th{padding:8px}a{color:#5145ba}</style>'+doc.body.innerHTML;
 }
 const dataUrl=blob=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(blob);});
@@ -26,19 +26,24 @@ export function mailEditor(session,template,container,onError,onChange=()=>{}){
   const styles=group('文字样式'),alignment=group('段落与图片对齐'),insert=group('插入内容');
   const toggles=[];
   const command=(name,value)=>{restore();document.execCommand(name,false,value);remember();update();onChange();};
-  for(const [label,name]of [['加粗','bold'],['斜体','italic'],['下划线','underline'],['列表','insertUnorderedList']]){
+  for(const [label,name]of [['加粗','bold'],['斜体','italic'],['下划线','underline'],['删除线','strikeThrough'],['列表','insertUnorderedList'],['编号列表','insertOrderedList']]){
     const b=add(styles,label,()=>command(name));toggles.push([b,name]);
   }
-  for(const [label,name]of [['左对齐','justifyLeft'],['居中','justifyCenter'],['右对齐','justifyRight']]){
+  for(const [label,name]of [['左对齐','justifyLeft'],['居中','justifyCenter'],['右对齐','justifyRight'],['两端对齐','justifyFull']]){
     const b=add(alignment,label,()=>{restore();const previous=document.queryCommandState('styleWithCSS');document.execCommand('styleWithCSS',false,true);try{command(name);}finally{document.execCommand('styleWithCSS',false,previous);}});toggles.push([b,name]);
   }
   const history=group('撤销与恢复');add(history,'撤销',()=>command('undo'));add(history,'重做',()=>command('redo'));
   const format=node('select');format.setAttribute('aria-label','段落格式');format.append(new Option('正文','p'),new Option('大标题','h2'),new Option('小标题','h3'),new Option('引用','blockquote'));format.addEventListener('change',()=>command('formatBlock',format.value));styles.append(format);
+  const extraControls=[];
+  const size=node('select');size.setAttribute('aria-label','字号');size.append(new Option('字号',''),...[['10','1'],['13','2'],['16','3'],['18','4'],['24','5'],['32','6'],['36','7']].map(([label,value])=>new Option(label+' px',value)));size.onchange=()=>{if(size.value)command('fontSize',size.value);};styles.append(size);extraControls.push(size);
+  for(const [label,cmd,initial]of [['文字颜色','foreColor','#243047'],['文字底色','hiliteColor','#fff2cc']]){const wrap=node('label',label),input=node('input');input.type='color';input.value=initial;input.setAttribute('aria-label',label);input.oninput=()=>command(cmd,input.value);wrap.className='rw-editor-color';wrap.append(input);styles.append(wrap);extraControls.push(input);}
+  const spacing=node('select');spacing.setAttribute('aria-label','行距');spacing.append(new Option('行距',''),...[1,1.2,1.5,1.8,2].map(n=>new Option(n+' 倍',String(n))));spacing.onchange=()=>{if(!spacing.value||disabled)return;const range=restore(),blocks=[...editor.querySelectorAll('p,div,h1,h2,h3,h4,li,blockquote')].filter(n=>range.intersectsNode(n));for(const block of blocks)block.style.lineHeight=spacing.value;remember();onChange();};alignment.append(spacing);extraControls.push(spacing);
+  add(styles,'清除格式',()=>command('removeFormat'));
   const imageTools=node('div');imageTools.className='rw-image-tools';imageTools.hidden=true;
-  const width=node('select');width.setAttribute('aria-label','图片显示宽度');width.append(...[160,240,360,480,600].map(v=>new Option(v+' px',String(v))));
+  const width=node('input');width.type='number';width.min='40';width.max='600';width.step='1';width.setAttribute('aria-label','图片显示宽度');width.title='图片宽度 40–600 px';
   const alt=node('input');alt.type='text';alt.maxLength=180;alt.placeholder='图片说明';alt.setAttribute('aria-label','图片说明');
   let selectedImage=null;
-  width.onchange=()=>{if(selectedImage&&!disabled){selectedImage.width=Number(width.value);onChange();}};
+  width.onchange=()=>{if(selectedImage&&!disabled){const n=Number(width.value);if(!Number.isInteger(n)||n<40||n>600)return;selectedImage.width=n;onChange();}};
   alt.oninput=()=>{if(selectedImage&&!disabled){selectedImage.alt=alt.value;onChange();}};
   imageTools.append(node('span','选中图片'),width,alt);add(imageTools,'删除图片',()=>{if(selectedImage){const r=document.createRange();r.selectNode(selectedImage);restore(r);command('delete');imageTools.hidden=true;}});
   function update(){
@@ -60,7 +65,18 @@ export function mailEditor(session,template,container,onError,onChange=()=>{}){
     if(e.target.tagName!=='IMG')return;
     const range=document.createRange();range.selectNode(e.target);restore(range);remember();update();
   });
-  add(insert,'插入链接',()=>{remember();const value=prompt('请输入 HTTPS 链接');if(!value)return;try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password)throw Error();command('createLink',u.href);}catch{onError('请输入有效的 HTTPS 链接');}});
+  const panel=node('div');panel.className='rw-editor-panel';panel.hidden=true;
+  function linkPanel(asButton=false){
+    remember();const range=restore().cloneRange(),selection=getSelection().toString();
+    const existing=(range.startContainer.nodeType===1?range.startContainer:range.startContainer.parentElement)?.closest('a');
+    const label=node('input'),href=node('input'),message=node('p');label.setAttribute('aria-label','链接文字');label.placeholder='链接文字';label.value=selection||(asButton?'查看详情':'');href.type='url';href.setAttribute('aria-label','链接地址');href.placeholder='https://';href.value=existing?.getAttribute('href')||'';message.setAttribute('role','alert');
+    const apply=node('button','确认插入');apply.type='button';apply.className='rt-button rt-primary';const cancel=node('button','取消');cancel.type='button';cancel.className='rt-button';
+    apply.onclick=()=>{try{const url=new URL(href.value.trim());if(url.protocol!=='https:'||url.username||url.password)throw Error();restore(range);if(asButton){if(!label.value.trim())throw Error();command('insertHTML','<p><br></p><p style="text-align:center"><a href="'+escape(url.href)+'" style="display:inline-block;padding:12px 24px;background-color:#5745d6;color:#ffffff;border-radius:28px;text-decoration:none;font-weight:bold">'+escape(label.value.trim())+'</a></p><p><br></p>');}else if(range.collapsed){command('insertHTML','<a href="'+escape(url.href)+'">'+escape(label.value.trim()||url.href)+'</a>');}else command('createLink',url.href);panel.hidden=true;}catch{message.textContent='请填写有效的 HTTPS 链接'+(asButton?'和按钮文字':'');}};
+    cancel.onclick=()=>{panel.hidden=true;restore(range);};panel.replaceChildren(node('strong',asButton?'插入按钮':'设置链接'),label,href,apply,cancel,message);panel.hidden=false;href.focus();
+  }
+  add(insert,'插入链接',()=>linkPanel());add(insert,'取消链接',()=>command('unlink'));add(insert,'插入按钮',()=>linkPanel(true));
+  add(insert,'分割线',()=>command('insertHorizontalRule'));
+  add(insert,'插入表格',()=>{remember();const range=restore().cloneRange();const rows=node('input'),cols=node('input');for(const [input,label,value,max]of [[rows,'表格行数',3,10],[cols,'表格列数',2,4]]){input.type='number';input.min='1';input.max=String(max);input.value=String(value);input.setAttribute('aria-label',label);}const apply=node('button','插入表格'),cancel=node('button','取消');apply.type=cancel.type='button';apply.className=cancel.className='rt-button';apply.onclick=()=>{const r=Number(rows.value),c=Number(cols.value);if(!Number.isInteger(r)||r<1||r>10||!Number.isInteger(c)||c<1||c>4)return;restore(range);command('insertHTML','<table style="width:100%;border-collapse:collapse"><tbody>'+Array.from({length:r},()=>'<tr>'+Array.from({length:c},()=>'<td style="border:1px solid #dce2eb;padding:8px"><br></td>').join('')+'</tr>').join('')+'</tbody></table><p><br></p>');panel.hidden=true;};cancel.onclick=()=>{panel.hidden=true;restore(range);};panel.replaceChildren(node('strong','表格尺寸'),rows,cols,apply,cancel);panel.hidden=false;rows.focus();});
   const file=node('input');file.type='file';file.accept='image/png,image/jpeg,image/gif,image/webp';file.hidden=true;
   const upload=add(insert,'插入图片',()=>{remember();pickerRange=restore().cloneRange();file.click();});
   const notice=node('p');notice.className='rt-editor-status';notice.setAttribute('role','status');notice.hidden=true;
@@ -87,10 +103,10 @@ export function mailEditor(session,template,container,onError,onChange=()=>{}){
     img.dataset.mailImage=id;session.download('images/'+id).then(dataUrl).then(url=>{if(!disposed)img.src=url;}).catch(()=>{if(!disposed)img.alt='图片加载失败';});
   }
   const help=node('p','在正文中放置光标后插入图片 选中文字或点击图片可设置对齐 每张图片不超过 2 MB');help.className='rt-help';
-  container.append(toolbar,imageTools,editor,file,notice,help);
+  container.append(toolbar,panel,imageTools,editor,file,notice,help);
   return {
     destroy(){disposed=true;events.abort();},
-    setDisabled(value){disabled=value;editor.contentEditable=String(!value);for(const b of buttons)b.disabled=value;format.disabled=value;width.disabled=value;alt.disabled=value;file.disabled=value||uploading;upload.disabled=value||uploading;},
+    setDisabled(value){disabled=value;editor.contentEditable=String(!value);for(const b of [...buttons,...extraControls,...panel.querySelectorAll('input,button')])b.disabled=value;format.disabled=value;width.disabled=value;alt.disabled=value;file.disabled=value||uploading;upload.disabled=value||uploading;},
     insertVariable(key){if(!disabled&&/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(key))command('insertText','{{'+key+'}}');},
     get pending(){return uploading;},
     value(){

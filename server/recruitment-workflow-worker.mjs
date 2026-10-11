@@ -8,13 +8,14 @@ import {classifyDeliveryError,MAX_MIME_BYTES} from './recruitment-mail.mjs';
 import {mailboxSchema,RECRUITMENT_FEISHU_APP_ID} from './recruitment-templates.mjs';
 
 export async function composeWorkflowMail(job,attachment=null,images=[]){
-  const p=job.payload,from=mailboxSchema.parse(p.from),to=mailboxSchema.parse(p.to),replyTo=mailboxSchema.parse(p.replyTo);
+  const p=job.payload,from=mailboxSchema.parse(p.from),to=(Array.isArray(p.to)?p.to:[p.to]).map(a=>mailboxSchema.parse(a)),cc=(p.cc||[]).map(a=>mailboxSchema.parse(a)),bcc=(p.bcc||[]).map(a=>mailboxSchema.parse(a)),replyTo=mailboxSchema.parse(p.replyTo);
+  if(!to.length||to.length+cc.length+bcc.length>50)throw Object.assign(new Error('Invalid recipients'),{code:'INVALID_MAIL',command:'CONN'});
   if(typeof p.subject!=='string'||/[\r\n]/.test(p.subject)||typeof p.body!=='string')throw Object.assign(new Error('Invalid mail'),{code:'INVALID_MAIL',command:'CONN'});
-  const composer=new MailComposer({from,to,replyTo,subject:p.subject,text:p.body,html:p.html||undefined,messageId:`<110lab-recruitment-${job.id}@110-lab.cn>`,headers:{'X-110lab-Delivery':job.id},
+  const composer=new MailComposer({from,to,cc,bcc,replyTo,subject:p.subject,text:p.body,html:p.html||undefined,messageId:`<110lab-recruitment-${job.id}@110-lab.cn>`,headers:{'X-110lab-Delivery':job.id},
     attachments:[...(attachment?[{filename:attachment.filename,content:attachment.buffer,contentType:resumeTypes[attachment.extension]}]:[]),...images.map(i=>({filename:'image.'+i.extension,content:i.buffer,contentType:i.mime,cid:'lab-'+i.id,contentDisposition:'inline'}))],disableFileAccess:true,disableUrlAccess:true});
   const compiled=composer.compile(),raw=await compiled.build();
   if(raw.length>MAX_MIME_BYTES)throw Object.assign(new Error('Mail too large'),{code:'MIME_SIZE'});
-  return {raw,envelope:{from,to:[to]}};
+  return {raw,envelope:{from,to:[...new Set([...to,...cc,...bcc])]}};
 }
 export function createWorkflowSmtpProvider(profiles,{localTest=false}={}){
   const schema=z.array(z.object({address:mailboxSchema,host:z.string().min(1).max(253),port:z.number().int().min(1).max(65535).default(465),secure:z.boolean().default(true),user:z.string().min(1),pass:z.string().min(1)}).strict()).max(10);
@@ -34,7 +35,7 @@ export function createWorkflowSmtpProvider(profiles,{localTest=false}={}){
         connection.connect(()=>connection.login({user:config.user,pass:config.pass},error=>{
           if(error)return finish(error);
           connection.send(message.envelope,message.raw,(e,result)=>{
-            if(!e&&(result.rejected?.length||!result.accepted?.includes(job.payload.to)))e=Object.assign(new Error('Recipient unconfirmed'),{code:'UNCONFIRMED',command:'DATA'});
+            if(!e&&(result.rejected?.length||!message.envelope.to.every(a=>result.accepted?.includes(a))))e=Object.assign(new Error('Recipient unconfirmed'),{code:'UNCONFIRMED',command:'DATA'});
             finish(e,result);
           });
         }));
@@ -52,7 +53,7 @@ export async function runWorkflowDeliveryOnce(store,{mode='dry-run',smtp,feishu,
     const role=['website','recruitment-system'].includes(job.actor)?'member':await roleForSubject(job.actor),attachment=store.validateDelivery(job,role);
     const im=isRecruitmentIm(job.kind);
     const message=im?null:await composeWorkflowMail(job,attachment,store.mailImages?.(job.payload)||[]);
-    if(mode==='live'&&((im&&allowedSubjects&&!allowedSubjects.includes(job.payload.subject))||(!im&&allowedEmails&&!allowedEmails.includes(job.payload.to))))throw Object.assign(new Error('Test recipient is outside allowlist'),{code:'RECIPIENT_NOT_ALLOWED',command:'CONN'});
+    if(mode==='live'&&((im&&allowedSubjects&&!allowedSubjects.includes(job.payload.subject))||(!im&&allowedEmails&&!message.envelope.to.every(a=>allowedEmails.includes(a)))))throw Object.assign(new Error('Test recipient is outside allowlist'),{code:'RECIPIENT_NOT_ALLOWED',command:'CONN'});
     if(mode==='dry-run'){
       // This branch never authenticates with a provider and cannot fall through
       // to a network adapter, even when credentials happen to be configured.

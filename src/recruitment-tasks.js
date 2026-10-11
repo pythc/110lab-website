@@ -18,5 +18,5 @@ export function notificationIssue(c){
   if(states.includes('failed'))return '通知发送失败';
   return '';
 }
-export const templateKinds={interview:'面试邀请',receipt:'投递回执',accepted:'录取通知',rejected:'未通过通知'};
+export {mailKinds as templateKinds} from './recruitment-mail-presets.js';
 export const variableNames={name:'候选人姓名',group:'应聘组别',interviewTime:'面试时间',interviewerName:'面试官姓名',interviewerEmail:'面试官邮箱',interviewerContact:'面试官联系方式',location:'会议链接',applicationId:'投递编号',decisionNote:'结果说明'};

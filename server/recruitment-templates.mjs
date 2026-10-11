@@ -10,7 +10,7 @@ export const VARIABLE_LABELS=Object.freeze({name:'姓名',group:'应聘组别',i
 const variableName=z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/);
 export const templateSchema=z.object({
   id:z.uuid(),revision:z.number().int().min(0),name:workflowText(80,1),
-  kind:z.enum(['interview','receipt','accepted','rejected']).default('interview'),html:workflowText(60000).default(''),
+  kind:z.enum(['interview','receipt','accepted','rejected','pre_admission','supplement','reschedule','onboarding','custom']).default('interview'),html:workflowText(60000).default(''),
   subject:workflowText(180,1).refine(v=>!/[\r\n]/.test(v)),body:workflowText(12000,1),
   variables:z.array(z.object({key:variableName,label:workflowText(60,1),required:z.boolean(),defaultValue:workflowText(500)}).strict()).max(20),
 }).strict().superRefine((value,ctx)=>{
