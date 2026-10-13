@@ -18,7 +18,7 @@ const readIdentityCSS=await readFile(resolve(root,'src/identity.css'),'utf8'),id
 const identityHTML=await readFile(resolve(root,'src/identity.html'),'utf8');
 await writeFile(resolve(root,'dist/identity.html'),identityHTML.replace('/* IDENTITY_CSS */',()=>readIdentityCSS).replace('/* IDENTITY_JS */',()=>identityJS));
 const ssoScript=await bundle('src/assessment-sso.js');
-await writeFile(resolve(root,'dist/assessment-sso.html'),(await readFile(resolve(root,'src/assessment-sso.html'),'utf8')).replace('/* SSO_SCRIPT */',()=>ssoScript));
+await writeFile(resolve(root,'dist/assessment-sso.html'),(await readFile(resolve(root,'src/assessment-sso.html'),'utf8')).replace('/* IDENTITY_CSS */',()=>readIdentityCSS).replace('/* SSO_SCRIPT */',()=>ssoScript));
 const [template,baseCSS,motionCSS,homepageCSS,redesignCSS,polishCSS,colorCSS,refinementCSS,js]=await Promise.all(['src/index.html','src/portal.css','src/motion.css','src/homepage-v5.css','src/homepage-v6.css','src/homepage-polish.css','src/homepage-colors.css','src/homepage-refinement.css'].map(p=>readFile(resolve(root,p),'utf8')).concat(bundle('src/standalone.js')));
 const homepageMotionCSS=await readFile(resolve(root,'src/homepage-motion.css'),'utf8');
 const chaptersCSS=await readFile(resolve(root,'src/chapters.css'),'utf8');

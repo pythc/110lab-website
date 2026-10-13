@@ -19,5 +19,8 @@ async function enter(){
     location.replace(url.href);
   }catch(error){status.textContent=error.message;busy=false;next.disabled=false;}
 }
-login.addEventListener('click',()=>session.login());next.addEventListener('click',enter);
+login.addEventListener('click',async()=>{
+  try{const r=await fetch('/api/identity/config',{cache:'no-store'});if(!session.embedded&&r.ok&&(await r.json()).enabled){location.assign('/auth?service=assessment');return;}}catch{}
+  session.login();
+});next.addEventListener('click',enter);
 if(valid)void session.load();else{status.textContent='登录链接已失效 请从考核系统重新进入';login.hidden=true;next.hidden=true;}
