@@ -36,9 +36,9 @@ export async function createMailHttp({unifiedIdentityEnabled=process.env.PORTAL_
   const proxies=new Set(trustedProxies);let auth,access,oauth,membership;
   if(notifyEnabled&&!enabled)throw new Error('Notify mailbox requires mail login');
   if(enabled){if(!directory||(!config&&!configPath))throw new Error('Mail login requires private configuration');config=config?parseMailConfig(config):readMailConfig(configPath);auth=openMailAuth({directory,config,now,localTest,fetchIdentity});try{access=openMailAccessStore({filename:join(directory,'mail-access.sqlite'),bootstrapOwner:bootstrapMailOwner(config),now});}catch(e){auth.close();throw e;}}
-  if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies,unifiedIdentityEnabled});}catch(e){auth.close();access.close();throw e;}}
-  if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
   const projectDirectory=enabled?(fetchDirectory?{list:fetchDirectory}:localTest?null:createWorkspaceDirectory({config,now})):null;
+  if(enabled){try{oauth=openMailOAuth({directory,config,auth,access,now,localTest,trustedProxies,unifiedIdentityEnabled,checkIdentity:activeSsoMember});}catch(e){auth.close();access.close();throw e;}}
+  if(notifyEnabled){try{membership=openMailMembershipState({directory,now});}catch(e){oauth.close();auth.close();access.close();throw e;}}
   const sso=assessmentSsoEnabled&&enabled?openLabSso({directory,auth,access,now}):null;
   const identity=await createUnifiedIdentityHttp({enabled:enabled&&unifiedIdentityEnabled,directory,auth,access,directoryProvider:projectDirectory,now,localTest,trustedProxies,assessmentSsoEnabled,knowledgeCallback:process.env.PORTAL_KNOWLEDGE_SSO_CALLBACK});
   async function activeSsoMember(subject){if(!unifiedIdentityEnabled)return;let members;try{members=await projectDirectory?.list();}catch{throw new MailAuthError(503,'暂时无法核对组织成员');}if(!members?.some(m=>m.subject===subject))throw new MailAuthError(403,'此成员已不在实验室范围内');}

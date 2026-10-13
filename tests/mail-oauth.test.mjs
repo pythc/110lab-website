@@ -119,7 +119,8 @@ test('an MCP HTTP client discovers OAuth after a protected call and retries with
 
 
 test('unified browser session is reused for scoped MCP consent and global logout revokes the resulting grant',async()=>{
- const h=await harness({unifiedIdentityEnabled:true,fetchDirectory:async()=>[{subject:fixtureIdentity.subject}]});
+ let memberActive=true;
+ const h=await harness({unifiedIdentityEnabled:true,fetchDirectory:async()=>memberActive?[{subject:fixtureIdentity.subject}]:[]});
  try{
   const started=await h.call('/api/mail/auth/start',{data:{}}),launch=await h.call('/mail/auth/launch?state='+started.body.state);
   const cb=await h.call('/mail/auth/callback?state='+started.body.state+'&code=fixture',{headers:{Cookie:cookies(launch)}});
@@ -135,6 +136,8 @@ test('unified browser session is reused for scoped MCP consent and global logout
   const flow=await h.call('/api/mail/embedded/auth/start',{data:{}});
   const operation=()=>h.call('/mcp/workbench-v6-1',{data:{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'connect_110lab_mail',arguments:{state:flow.body.state}}},headers:{Authorization:'Bearer '+token.body.access_token}});
   assert.equal((await operation()).status,200);
+  memberActive=false;assert.equal((await operation()).status,401,'departed members cannot use an anchored MCP grant');
+  memberActive=true;assert.equal((await operation()).status,200);
   const session=await h.call('/api/mail/session',{headers:{Cookie:native}});
   assert.equal((await h.call('/api/mail/logout',{data:{},headers:{Cookie:native,'X-CSRF-Token':session.body.csrf}})).status,200);
   assert.equal((await operation()).status,401);

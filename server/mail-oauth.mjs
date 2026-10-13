@@ -32,7 +32,7 @@ export function allowedMailRedirect(value){
 }
 export function mailAuthChallenge(){return {isError:true,content:[{type:'text',text:'请连接 110lab 的飞书身份后继续登录'}],_meta:{'mcp/www_authenticate':[`Bearer resource_metadata="${MAIL_RESOURCE_METADATA}", scope="${MAIL_HOST_SCOPE}", error="invalid_token", error_description="Connect your Feishu identity to sign in to 110lab"`]}};}
 
-export function openMailOAuth({directory,config,auth,access,now=Date.now,localTest=false,trustedProxies=[],unifiedIdentityEnabled=false}){
+export function openMailOAuth({directory,config,auth,access,now=Date.now,localTest=false,trustedProxies=[],unifiedIdentityEnabled=false,checkIdentity=async()=>{}}){
   const path=join(directory,'mail-oauth.sqlite');
   try{const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||(s.mode&0o077))throw new Error('Unsafe mail OAuth database');}catch(e){if(e.code!=='ENOENT')throw e;}
   const db=new DatabaseSync(path);chmodSync(path,0o600);
@@ -112,7 +112,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
       if(reused){auth.revokeGrantSessions(reusedFamily);throw new InvalidGrantError('Refresh token reused');}return result;
     },
     async verifyAccessToken(token){
-      const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');const anchor=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(row.family);if(anchor)try{if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();}catch{throw new InvalidTokenError('Sign in required');}
+      const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');const anchor=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(row.family);if(anchor)try{if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();await checkIdentity(row.subject);if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();}catch{throw new InvalidTokenError('Sign in required');}
       return {token,clientId:row.client,scopes:scopesOf(row),expiresAt:Math.floor(row.expires/1000),resource:new URL(MAIL_RESOURCE),extra:{subject:row.subject,authenticatedAt:row.authenticated,family:row.family}};
     },
     async revokeToken(client,{token}){if(!secret(token))return;const row=db.prepare('SELECT family FROM oauth_tokens WHERE key=? AND client=?').get(hash(token),client.client_id);if(row){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);auth.revokeGrantSessions(row.family);}}
