@@ -25,7 +25,7 @@ async function harness(extra={}){
     const body=form?new URLSearchParams(form).toString():data?JSON.stringify(data):undefined;
     const req=request({host:'127.0.0.1',port:server.address().port,path,method,headers:{Host:'internal.110-lab.cn',Accept:'application/json, text/event-stream',Origin:MAIL_ISSUER,...(body?{'Content-Type':form?'application/x-www-form-urlencoded':'application/json'}:{}),...headers}},res=>{const parts=[];res.on('data',c=>parts.push(c));res.on('end',()=>{const text=Buffer.concat(parts).toString();let body;try{body=JSON.parse(text);}catch{}resolve({status:res.statusCode,headers:res.headers,text,body});});});req.on('error',reject);req.end(body);
   });
-  return {call,advance(ms){time+=ms;},async restart(){await stop();await start();},async close(){await stop();await rm(directory,{recursive:true,force:true});}};
+  return {call,advance(ms){time+=ms;},async restart(){await stop();await start();},async enableUnified(){options.mail.unifiedIdentityEnabled=true;options.mail.fetchDirectory=async()=>[{subject:fixtureIdentity.subject}];await stop();await start();},async close(){await stop();await rm(directory,{recursive:true,force:true});}};
 }
 async function grant(h){
   const registered=await h.call('/register',{data:{redirect_uris:['http://127.0.0.1/callback/fixture_client'],token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']}});
@@ -135,12 +135,18 @@ test('unified browser session is reused for scoped MCP consent and global logout
   assert.equal(token.status,200);
   const flow=await h.call('/api/mail/embedded/auth/start',{data:{}});
   const operation=()=>h.call('/mcp/workbench-v6-1',{data:{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'connect_110lab_mail',arguments:{state:flow.body.state}}},headers:{Authorization:'Bearer '+token.body.access_token}});
-  assert.equal((await operation()).status,200);
+  const handoff=await operation();assert.equal(handoff.status,200);
+  const ticket=handoff.body.result._meta.mailHandoff.ticket;
   memberActive=false;assert.equal((await operation()).status,401,'departed members cannot use an anchored MCP grant');
   memberActive=true;assert.equal((await operation()).status,200);
+  const redeemed=await h.call('/api/mail/embedded/auth/redeem',{data:{state:flow.body.state,ticket},headers:{Cookie:cookies(flow)}});
+  assert.equal(redeemed.status,200);
+  const embeddedJar=cookies(redeemed);
+  assert.equal((await h.call('/api/mail/embedded/session',{headers:{Cookie:embeddedJar}})).status,200);
   const session=await h.call('/api/mail/session',{headers:{Cookie:native}});
   assert.equal((await h.call('/api/mail/logout',{data:{},headers:{Cookie:native,'X-CSRF-Token':session.body.csrf}})).status,200);
   assert.equal((await operation()).status,401);
+  assert.equal((await h.call('/api/mail/embedded/session',{headers:{Cookie:embeddedJar}})).status,401,'embedded cookies must follow the central logout too');
   assert.equal((await h.call('/token',{form:{client_id:client,grant_type:'refresh_token',refresh_token:token.body.refresh_token,resource:MAIL_RESOURCE}})).status,400);
  }finally{await h.close();}
 });
@@ -164,4 +170,16 @@ test('unified login cannot bypass the recent-verification requirement for admini
   const freshPage=await h.call('/authorize?'+new URLSearchParams({client_id:client,response_type:'code',redirect_uri:'http://127.0.0.1/callback/fixture_client',state:'state-for-step-up',code_challenge:challenge,code_challenge_method:'S256',resource:MAIL_RESOURCE,scope:'mail:session'}),{headers:{Cookie:native}});
   assert.match(freshPage.text,/action="\/mail\/oauth\/login"/,'an old unified browser cookie must not bypass a recent identity check');
  } finally {await h.close();}
+});
+
+
+test('upgrading to unified identity requires old unanchored MCP credentials to reconnect once',async()=>{
+ const h=await harness();try{
+  const form=await grant(h),token=await h.call('/token',{form});assert.equal(token.status,200);
+  await h.enableUnified();
+  const started=await h.call('/api/mail/embedded/auth/start',{data:{}});
+  const result=await h.call('/mcp/workbench-v6-1',{data:{jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'connect_110lab_mail',arguments:{state:started.body.state}}},headers:{Authorization:'Bearer '+token.body.access_token}});
+  assert.equal(result.status,401);
+  assert.equal((await h.call('/token',{form:{client_id:form.client_id,grant_type:'refresh_token',refresh_token:token.body.refresh_token,resource:MAIL_RESOURCE}})).status,400);
+ }finally{await h.close();}
 });

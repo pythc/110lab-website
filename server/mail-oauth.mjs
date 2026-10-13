@@ -71,7 +71,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"});
     res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${target}"><title>正在继续登录 · 110lab</title><p>正在继续登录</p><a href="${target}" rel="noreferrer">继续</a></html>`);
   };
-  const mint=(row,family=nonce())=>{const key=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(family)?.session_key||db.prepare('SELECT session_key FROM oauth_code_sessions WHERE code=?').get(row.key)?.session_key;if(key){let source;try{source=auth.sessionByKey(key);}catch{throw new InvalidGrantError('Unified login expired');}if(source.subject!==row.subject)throw new InvalidGrantError('Identity changed');db.prepare('INSERT OR IGNORE INTO oauth_family_sessions VALUES(?,?)').run(family,key);}const accessToken=nonce(),refreshToken=nonce(),absolute=row.authenticated+lifetime,expires=Math.min(now()+30*60000,absolute);if(expires<=now())throw new InvalidGrantError('Sign in again');for(const [token,kind,expiry]of [[accessToken,'access',expires],[refreshToken,'refresh',absolute]]){db.prepare('INSERT INTO oauth_tokens VALUES(?,?,?,?,?,?,?,0)').run(hash(token),kind,row.client,family,row.subject,row.authenticated,expiry);rememberScopes('token',hash(token),scopesOf(row));}return {access_token:accessToken,token_type:'Bearer',expires_in:Math.floor((expires-now())/1000),refresh_token:refreshToken,scope:scopesOf(row).join(' ')};};
+  const mint=(row,family=nonce())=>{const key=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(family)?.session_key||db.prepare('SELECT session_key FROM oauth_code_sessions WHERE code=?').get(row.key)?.session_key;if(unifiedIdentityEnabled&&!key)throw new InvalidGrantError('Reconnect using unified identity');if(key){let source;try{source=auth.sessionByKey(key);}catch{throw new InvalidGrantError('Unified login expired');}if(source.subject!==row.subject)throw new InvalidGrantError('Identity changed');db.prepare('INSERT OR IGNORE INTO oauth_family_sessions VALUES(?,?)').run(family,key);}const accessToken=nonce(),refreshToken=nonce(),absolute=row.authenticated+lifetime,expires=Math.min(now()+30*60000,absolute);if(expires<=now())throw new InvalidGrantError('Sign in again');for(const [token,kind,expiry]of [[accessToken,'access',expires],[refreshToken,'refresh',absolute]]){db.prepare('INSERT INTO oauth_tokens VALUES(?,?,?,?,?,?,?,0)').run(hash(token),kind,row.client,family,row.subject,row.authenticated,expiry);rememberScopes('token',hash(token),scopesOf(row));}return {access_token:accessToken,token_type:'Bearer',expires_in:Math.floor((expires-now())/1000),refresh_token:refreshToken,scope:scopesOf(row).join(' ')};};
   const checkResource=resource=>{if(resource?.href!==MAIL_RESOURCE)throw new InvalidRequestError('Invalid resource');};
   const provider={
     clientsStore:{
@@ -112,13 +112,19 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
       if(reused){auth.revokeGrantSessions(reusedFamily);throw new InvalidGrantError('Refresh token reused');}return result;
     },
     async verifyAccessToken(token){
-      const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');const anchor=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(row.family);if(anchor)try{if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();await checkIdentity(row.subject);if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();}catch{throw new InvalidTokenError('Sign in required');}
+      const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');const anchor=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(row.family);if(unifiedIdentityEnabled&&!anchor)throw new InvalidTokenError('Reconnect using unified identity');if(anchor)try{if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();await checkIdentity(row.subject);if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();}catch{throw new InvalidTokenError('Sign in required');}
       return {token,clientId:row.client,scopes:scopesOf(row),expiresAt:Math.floor(row.expires/1000),resource:new URL(MAIL_RESOURCE),extra:{subject:row.subject,authenticatedAt:row.authenticated,family:row.family}};
     },
     async revokeToken(client,{token}){if(!secret(token))return;const row=db.prepare('SELECT family FROM oauth_tokens WHERE key=? AND client=?').get(hash(token),client.client_id);if(row){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);auth.revokeGrantSessions(row.family);}}
   };
   auth.bindGrants({
-    active:family=>!!db.prepare("SELECT 1 FROM oauth_tokens WHERE family=? AND kind='refresh' AND used=0 AND expires>? LIMIT 1").get(family,now()),
+    active:family=>{
+      if(!db.prepare("SELECT 1 FROM oauth_tokens WHERE family=? AND kind='refresh' AND used=0 AND expires>? LIMIT 1").get(family,now()))return false;
+      const anchor=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(family);
+      if(unifiedIdentityEnabled&&!anchor)return false;
+      if(anchor)try{auth.sessionByKey(anchor.session_key);}catch{return false;}
+      return true;
+    },
     revoke:family=>{db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(family);auth.revokeGrantSessions(family);}
   });
   const hostIdentity=async(header,{fresh=false,scopes=[MAIL_HOST_SCOPE]}={})=>{
