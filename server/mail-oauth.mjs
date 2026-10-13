@@ -1,3 +1,4 @@
+import {renderIdentityPage} from './identity-page.mjs';
 import express from 'express';
 import {LAB_LOGIN_LIFETIME} from './mail-auth.mjs';
 import {ALL_SCOPES,parseScopes} from './business-scopes.mjs';
@@ -31,7 +32,7 @@ export function allowedMailRedirect(value){
 }
 export function mailAuthChallenge(){return {isError:true,content:[{type:'text',text:'请连接 110lab 的飞书身份后继续登录'}],_meta:{'mcp/www_authenticate':[`Bearer resource_metadata="${MAIL_RESOURCE_METADATA}", scope="${MAIL_HOST_SCOPE}", error="invalid_token", error_description="Connect your Feishu identity to sign in to 110lab"`]}};}
 
-export function openMailOAuth({directory,config,auth,access,now=Date.now,localTest=false,trustedProxies=[]}){
+export function openMailOAuth({directory,config,auth,access,now=Date.now,localTest=false,trustedProxies=[],unifiedIdentityEnabled=false}){
   const path=join(directory,'mail-oauth.sqlite');
   try{const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||(s.mode&0o077))throw new Error('Unsafe mail OAuth database');}catch(e){if(e.code!=='ENOENT')throw e;}
   const db=new DatabaseSync(path);chmodSync(path,0o600);
@@ -40,6 +41,10 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     CREATE TABLE IF NOT EXISTS oauth_requests(id TEXT PRIMARY KEY,binding TEXT NOT NULL,client TEXT NOT NULL,redirect TEXT NOT NULL,state TEXT,challenge TEXT NOT NULL,flow TEXT,subject TEXT,authenticated INTEGER,status TEXT NOT NULL,expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS oauth_codes(key TEXT PRIMARY KEY,client TEXT NOT NULL,redirect TEXT NOT NULL,challenge TEXT NOT NULL,subject TEXT NOT NULL,authenticated INTEGER NOT NULL,expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS oauth_tokens(key TEXT PRIMARY KEY,kind TEXT NOT NULL,client TEXT NOT NULL,family TEXT NOT NULL,subject TEXT NOT NULL,authenticated INTEGER NOT NULL,expires INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS oauth_stepup(client TEXT PRIMARY KEY,expires INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS oauth_code_sessions(code TEXT PRIMARY KEY,session_key TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS oauth_family_sessions(family TEXT PRIMARY KEY,session_key TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS oauth_request_sessions(id TEXT PRIMARY KEY,session_key TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS oauth_configuration(id TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS oauth_grant_scopes(kind TEXT NOT NULL,key TEXT NOT NULL,scopes TEXT NOT NULL,PRIMARY KEY(kind,key));`);
   // Separate metadata keeps the legacy table layouts intact for rollback.
@@ -48,15 +53,15 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   const scopeText=row=>scopesOf(row).map(s=>ALL_SCOPES[s]).join('、');
   const configId=hash(JSON.stringify(config));
   if(!db.prepare('SELECT id FROM oauth_configuration WHERE id=?').get(configId)){db.exec('DELETE FROM oauth_requests; DELETE FROM oauth_codes; DELETE FROM oauth_tokens; DELETE FROM oauth_grant_scopes; DELETE FROM oauth_configuration;');db.prepare('INSERT INTO oauth_configuration VALUES(?)').run(configId);}
-  const clean=()=>{db.prepare('DELETE FROM oauth_requests WHERE expires<=?').run(now());db.prepare('DELETE FROM oauth_codes WHERE expires<=?').run(now());db.prepare('DELETE FROM oauth_tokens WHERE authenticated+?<=?').run(lifetime,now());db.exec("DELETE FROM oauth_grant_scopes WHERE kind='request' AND key NOT IN (SELECT id FROM oauth_requests) OR kind='code' AND key NOT IN (SELECT key FROM oauth_codes) OR kind='token' AND key NOT IN (SELECT key FROM oauth_tokens)");};
+  const clean=()=>{db.prepare('DELETE FROM oauth_stepup WHERE expires<=?').run(now());db.exec('DELETE FROM oauth_request_sessions WHERE id NOT IN (SELECT id FROM oauth_requests); DELETE FROM oauth_code_sessions WHERE code NOT IN (SELECT key FROM oauth_codes); DELETE FROM oauth_family_sessions WHERE family NOT IN (SELECT family FROM oauth_tokens)');db.prepare('DELETE FROM oauth_requests WHERE expires<=?').run(now());db.prepare('DELETE FROM oauth_codes WHERE expires<=?').run(now());db.prepare('DELETE FROM oauth_tokens WHERE authenticated+?<=?').run(lifetime,now());db.exec("DELETE FROM oauth_grant_scopes WHERE kind='request' AND key NOT IN (SELECT id FROM oauth_requests) OR kind='code' AND key NOT IN (SELECT key FROM oauth_codes) OR kind='token' AND key NOT IN (SELECT key FROM oauth_tokens)");};
   clean();const timer=setInterval(clean,60000);timer.unref();
   const bindingName=localTest?'110lab_oauth_test':'__Host-110lab_oauth';
   const cookie=(binding)=>`${bindingName}=${binding}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${localTest?'':'; Secure'}`;
   const binding=header=>{const values=String(header||'').split(';').map(s=>s.trim()).filter(s=>s.startsWith(bindingName+'='));return values.length===1&&secret(values[0].slice(bindingName.length+1))?values[0].slice(bindingName.length+1):'';};
   const getRequest=(id,header)=>{const row=secret(id)&&db.prepare('SELECT * FROM oauth_requests WHERE id=? AND expires>?').get(hash(id),now());if(!row||!binding(header)||row.binding!==hash(binding(header)))throw new InvalidGrantError('Authorization page expired. Start again from 110lab.');return row;};
   // Keep same-origin POST Origin intact without forwarding OAuth URL query parameters.
-  const respond=(res,title,content,status=200)=>{res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 110lab</title><style>body{background:#f5f7fa;color:#202a38;font:15px/1.7 system-ui;margin:0;padding:48px 20px}main{max-width:440px;margin:auto;padding:28px;background:white;border:1px solid #e1e6ee;border-radius:16px}h1{font-size:23px;margin:0 0 12px}p{overflow-wrap:anywhere;color:#58677b}button{font:inherit;border:0;border-radius:9px;background:#23304b;color:white;padding:10px 18px;cursor:pointer}form{margin-top:22px}</style><main><h1>${title}</h1>${content}</main></html>`);};
-  const form=(id,endpoint,label)=>`<form method="post" action="${endpoint}"><input type="hidden" name="request" value="${id}"><button>${label}</button></form>`;
+  const respond=(res,title,content,status=200)=>{res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'strict-origin','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"});res.end(renderIdentityPage(title,content));};
+  const form=(id,endpoint,label)=>`<form style="margin-top:24px" method="post" action="${endpoint}"><input type="hidden" name="request" value="${id}"><button class="primary">${label}</button></form>`;
   // Chromium applies form-action to the entire redirect chain. Finish the
   // same-origin POST first, then navigate without forwarding a form or referrer.
   const navigate=(res,destination)=>{
@@ -66,7 +71,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow','Content-Security-Policy':"default-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"});
     res.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${target}"><title>正在继续登录 · 110lab</title><p>正在继续登录</p><a href="${target}" rel="noreferrer">继续</a></html>`);
   };
-  const mint=(row,family=nonce())=>{const accessToken=nonce(),refreshToken=nonce(),absolute=row.authenticated+lifetime,expires=Math.min(now()+30*60000,absolute);if(expires<=now())throw new InvalidGrantError('Sign in again');for(const [token,kind,expiry]of [[accessToken,'access',expires],[refreshToken,'refresh',absolute]]){db.prepare('INSERT INTO oauth_tokens VALUES(?,?,?,?,?,?,?,0)').run(hash(token),kind,row.client,family,row.subject,row.authenticated,expiry);rememberScopes('token',hash(token),scopesOf(row));}return {access_token:accessToken,token_type:'Bearer',expires_in:Math.floor((expires-now())/1000),refresh_token:refreshToken,scope:scopesOf(row).join(' ')};};
+  const mint=(row,family=nonce())=>{const key=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(family)?.session_key||db.prepare('SELECT session_key FROM oauth_code_sessions WHERE code=?').get(row.key)?.session_key;if(key){let source;try{source=auth.sessionByKey(key);}catch{throw new InvalidGrantError('Unified login expired');}if(source.subject!==row.subject)throw new InvalidGrantError('Identity changed');db.prepare('INSERT OR IGNORE INTO oauth_family_sessions VALUES(?,?)').run(family,key);}const accessToken=nonce(),refreshToken=nonce(),absolute=row.authenticated+lifetime,expires=Math.min(now()+30*60000,absolute);if(expires<=now())throw new InvalidGrantError('Sign in again');for(const [token,kind,expiry]of [[accessToken,'access',expires],[refreshToken,'refresh',absolute]]){db.prepare('INSERT INTO oauth_tokens VALUES(?,?,?,?,?,?,?,0)').run(hash(token),kind,row.client,family,row.subject,row.authenticated,expiry);rememberScopes('token',hash(token),scopesOf(row));}return {access_token:accessToken,token_type:'Bearer',expires_in:Math.floor((expires-now())/1000),refresh_token:refreshToken,scope:scopesOf(row).join(' ')};};
   const checkResource=resource=>{if(resource?.href!==MAIL_RESOURCE)throw new InvalidRequestError('Invalid resource');};
   const provider={
     clientsStore:{
@@ -83,7 +88,13 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     async authorize(client,params,res){
       checkResource(params.resource);let requested;try{requested=parseScopes(params.scopes?.length?params.scopes:client.scope);if(requested.some(s=>!parseScopes(client.scope).includes(s)))throw new Error();}catch{throw new InvalidScopeError('Unsupported scope');}if(!secret(params.codeChallenge)||typeof params.state!=='string'||params.state.length<8||params.state.length>1024)throw new InvalidRequestError('PKCE and state are required');
       const id=nonce(),bind=nonce();db.prepare('INSERT INTO oauth_requests VALUES(?,?,?,?,?,?,NULL,NULL,NULL,?,?)').run(hash(id),hash(bind),client.client_id,params.redirectUri,params.state,params.codeChallenge,'created',now()+10*60000);rememberScopes('request',hash(id),requested);
-      res.setHeader('Set-Cookie',cookie(bind));respond(res,'连接 110lab 实验室身份',`<p>使用飞书企业身份登录插件<br>申请能力：${escapeHTML(requested.map(s=>ALL_SCOPES[s]).join('、'))}<br>各应用操作仍按当前角色授权 发信和公开发布另需确认</p>${form(id,'/mail/oauth/login','使用飞书继续')}`);
+      res.setHeader('Set-Cookie',cookie(bind));
+      let session;
+      // The SDK response retains req through Express; only a same browser
+      // session may be reused. A flow URL or another client's token is not proof.
+      if(!session&&res.req?.headers?.cookie)try{session=auth.session(res.req.headers.cookie);}catch{}
+      if(session&&unifiedIdentityEnabled&&!db.prepare('SELECT 1 FROM oauth_stepup WHERE client=? AND expires>?').get(client.client_id,now())){const p=access.me(session.subject);db.prepare("UPDATE oauth_requests SET subject=?,authenticated=?,status='verified' WHERE id=?").run(p.subject,session.created,hash(id));db.prepare('INSERT INTO oauth_request_sessions VALUES(?,?)').run(hash(id),session.key);respond(res,'连接 110lab',`<p>${escapeHTML(p.name)}</p><p>授权能力：${escapeHTML(requested.map(s=>ALL_SCOPES[s]).join('、'))}</p>${form(id,'/mail/oauth/approve','允许连接')}`);}
+      else respond(res,'连接 110lab',`<p>使用飞书账号继续</p><p>授权能力：${escapeHTML(requested.map(s=>ALL_SCOPES[s]).join('、'))}</p>${form(id,'/mail/oauth/login','使用飞书登录')}`);
     },
     skipLocalPkceValidation:true,
     async challengeForAuthorizationCode(){throw new InvalidGrantError('PKCE is verified atomically during exchange');},
@@ -101,7 +112,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
       if(reused){auth.revokeGrantSessions(reusedFamily);throw new InvalidGrantError('Refresh token reused');}return result;
     },
     async verifyAccessToken(token){
-      const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');
+      const row=secret(token)&&db.prepare("SELECT * FROM oauth_tokens WHERE key=? AND kind='access' AND expires>?").get(hash(token),now());if(!row||row.used)throw new InvalidTokenError('Sign in required');const anchor=db.prepare('SELECT session_key FROM oauth_family_sessions WHERE family=?').get(row.family);if(anchor)try{if(auth.sessionByKey(anchor.session_key).subject!==row.subject)throw new Error();}catch{throw new InvalidTokenError('Sign in required');}
       return {token,clientId:row.client,scopes:scopesOf(row),expiresAt:Math.floor(row.expires/1000),resource:new URL(MAIL_RESOURCE),extra:{subject:row.subject,authenticatedAt:row.authenticated,family:row.family}};
     },
     async revokeToken(client,{token}){if(!secret(token))return;const row=db.prepare('SELECT family FROM oauth_tokens WHERE key=? AND client=?').get(hash(token),client.client_id);if(row){db.prepare('DELETE FROM oauth_tokens WHERE family=?').run(row.family);auth.revokeGrantSessions(row.family);}}
@@ -114,7 +125,7 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     if(typeof header!=='string'||!/^Bearer [\w-]{43}$/.test(header))throw new InvalidTokenError('Sign in required');
     const info=await provider.verifyAccessToken(header.slice(7));
     if(scopes.some(s=>!info.scopes.includes(s)))throw new InvalidScopeError('Additional business authorization required');
-    if(fresh&&now()-info.extra.authenticatedAt>5*60000){await provider.revokeToken({client_id:info.clientId},{token:info.token});throw new InvalidTokenError('Fresh sign in required');}
+    if(fresh&&now()-info.extra.authenticatedAt>5*60000){db.prepare('INSERT OR REPLACE INTO oauth_stepup VALUES(?,?)').run(info.clientId,now()+10*60000);await provider.revokeToken({client_id:info.clientId},{token:info.token});throw new InvalidTokenError('Fresh sign in required');}
     return info;
   };
   const app=express();app.disable('x-powered-by');app.set('trust proxy',ip=>trustedProxies.includes(ip));
@@ -136,8 +147,9 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
   });
   app.post('/mail/oauth/approve',(req,res)=>{
     try{if(!sameOrigin(req))throw new InvalidRequestError('Use the authorization page');const id=req.body.request,row=getRequest(id,req.headers.cookie);if(row.status!=='verified'||!row.subject)throw new InvalidGrantError('Verify your identity first');
+      const anchor=db.prepare('SELECT session_key FROM oauth_request_sessions WHERE id=?').get(row.id);if(anchor){const session=auth.sessionByKey(anchor.session_key);if(session.subject!==row.subject)throw new InvalidGrantError('Identity changed');access.me(session.subject);}
       const client=provider.clientsStore.getClient(row.client);if(!client||!client.redirect_uris.some(r=>redirectUriMatches(row.redirect,r)))throw new InvalidGrantError('Client unavailable');
-      const code=nonce();db.exec('BEGIN IMMEDIATE');try{if(db.prepare("UPDATE oauth_requests SET status='consumed' WHERE id=? AND status='verified'").run(hash(id)).changes!==1)throw new InvalidGrantError('Authorization already completed');db.prepare('INSERT INTO oauth_codes VALUES(?,?,?,?,?,?,?)').run(hash(code),row.client,row.redirect,row.challenge,row.subject,row.authenticated,now()+60000);rememberScopes('code',hash(code),scopesOf(row));db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+      const code=nonce();db.exec('BEGIN IMMEDIATE');try{if(db.prepare("UPDATE oauth_requests SET status='consumed' WHERE id=? AND status='verified'").run(hash(id)).changes!==1)throw new InvalidGrantError('Authorization already completed');db.prepare('INSERT INTO oauth_codes VALUES(?,?,?,?,?,?,?)').run(hash(code),row.client,row.redirect,row.challenge,row.subject,row.authenticated,now()+60000);rememberScopes('code',hash(code),scopesOf(row));if(anchor)db.prepare('INSERT INTO oauth_code_sessions VALUES(?,?)').run(hash(code),anchor.session_key);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
       const url=new URL(row.redirect);url.searchParams.set('code',code);url.searchParams.set('state',row.state);url.searchParams.set('iss',MAIL_ISSUER);navigate(res,url.href);
     }catch{respond(res,'连接未完成','<p>此授权页面已失效 请返回插件重新登录</p>',400);}
   });
@@ -150,13 +162,14 @@ export function openMailOAuth({directory,config,auth,access,now=Date.now,localTe
     finishCallback(state,profile,req,res,consumeIdentity){
       const row=db.prepare('SELECT * FROM oauth_requests WHERE flow=? AND expires>?').get(hash(state),now());if(!row)return false;
       if(row.status!=='launched'||!binding(req.headers.cookie)||hash(binding(req.headers.cookie))!==row.binding){respond(res,'连接未完成','<p>请在发起授权的浏览器完成登录</p>',401);return true;}
-      consumeIdentity(scopesOf(row).some(s=>s!==MAIL_HOST_SCOPE));
+      db.prepare('DELETE FROM oauth_stepup WHERE client=?').run(row.client);
+      const browserSession=consumeIdentity(unifiedIdentityEnabled||scopesOf(row).some(s=>s!==MAIL_HOST_SCOPE));
       const id=nonce(); // Replace the URL's request nonce after authenticating.
       if(db.prepare("UPDATE oauth_requests SET id=?,subject=?,authenticated=?,status='verified' WHERE id=? AND status='launched'").run(hash(id),profile.subject,now(),row.id).changes!==1){respond(res,'连接未完成','<p>授权已处理 请返回插件</p>',409);return true;}
-      rememberScopes('request',hash(id),scopesOf(row));
+      rememberScopes('request',hash(id),scopesOf(row));if(browserSession)db.prepare('INSERT INTO oauth_request_sessions VALUES(?,?)').run(hash(id),browserSession.key);
       // Explicit consent prevents silent grants to a remotely initiated client.
-      const destination=new URL(row.redirect).hostname==='chatgpt.com'?'ChatGPT':'此电脑上的 Codex';
-      respond(res,'确认连接',`<p>${escapeHTML(profile.name)}<br>${escapeHTML(profile.email)}</p><p>将此飞书身份用于${destination}的 110lab 工作台</p><p>授权能力：${escapeHTML(scopeText(row))}</p>${form(id,'/mail/oauth/approve','连接并返回插件')}`);return true;
+      const destination=new URL(row.redirect).hostname==='chatgpt.com'?'ChatGPT':'当前客户端';
+      respond(res,'确认连接',`<p>${escapeHTML(profile.name)}<br>${escapeHTML(profile.email)}</p><p>将此飞书身份用于${destination}的 110lab 工作台</p><p>授权能力：${escapeHTML(scopeText(row))}</p>${form(id,'/mail/oauth/approve','允许连接')}`);return true;
     },
     async handoff(header,state,{fresh=false}={}){
       try{const info=await hostIdentity(header,{fresh});access.me(info.extra.subject);const result=auth.completeForHost(state,info.extra);return {content:[{type:'text',text:'登录身份已验证'}],_meta:{mailHandoff:result}};

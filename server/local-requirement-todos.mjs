@@ -1,4 +1,5 @@
-import {createRelay,loadCredentials} from '../plugin/110lab/mcp/requirements-client.mjs';
+import {createRelay} from './requirements-client.mjs';
+import {loadUnifiedRequirementCredentials as loadCredentials} from './requirements-identity-credentials.mjs';
 
 const APP='https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x';
 const text=(value,max=240)=>typeof value==='string'?value.slice(0,max):'';

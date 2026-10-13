@@ -43,13 +43,14 @@ export function createWorkspaceDirectory({config,fetchImpl=fetch,now=Date.now}){
       const users=await pages('contact/v3/users/find_by_department',{department_id:id,department_id_type:'open_department_id',user_id_type:'union_id'},signal,MAX_MEMBERS);
       if((rows+=users.length)>5000)throw new DirectoryError();
       for(const user of users){
-        if(user.status?.is_resigned||user.status?.is_exited||user.status?.is_frozen||user.is_frozen)continue;
+        if(user.status?.is_resigned||user.status?.is_exited||user.status?.is_frozen||user.status?.is_activated===false||user.is_frozen)continue;
         if(!/^on_[a-zA-Z0-9_-]{10,100}$/.test(user.union_id||'')||typeof user.name!=='string'||!user.name.trim()||user.name.length>80||/[\x00-\x1f\x7f]/.test(user.name))throw new DirectoryError();
         const subject=config.tenantKey+':'+user.union_id;
         // Email fields may be omitted by the provider's field permissions.
         // Do not invent an address or fall back to a personal contact email.
         const email=typeof user.enterprise_email==='string'&&/^[-a-zA-Z0-9._+]+@110-lab\.cn$/i.test(user.enterprise_email)?user.enterprise_email.toLowerCase():'';
-        members.set(subject,{subject,name:user.name.trim(),email});if(members.size>MAX_MEMBERS)throw new DirectoryError();
+        let avatarUrl='';try{const a=new URL(user.avatar?.avatar_240);if(a.protocol==='https:'&&a.hostname.endsWith('.feishucdn.com')&&!a.username&&!a.password&&!a.port&&a.href.length<2048)avatarUrl=a.href;}catch{}
+        members.set(subject,{subject,name:user.name.trim(),email,...(avatarUrl?{avatarUrl}:{})});if(members.size>MAX_MEMBERS)throw new DirectoryError();
       }
     }
     return [...members.values()].sort((a,b)=>a.name.localeCompare(b.name,'zh-CN'));
