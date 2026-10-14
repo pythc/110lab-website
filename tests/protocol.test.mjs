@@ -18,7 +18,7 @@ test('MCP client discovers the global workbench and reads its bundled resource',
     assert.equal(opener.icons[0].mimeType,'image/png');
     assert.deepEqual(opener._meta['openai/ui'].entrypoints,[{type:'global'}]);
     const opened=await client.callTool({name:'open_110lab',arguments:{}});
-    assert.equal(opened.structuredContent.appCount,10);
+    assert.equal(opened.structuredContent.appCount,11);
     assert.equal(opened.structuredContent.systems.assessment,'https://exam.110-lab.cn');
     const resource=await client.readResource({uri:UI_URI});
     assert.equal(resource.contents[0].mimeType,'text/html;profile=mcp-app');

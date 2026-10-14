@@ -14,7 +14,7 @@ export const SERVICES=Object.freeze({
   recruitment:{name:'招新',url:'/recruitment'},mail:{name:'公共邮箱',url:'/mail'},
   updates:{name:'动态',url:'/admin'},assessment:{name:'考核管理',url:'https://exam.110-lab.cn/api/auth/feishu/start'},
   requirements:{name:'需求平台',url:'https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x'},
-  knowledge:{name:'知识库',url:'http://127.0.0.1:5840/home'},
+  knowledge:{name:'知识库',url:'https://knowledge.110-lab.cn/home'},
 });
 export function identityRedirect(audience,value,knowledgeCallback='http://127.0.0.1:5840/api/auth/identity/callback'){
   try{const u=new URL(value);if(u.username||u.password||u.search||u.hash)return false;

@@ -60,6 +60,15 @@
       "edition": "项目协作"
     },
     {
+      "id": "knowledge",
+      "title": "知识库",
+      "description": "文档、资料与团队协作。",
+      "url": "https://knowledge.110-lab.cn/home",
+      "status": "intranet",
+      "icon": "knowledge",
+      "edition": "内部知识库"
+    },
+    {
       "id": "honors",
       "title": "奖项荣誉",
       "description": "登记获奖成果 关联项目与成员 提交管理员审核",
