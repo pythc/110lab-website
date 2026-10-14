@@ -788,7 +788,7 @@ function submitProjectForm(e) {
     const parsed = collectProjectForm();
     if (parsed.error) return parsed;
     if (ctx.project) return { path: 'projects/' + encodeURIComponent(ctx.project.id) + '/update', data: { revision: ctx.project.revision, ...parsed }, status: '项目已更新' };
-    return { path: 'projects', data: { ...parsed, requestId: ctx.requestId }, status: result => result.requirementsSync ? '项目已创建，正在同步需求平台' : '项目已创建' };
+    return { path: 'projects', data: { ...parsed, requestId: ctx.requestId }, status: '项目已创建' };
   }, () => loadProjects());
 }
 
