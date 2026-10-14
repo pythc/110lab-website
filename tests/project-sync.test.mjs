@@ -124,8 +124,8 @@ test('rename, review, milestones and archive queue new snapshots; stale in-fligh
  job=store.requirementsSync.claim();assert.equal(job.snapshot.archived,true);assert.equal(job.snapshot.milestones.length,1);assert.equal(job.snapshot.phase,'active');
 });
 test('reconciliation backfills old projects and survives restart without continually queuing identical snapshots',t=>{
- const {store,directory}=setup(t);const p=store.create(actor,fields);const first=store.requirementsSync.claim();store.requirementsSync.finish(first,{projectId:p.id,url:url(p.name)});
- store.reconcileProjects();let next=store.requirementsSync.claim();assert.ok(next);store.requirementsSync.finish(next,{projectId:p.id,url:url(p.name)});
+ const {store,directory,advance}=setup(t);const p=store.create(actor,fields);const first=store.requirementsSync.claim();store.requirementsSync.finish(first,{projectId:p.id,url:url(p.name)});
+ store.reconcileProjects();let next=store.requirementsSync.claim();assert.ok(next);advance(3000);store.requirementsSync.finish(next,{projectId:p.id,url:url(p.name)});
  store.reconcileProjects();assert.equal(store.requirementsSync.claim(),null);
  const other=openWorkspaceStore({directory,syncProjects:true});t.after(()=>other.close());other.reconcileProjects();assert.equal(other.requirementsSync.claim(),null);
 });

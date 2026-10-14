@@ -73,8 +73,9 @@ export function projectSyncStore(db, {enabled=false, now=Date.now}={}) {
           db.prepare(`UPDATE projects SET links_json=json_set(links_json,'$.requirements',?),
             revision=revision+1,updated_at=? WHERE id=?
             AND (coalesce(json_extract(links_json,'$.requirements'),'')=''
-              OR json_extract(links_json,'$.requirements')=?)`)
-            .run(url,new Date(now()).toISOString(),job.id,job.previousUrl||null);
+              OR json_extract(links_json,'$.requirements')=?)
+            AND coalesce(json_extract(links_json,'$.requirements'),'')<>?`)
+            .run(url,new Date(now()).toISOString(),job.id,job.previousUrl||null,url);
         }
         db.exec('RELEASE project_sync_finish');return !!done.changes;
       } catch(e){db.exec('ROLLBACK TO project_sync_finish; RELEASE project_sync_finish');throw e;}

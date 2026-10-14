@@ -1,18 +1,18 @@
 import {createProjectSyncClient,ProjectSyncError} from './project-sync-client.mjs';
 export function projectSyncWorker({store,mail,client=createProjectSyncClient(),enabled=false,intervalMs=2000}) {
-  let busy=false,closing=false,active,lastCatalog=0;
+  let busy=false,closing=false,active,lastCatalog=0,lastReconcile=0;
   async function tick() {
     if(!enabled||busy||closing)return;
     busy=true;let job;
     try {
-      if(store.reconcileProjects){
+      if(store.reconcileProjects&&Date.now()-lastReconcile>30000){
         let feed;
         if(client.catalog&&Date.now()-lastCatalog>30000){
           try{feed=await client.catalog();}
           catch(e){console.error('Project catalog refresh failed',e.code||e.name);}
           lastCatalog=Date.now();
         }
-        store.reconcileProjects(feed);
+        store.reconcileProjects(feed);lastReconcile=Date.now();
       }
       job=store.requirementsSync.claim();if(!job)return;
       // Imported classifications carry no owner or approval; existing projects
