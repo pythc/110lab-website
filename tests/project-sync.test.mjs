@@ -43,7 +43,9 @@ test('completion preserves user links edited while remote operation is in flight
  const {store}=setup(t);let p=store.create(actor,fields);const job=store.requirementsSync.claim();
  p=store.update(actor,p.id,{...fields,revision:p.revision,links:{...fields.links,requirements:'https://example.com/manual'}});
  store.requirementsSync.finish(job,{projectId:p.id,url:url(p.name)});
- assert.equal(store.get(actor,p.id).links.requirements,'https://example.com/manual');assert.equal(store.get(actor,p.id).requirementsSync.state,'synced');
+ assert.equal(store.get(actor,p.id).links.requirements,'https://example.com/manual');assert.equal(store.get(actor,p.id).requirementsSync.state,'queued');
+ const latest=store.requirementsSync.claim();assert.equal(store.requirementsSync.finish(latest,{projectId:p.id,url:url(p.name)}),true);
+ assert.equal(store.get(actor,p.id).links.requirements,'https://example.com/manual');
 });
 test('worker retries temporary directory failure and never writes for inactive owners',async t=>{
  const {store,advance}=setup(t);const p=store.create(actor,fields);let ensure=0;let directory={unavailable:true,members:[actor]};
@@ -92,4 +94,38 @@ test('HTTP creation retries return the same project and enforce CSRF and retry o
  current={...actor,subject:'bob'};assert.equal((await post('projects/'+p.id+'/requirements-sync/retry',{})).status,403);
  current=actor;assert.equal((await post('projects/'+p.id+'/requirements-sync/retry',{role:'admin'})).status,400);
  assert.equal(workspace.store.list(actor).projects.length,1);
+});
+
+test('legacy categories are imported once without fictional ownership; explicit completion claims the same ID',t=>{
+ const {store}=setup(t);const id=randomUUID();const feed={categories:[{id,name:'历史项目'}]};
+ store.reconcileProjects(feed);store.reconcileProjects(feed);
+ const p=store.get(actor,id);assert.equal(p.ownerSubject,'');assert.equal(p.phase,'exploring');assert.equal(p.unconfigured,true);assert.equal(p.canApply,false);assert.equal(p.canEdit,false);
+ const admin={...actor,role:'admin'};
+ assert.throws(()=>store.apply(admin,id,{revision:p.revision,application:'审批'}),e=>e.status===409);
+ const claimed=store.create(actor,{...fields,name:'历史项目',classificationId:id});assert.equal(claimed.id,id);assert.equal(claimed.ownerSubject,actor.subject);assert.equal(claimed.unconfigured,false);
+ assert.throws(()=>store.create({...actor,subject:'bob'},{...fields,classificationId:id}),e=>e.status===409);
+ store.reconcileProjects(feed);assert.equal(store.list(actor).projects.length,1);assert.equal(store.get(actor,id).ownerSubject,actor.subject);
+});
+test('remote categories with duplicate IDs are rejected atomically and never merge unrelated same-name projects',t=>{
+ const {store}=setup(t);const own=store.create(actor,fields);const id=randomUUID();
+ assert.throws(()=>store.reconcileProjects({categories:[{id,name:'a'},{id,name:'b'}]}));assert.equal(store.list(actor).projects.length,1);
+ store.reconcileProjects({categories:[{id,name:own.name}]});assert.equal(store.list(actor).projects.length,2);
+});
+test('rename, review, milestones and archive queue new snapshots; stale in-flight results cannot mark them synced',t=>{
+ const {store}=setup(t);let p=store.create(actor,fields);let old=store.requirementsSync.claim();
+ p=store.update(actor,p.id,{...fields,name:'新名称',revision:p.revision});
+ assert.equal(store.requirementsSync.finish(old,{projectId:p.id,url:url(fields.name)}),false);
+ let job=store.requirementsSync.claim();assert.deepEqual(job.snapshot.aliases,[fields.name]);assert.equal(job.name,'新名称');assert.ok(job.revision>old.revision);
+ store.requirementsSync.finish(job,{projectId:p.id,url:url('新名称')});p=store.get(actor,p.id);
+ p=store.apply(actor,p.id,{revision:p.revision,application:'立项理由'});job=store.requirementsSync.claim();assert.equal(job.snapshot.phase,'pending');
+ p=store.review({...actor,role:'admin'},p.id,{revision:p.revision,decision:'approve',note:'通过'});
+ p=store.addMilestone(actor,p.id,{title:'验收',assignee:actor.subject,dueAt:null});
+ p=store.archive(actor,p.id,{revision:p.revision,archived:true});
+ job=store.requirementsSync.claim();assert.equal(job.snapshot.archived,true);assert.equal(job.snapshot.milestones.length,1);assert.equal(job.snapshot.phase,'active');
+});
+test('reconciliation backfills old projects and survives restart without continually queuing identical snapshots',t=>{
+ const {store,directory}=setup(t);const p=store.create(actor,fields);const first=store.requirementsSync.claim();store.requirementsSync.finish(first,{projectId:p.id,url:url(p.name)});
+ store.reconcileProjects();let next=store.requirementsSync.claim();assert.ok(next);store.requirementsSync.finish(next,{projectId:p.id,url:url(p.name)});
+ store.reconcileProjects();assert.equal(store.requirementsSync.claim(),null);
+ const other=openWorkspaceStore({directory,syncProjects:true});t.after(()=>other.close());other.reconcileProjects();assert.equal(other.requirementsSync.claim(),null);
 });

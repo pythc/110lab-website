@@ -9,6 +9,7 @@
 // role is always what the live role store (upstream) said at request time.
 
 import {commandJournal} from './durable-command.mjs';
+import {projectCatalogStore} from './project-catalog-store.mjs';
 import {projectSyncStore} from './project-sync-store.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {
@@ -192,6 +193,7 @@ const createInputSchema = z
     summary: summarySchema,
     members: membersSchema,
     links: linksSchema,
+    classificationId: z.uuid().optional(),
   })
   .strict();
 
@@ -487,6 +489,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
     return new Date(t).toISOString();
   }
 
+  const catalog = projectCatalogStore(db,{now});
   const requirementsSync = projectSyncStore(db, {enabled:syncProjects,now});
 
   function rowToProject(row, actor) {
@@ -504,14 +507,16 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
     const archived = row.archived === 1;
     const admin = isAdmin(actor);
     const owner = row.owner_subject === actor.subject;
+    const origin=catalog.info(row.id);
     const canEdit =
-      !archived && (owner || admin) && row.phase !== 'pending';
+      !origin.unconfigured && !archived && (owner || admin) && row.phase !== 'pending';
     const canApply =
-      !archived &&
+      !origin.unconfigured && !archived &&
       (owner || admin) &&
       (row.phase === 'exploring' || row.phase === 'needs_changes');
     const canReview = !archived && admin && row.phase === 'pending';
     return {
+      unconfigured:origin.unconfigured,
       id: row.id,
       name: row.name,
       summary: row.summary,
@@ -533,6 +538,24 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
       canReview,
       requirementsSync: requirementsSync.get(row.id),
     };
+  }
+
+  function queueProject(id) {
+    const row=selectProject.get(id);if(!row)return;
+    const origin=catalog.info(id),members=JSON.parse(row.members_json),links=JSON.parse(row.links_json);
+    const people=new Map([[row.owner_subject,row.owner_name],...members.map(m=>[m.subject,m.name])]);
+    requirementsSync.enqueue(id,row.name,row.summary,{
+      phase:origin.unconfigured?'unconfigured':row.phase,archived:!!row.archived,
+      ownerName:row.owner_name,memberNames:members.map(m=>m.name),application:row.application,
+      reviewNote:row.review_note,aliases:origin.aliases,links,
+      milestones:listMilestonesStmt.all(id).map(m=>({id:m.id,title:m.title,assigneeName:people.get(m.assignee)||'',dueAt:m.due_at,status:m.status})),
+      createdAt:row.created_at,updatedAt:row.updated_at,
+    });
+  }
+  function reconcileProjects(feed) {
+    if(!syncProjects)return;
+    if(feed)catalog.import(feed);
+    tx(()=>{for(const row of listProjectsStmt.all())queueProject(row.id);});
   }
 
   function rowToMilestone(row, projectRow, members, actor) {
@@ -639,8 +662,18 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
       if (totalRow.c >= MAX_PROJECTS_GLOBAL) E(409, 'project_quota');
       const ownerRow = countProjectsByOwner.get(actor.subject);
       if (ownerRow.c >= MAX_PROJECTS_PER_OWNER) E(409, 'owner_quota');
-      const id = randomUUID();
+      const id = data.classificationId || randomUUID();
+      const existing=data.classificationId?selectProject.get(id):null;
+      if(data.classificationId&&(!existing||!catalog.info(id).unconfigured))E(409,'revision_conflict');
       const ts = nowIso();
+      if(existing){
+        catalog.renamed(id,data.name.trim());
+        if(!catalog.claim(id))E(409,'revision_conflict');
+        db.prepare(`UPDATE projects SET name=?,summary=?,owner_subject=?,owner_name=?,owner_email=?,members_json=?,links_json=?,revision=revision+1,updated_at=? WHERE id=?`)
+          .run(data.name.trim(),data.summary,actor.subject,actor.name.trim(),actor.email.trim(),JSON.stringify(members),JSON.stringify(data.links),ts,id);
+        insertAudit.run(id,'create',actor.subject,actor.name.trim(),ts,'由需求分类完善立项');
+        queueProject(id);return rowToProject(selectProject.get(id),actor);
+      }
       insertProject.run(
         id,
         data.name.trim(),
@@ -659,7 +692,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
         ts,
       );
       insertAudit.run(id, 'create', actor.subject, actor.name.trim(), ts, '');
-      requirementsSync.enqueue(id,data.name.trim(),data.summary);
+      queueProject(id);
       const row = selectProject.get(id);
       return rowToProject(row, actor);
     });
@@ -671,6 +704,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
     return tx(() => {
       const row = loadProjectOrFail(id);
       if (row.archived === 1) E(409, 'archived');
+      if(catalog.info(id).unconfigured)E(409,'invalid_phase');
       if (!(row.owner_subject === actor.subject || isAdmin(actor)))
         E(403, 'forbidden');
       if (row.phase === 'pending') E(409, 'pending_locked');
@@ -690,6 +724,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
           if (openRow.c > 0) E(409, 'member_has_open_milestones');
         }
       }
+      catalog.renamed(id,data.name.trim());
       const ts = nowIso();
       const result = updateProjectCAS.run(
         data.name.trim(),
@@ -706,6 +741,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
       );
       if (result.changes !== 1) E(409, 'revision_conflict');
       insertAudit.run(id, 'update', actor.subject, actor.name.trim(), ts, '');
+      queueProject(id);
       return rowToProject(selectProject.get(id), actor);
     });
   }
@@ -716,6 +752,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
     return tx(() => {
       const row = loadProjectOrFail(id);
       if (row.archived === 1) E(409, 'archived');
+      if(catalog.info(id).unconfigured)E(409,'invalid_phase');
       if (!(row.owner_subject === actor.subject || isAdmin(actor)))
         E(403, 'forbidden');
       if (!(row.phase === 'exploring' || row.phase === 'needs_changes'))
@@ -737,6 +774,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
       );
       if (r.changes !== 1) E(409, 'revision_conflict');
       insertAudit.run(id, 'apply', actor.subject, actor.name.trim(), ts, '');
+      queueProject(id);
       return rowToProject(selectProject.get(id), actor);
     });
   }
@@ -748,6 +786,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
     return tx(() => {
       const row = loadProjectOrFail(id);
       if (row.archived === 1) E(409, 'archived');
+      if(catalog.info(id).unconfigured)E(409,'invalid_phase');
       if (row.phase !== 'pending') E(409, 'invalid_phase');
       if (row.revision !== data.revision) E(409, 'revision_conflict');
       let nextPhase, note;
@@ -782,6 +821,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
         ts,
         note,
       );
+      queueProject(id);
       return rowToProject(selectProject.get(id), actor);
     });
   }
@@ -819,6 +859,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
         ts,
         '',
       );
+      queueProject(id);
       return rowToProject(selectProject.get(id), actor);
     });
   }
@@ -830,6 +871,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
     return tx(() => {
       const row = loadProjectOrFail(projectId);
       if (row.archived === 1) E(409, 'archived');
+      if(catalog.info(projectId).unconfigured)E(409,'invalid_phase');
       if (!(row.owner_subject === actor.subject || isAdmin(actor)))
         E(403, 'forbidden');
       const members = JSON.parse(row.members_json);
@@ -858,6 +900,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
         ts,
         data.title.trim(),
       );
+      queueProject(projectId);
       return rowToProject(selectProject.get(projectId), actor);
     });
   }
@@ -870,6 +913,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
     return tx(() => {
       const row = loadProjectOrFail(projectId);
       if (row.archived === 1) E(409, 'archived');
+      if(catalog.info(projectId).unconfigured)E(409,'invalid_phase');
       const mrow = selectMilestone.get(milestoneId, projectId);
       if (!mrow) E(404, 'not_found');
       const ownerOrAdmin =
@@ -895,6 +939,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
         ts,
         mrow.title,
       );
+      queueProject(projectId);
       return rowToProject(selectProject.get(projectId), actor);
     });
   }
@@ -980,6 +1025,7 @@ export function openWorkspaceStore({directory, now = Date.now, syncProjects = fa
   return {
     durable: commandJournal(db),
     requirementsSync,
+    reconcileProjects,
     list: wrapInternal(list),
     get: wrapInternal(get),
     create: wrapInternal(create),

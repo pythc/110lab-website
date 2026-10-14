@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {lstatSync,readFileSync} from 'node:fs';
 const ORIGIN='https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x';
 export class ProjectSyncError extends Error {
@@ -24,20 +25,26 @@ export function createProjectSyncClient({configPath=process.env.PORTAL_REQUIREME
       [401,403].includes(response.status)?'CONNECTION_FORBIDDEN':response.status===409?'PROJECT_CONFLICT':'PLATFORM_UNAVAILABLE',
       {permanent:[400,401,403,409,422].includes(response.status)});}
     const parts=[];let size=0;
-    try {for await(const p of response.body){if((size+=p.length)>16384)throw new Error();parts.push(p);}
+    try {for await(const p of response.body){if((size+=p.length)>524288)throw new Error();parts.push(p);}
       const v=JSON.parse(Buffer.concat(parts));return v.data??v;
     }catch{throw new ProjectSyncError('INVALID_PLATFORM_RESPONSE');}
   }
+  function digest(input) {
+    const stable=v=>Array.isArray(v)?v.map(stable):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])])):v;
+    return createHash('sha256').update(JSON.stringify(stable(input))).digest('hex');
+  }
   function project(v,input) {
+    if(input.revision&&(!v||v.revision!==input.revision||v.digest!==digest(input)))throw new ProjectSyncError('PROJECT_RESPONSE_MISMATCH',{permanent:true});
     if(!v||v.sourceProjectId!==input.sourceProjectId||v.projectId!==input.sourceProjectId||v.projectName!==input.name||v.projectSummary!==input.summary)throw new ProjectSyncError('PROJECT_RESPONSE_MISMATCH',{permanent:true});
     let url;try{url=new URL(v.projectUrl);}catch{throw new ProjectSyncError('INVALID_PLATFORM_RESPONSE');}
     if(url.origin!==new URL(ORIGIN).origin||url.pathname!==new URL(ORIGIN).pathname+'/requirements'||url.username||url.password||url.hash||url.searchParams.get('project')!==input.name||[...url.searchParams.keys()].some(k=>k!=='project'))throw new ProjectSyncError('INVALID_PLATFORM_RESPONSE');
     return {projectId:v.projectId,url:url.href};
   }
-  return {async ensure(job) {
-    const input={sourceProjectId:job.id,name:job.name,summary:job.summary};
+  return {catalog:()=>call('catalog',{}),async ensure(job) {
+    const input={sourceProjectId:job.id,name:job.name,summary:job.summary,...(job.revision?{revision:job.revision,snapshot:job.snapshot}:{})};
     const found=await call('lookup',{sourceProjectId:job.id});
     if(!found||!Object.hasOwn(found,'project'))throw new ProjectSyncError('INVALID_PLATFORM_RESPONSE');
-    return project(found.project??await call('sync',input),input);
+    const matches=found.project&&(!input.revision||found.project.revision===input.revision&&found.project.digest===digest(input));
+    return project(matches?found.project:await call('sync',input),input);
   }};
 }

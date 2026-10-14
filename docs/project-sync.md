@@ -22,3 +22,9 @@ Publish the additive requirements registry and its APIs first, verify the scoped
 ## Verification
 
 The focused tests cover duplicate HTTP requests, conflict responses, SQLite lease recovery, a lost remote response after commit, inactive owners, directory outages, shutdown draining and protection of manually supplied links. Both the web and MCP creation paths use the tested workspace store.
+
+## V2: 项目管理与双向分类目录
+
+2026-10-14 新增：工作台全量项目补齐和修改快照，需求分类反向导入为“待完善”，明确保存立项后关联负责人。V2 outbox (`requirement_project_sync_v2`) 与旧 worker 隔离；同步单调版本和内容摘要拒绝旧结果。旧表保留用于代码回退，不删除/覆盖持久化业务数据。
+
+项目改名保留别名；需求平台归一显示与筛选，无需批量覆盖原始需求。项目分类移除不等于删除项目，历史记录保留，归档继续从工作台控制。平台管理页每 30 秒刷新；目录每 30 秒拉取；同步任务每 2 秒处理一项，失败退避重试。

@@ -398,12 +398,12 @@ function renderProjects() {
     if (state.selectedProjectId === p.id) li.setAttribute('aria-current', 'true');
     const row = el('div', 'ws-item-row');
     row.append(el('div', 'ws-item-title', p.name || '(未命名)'));
-    row.append(el('span', 'ws-badge ' + (PHASE_BADGE[p.phase] || 'ws-badge-indigo'), PHASE_LABEL[p.phase] || p.phase || ''));
+    row.append(el('span', 'ws-badge ' + (PHASE_BADGE[p.phase] || 'ws-badge-indigo'), p.unconfigured?'待完善':PHASE_LABEL[p.phase] || p.phase || ''));
     li.append(row);
     const meta = el('div', 'ws-item-meta');
     const ownerName = p.ownerName || p.ownerEmail || p.ownerSubject || '';
     if (ownerName) meta.append(el('span', '', '负责人 ' + ownerName));
-    const memberCount = Array.isArray(p.members) ? p.members.length + 1 : 1;
+    const memberCount = (p.members?.length||0)+(p.ownerSubject?1:0);
     meta.append(el('span', '', '· 共 ' + memberCount + ' 人'));
     if (p.archived) meta.append(el('span', 'ws-badge', '已归档'));
     li.append(meta);
@@ -423,7 +423,7 @@ function renderProjectSide() {
   if (!project) { side.append(el('p', 'ws-side-hint', '选择左侧项目查看详情。')); return; }
   side.append(el('h3', '', project.name || '(未命名)'));
   const meta = el('div', 'ws-side-meta');
-  meta.append(el('span', 'ws-badge ' + (PHASE_BADGE[project.phase] || 'ws-badge-indigo'), PHASE_LABEL[project.phase] || project.phase || ''));
+  meta.append(el('span', 'ws-badge ' + (PHASE_BADGE[project.phase] || 'ws-badge-indigo'), project.unconfigured?'待完善':PHASE_LABEL[project.phase] || project.phase || ''));
   if (project.archived) meta.append(el('span', 'ws-badge', '已归档'));
   side.append(meta);
   if (project.summary) side.append(el('p', 'ws-side-row', project.summary));
@@ -453,6 +453,11 @@ function renderProjectSide() {
       li.append(a); ul.append(li);
     }
     side.append(ul);
+  }
+  if(project.unconfigured){
+    side.append(el('p','ws-side-hint','来自需求平台的项目分类，尚未完善立项信息。'));
+    const button=el('button','ws-btn ws-btn-primary','完善立项');button.type='button';
+    button.onclick=()=>openProjectDialog(project);side.append(button);return;
   }
   renderProjectSync(side, project);
   renderMilestones(side, project);
@@ -673,7 +678,7 @@ function openProjectDialog(project) {
   const dlg = $('ws-dialog-project'), form = $('ws-form-project');
   if (!dlg || !form) return;
   form.reset();
-  $('ws-form-project-title').textContent = project ? '编辑项目' : '新建项目';
+  $('ws-form-project-title').textContent = project?.unconfigured?'完善立项':project ? '编辑项目' : '新建项目';
   $('ws-field-name').value = project ? (project.name || '') : '';
   $('ws-field-summary').value = project ? (project.summary || '') : '';
   // Reset the picker local state so stale selections never leak between opens.
@@ -691,7 +696,7 @@ function openProjectDialog(project) {
   $('ws-field-link-req').value = links.requirements || '';
   $('ws-field-link-docs').value = links.docs || '';
   $('ws-field-link-demo').value = links.demo || '';
-  openDialog('ws-dialog-project', { project, requestId: project ? null : crypto.randomUUID() });
+  openDialog('ws-dialog-project', { project, requestId: project && !project.unconfigured ? null : crypto.randomUUID() });
   const fields = dlg.querySelector('.ws-project-fields');
   if (fields) fields.scrollTop = 0;
   $('ws-field-name').focus({ preventScroll: true });
@@ -787,6 +792,7 @@ function submitProjectForm(e) {
   return runSubmit('ws-dialog-project', 'ws-form-project', (ctx) => {
     const parsed = collectProjectForm();
     if (parsed.error) return parsed;
+    if(ctx.project?.unconfigured)return {path:'projects',data:{...parsed,classificationId:ctx.project.id,requestId:ctx.requestId},status:'立项信息已完善'};
     if (ctx.project) return { path: 'projects/' + encodeURIComponent(ctx.project.id) + '/update', data: { revision: ctx.project.revision, ...parsed }, status: '项目已更新' };
     return { path: 'projects', data: { ...parsed, requestId: ctx.requestId }, status: '项目已创建' };
   }, () => loadProjects());
