@@ -15,7 +15,7 @@ export function createLocalPortalBridge({fetchImpl=portalFetch,mail=createMailLo
   const upstream=new Client({name:'110lab-local-workbench',version:packageInfo.version});
   const transport=new StreamableHTTPClientTransport(new URL(RESOURCE),{fetch:fetchImpl});
   let connecting;const ready=()=>connecting ||= upstream.connect(transport).catch(e=>{connecting=null;throw e;});
-  const server=new Server({name:'110lab',version:packageInfo.version},{capabilities:{tools:{},resources:{}}});
+  const server=new Server({name:'110lab',version:packageInfo.version},{capabilities:{tools:{listChanged:true},resources:{}}});
   const privateMeta={securitySchemes:[{type:'noauth'}],ui:{visibility:['app']},'openai/widgetAccessible':true,'openai/visibility':'private'};
   server.setRequestHandler(ListToolsRequestSchema,async()=>{
     await ready();const result=await upstream.listTools();
@@ -36,7 +36,12 @@ export function createLocalPortalBridge({fetchImpl=portalFetch,mail=createMailLo
       return {content:[{type:'text',text:'个人需求待办已读取'}],_meta:{requirementTodos:await requirementTodos()}};
     }
     if(!['open_110lab','search_110lab_projects'].includes(name))throw new Error('Unknown tool');
-    await ready();return upstream.callTool({name,arguments:args});
+    await ready();const reply=await upstream.callTool({name,arguments:args});
+    if(name==='open_110lab'&&!reply.isError&&reply.structuredContent){
+      reply.structuredContent={...reply.structuredContent,installedPluginVersion:packageInfo.version};
+      await upstream.listTools();await server.sendToolListChanged();
+    }
+    return reply;
   });
   server.setRequestHandler(ListResourcesRequestSchema,async r=>{await ready();return upstream.listResources(r.params);});
   server.setRequestHandler(ListResourceTemplatesRequestSchema,async r=>{await ready();return upstream.listResourceTemplates(r.params);});

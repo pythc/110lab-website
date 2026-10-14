@@ -1,4 +1,5 @@
 import {assessmentEntry} from './assessment-entry.mjs';
+import {PLUGIN_RELEASE} from '../src/plugin-release.js';
 import packageInfo from '../package.json' with {type:'json'};
 import {BUSINESS_TOOLS} from './business-tools.mjs';
 import {businessChallenge} from './business-http.mjs';
@@ -37,6 +38,7 @@ export async function createPortalServer({mailHandoff,businessCall,assessmentSso
     readFile(new URL('../src/projects.json',import.meta.url),'utf8').then(JSON.parse),
     readFile(new URL('../src/assets/110lab-icon.png',import.meta.url))
   ]);
+  const apps=JSON.parse(assessmentEntry(JSON.stringify(config.apps),assessmentSsoEnabled));
   const catalog=()=>config.projects.filter(p=>!p.reserved).map(p=>({id:p.id,title:p.title,description:p.description,url:p.url||null,tags:p.tags}));
   const server=new McpServer({name:'110lab',version:packageInfo.version});
   new OpenAIExtensions(server);
@@ -66,7 +68,7 @@ export async function createPortalServer({mailHandoff,businessCall,assessmentSso
     annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false},securitySchemes:[{type:'noauth'}],
     _meta:{securitySchemes:[{type:'noauth'}],ui:{resourceUri:UI_URI,visibility:['app','model']},'openai/ui':{entrypoints:[{type:'global'}]}}
   };
-  registerAppTool(server,'open_110lab',opener,async()=>({content:[{type:'text',text:'110lab 工作台已准备好。'}],structuredContent:{systems:config.systems,appCount:config.apps.length,projectCount:catalog().length}}));
+  registerAppTool(server,'open_110lab',opener,async()=>({content:[{type:'text',text:'110lab 工作台已准备好。'}],structuredContent:{systems:config.systems,appCount:apps.length,projectCount:catalog().length,apps,release:PLUGIN_RELEASE,workbenchVersion:packageInfo.version}}));
   const search={
     title:'搜索 110lab 项目',description:'根据名称或介绍查找 110 实验室首页展示的项目及入口。',
     inputSchema:z.object({query:z.string().max(200).default('')}),annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false},securitySchemes:[{type:'noauth'}],_meta:{securitySchemes:[{type:'noauth'}]}

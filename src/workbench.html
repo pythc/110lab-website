@@ -15,6 +15,10 @@
   <header class="masthead">
     <div class="shell masthead-inner">
       <h1 class="brand">110<span class="brand-lab">lab</span> <span class="brand-product">工作台</span></h1>
+      <div class="update-control">
+        <button class="update-button" id="plugin-update" type="button" aria-describedby="plugin-update-status" disabled><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/></svg><span>更新</span></button>
+        <div id="plugin-update-popover" hidden><span id="plugin-update-status" role="status" aria-live="polite"></span><a id="plugin-update-install" href="https://internal.110-lab.cn/plugin-update" target="_blank" rel="noopener noreferrer" hidden>下载插件</a></div>
+      </div>
     </div>
   </header>
   <main class="shell">

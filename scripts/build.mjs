@@ -4,6 +4,7 @@ import {resolve} from 'node:path';
 import {build} from 'esbuild';
 import {createHash} from 'node:crypto';
 import {renderWorkbench} from '../server/render.mjs';
+import {execFileSync} from 'node:child_process';
 const root=fileURLToPath(new URL('../',import.meta.url));
 const config=JSON.parse(await readFile(resolve(root,'src/projects.json'),'utf8'));
 const ids=new Set();for(const p of config.apps){if(!p.id||ids.has(p.id))throw new Error('App ids must be unique');ids.add(p.id);}
@@ -12,6 +13,7 @@ for(const value of [...Object.values(config.systems),...config.apps.map(p=>p.url
 }
 const bundle=async(entry,define={})=>(await build({entryPoints:[resolve(root,entry)],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',minify:true,define})).outputFiles[0].text.replace(/<\/script/gi,'<\\/script');
 await mkdir(resolve(root,'dist'),{recursive:true});
+await cp(resolve(root,'src/plugin-update.html'),resolve(root,'dist/plugin-update.html'));
 const confirmScript=await bundle('src/mcp-confirm.js');
 await writeFile(resolve(root,'dist/mcp-confirm.html'),(await readFile(resolve(root,'src/mcp-confirm.html'),'utf8')).replace('/* MCP_CONFIRM_SCRIPT */',()=>confirmScript));
 const readIdentityCSS=await readFile(resolve(root,'src/identity.css'),'utf8'),identityJS=await bundle('src/identity.js');
@@ -57,4 +59,5 @@ await writeFile(resolve(root,'plugin/110lab/mcp/NOTICE.txt'),notices.join('\n\n'
 const interviewerHTML=await readFile(resolve(root,'src/recruitment-interviewer.html'),'utf8'),interviewerJS=await bundle('src/recruitment-interviewer.js');
 await writeFile(resolve(root,'dist/recruitment-interviewer.html'),interviewerHTML.replace('/* RECRUITMENT_TEST_CSS */',()=>recruitmentTestCSS+'\n'+recruitmentWorkspaceCSS).replace('/* RECRUITMENT_TEST_SCRIPT */',()=>interviewerJS));
 
+execFileSync(process.execPath,[resolve(root,'scripts/package-plugin.mjs')],{stdio:'inherit'});
 console.log('110lab built: static homepage + workbench + MCP App');

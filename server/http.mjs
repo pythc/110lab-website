@@ -1,4 +1,6 @@
 import {assessmentEntry} from './assessment-entry.mjs';
+import {PLUGIN_RELEASE} from '../src/plugin-release.js';
+import appConfig from '../src/projects.json' with {type:'json'};
 import {createBusinessHttp,businessScope,businessChallenge} from './business-http.mjs';
 import {BUSINESS_TOOL_MAP} from './business-tools.mjs';
 import {createServer} from 'node:http';
@@ -65,6 +67,15 @@ export async function createHttpServer(options={}){
       if(await recruitmentTest.handle(req,res,path,host))return;
       if(await recruitmentWorkflow.handle(req,res,path,host))return;
       if(await recruitment.handle(req,res,path,host))return;
+      if(path==='/api/plugin/release'&&internalHost){
+        if(!['GET','HEAD'].includes(req.method)){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
+        json(res,200,{release:PLUGIN_RELEASE,workbenchVersion:packageInfo.version,apps:JSON.parse(assessmentEntry(JSON.stringify(appConfig.apps),options.mail?.assessmentSsoEnabled))});return;
+      }
+      if(internalHost&&['/plugin-update','/downloads/110lab-plugin-0.19.0.zip'].includes(path)){
+        if(!['GET','HEAD'].includes(req.method)){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
+        const archive=path.startsWith('/downloads/'),data=await readFile(new URL('../dist/'+(archive?'110lab-plugin-0.19.0.zip':'plugin-update.html'),import.meta.url));
+        res.writeHead(200,{'Content-Type':archive?'application/zip':'text/html; charset=utf-8','Cache-Control':'no-store',...(archive?{'Content-Disposition':'attachment; filename="110lab-plugin-0.19.0.zip"'}:{'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"})});res.end(req.method==='HEAD'?undefined:data);return;
+      }
       if(path==='/api/updates'){
         if(req.method!=='GET'&&req.method!=='HEAD'){req.resume();res.writeHead(405,{Allow:'GET, HEAD'});res.end();return;}
         const body=JSON.stringify({updates:updates.listPublished()}),etag='"'+createHash('sha256').update(body).digest('hex')+'"';

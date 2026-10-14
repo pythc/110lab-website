@@ -1,0 +1,2 @@
+# Preserve upstream legal notices verbatim, including their original whitespace.
+plugin/110lab/mcp/*NOTICE.txt -whitespace

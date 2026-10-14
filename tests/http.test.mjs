@@ -18,6 +18,8 @@ test('public HTTP server supports stateless MCP and contains only the portal cat
     assert.equal((await fetch(base+'/unknown')).status,404);
     assert.equal((await fetch(base+'/src/projects.json')).status,404);
     const health=await fetch(base+'/healthz');assert.equal(health.status,200);assert.equal((await health.json()).version,packageInfo.version);
+    const release=await fetch(base+'/api/plugin/release');assert.equal(release.status,200);assert.equal(release.headers.get('cache-control'),'no-store');const releaseInfo=await release.json();assert.equal(releaseInfo.release.version,'0.19.0');assert.equal(releaseInfo.apps.find(v=>v.id==='assessment').url,'https://exam.110-lab.cn/login');assert.equal((await fetch(base+'/api/plugin/release',{method:'POST'})).status,405);
+    const updater=await fetch(base+'/plugin-update');assert.equal(updater.status,200);assert.match(await updater.text(),/下载最新版插件/);const installer=await fetch(base+'/downloads/110lab-plugin-0.19.0.zip');assert.equal(installer.status,200);assert.equal(installer.headers.get('content-type'),'application/zip');assert.equal(Buffer.from(await installer.arrayBuffer()).subarray(0,2).toString(),'PK');
     for(const p of ['/admin','/api/content','/api/admin/session','/api/admin/content','/media/not-a-file']){assert.equal((await fetch(base+p)).status,404);}
     assert.equal((await fetch(base+'/api/admin/content',{method:'PUT',body:'{}'})).status,404);
     const publicHTML=await (await fetch(base)).text();assert.doesNotMatch(publicHTML,/internal\.110-lab\.cn|暂停动效|管理首页/);

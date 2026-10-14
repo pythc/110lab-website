@@ -10,7 +10,7 @@ const nonce=()=>randomBytes(32).toString('base64url');
 const opaque=v=>typeof v==='string'&&/^[\w-]{43}$/.test(v);
 export const SERVICES=Object.freeze({
   workbench:{name:'工作台',url:'/workbench'},
-  projects:{name:'项目',url:'/workbench'},honors:{name:'荣誉',url:'/honors'},
+  projects:{name:'项目',url:'/projects'},honors:{name:'荣誉',url:'/honors'},
   recruitment:{name:'招新',url:'/recruitment'},mail:{name:'公共邮箱',url:'/mail'},
   updates:{name:'动态',url:'/admin'},assessment:{name:'考核管理',url:'https://exam.110-lab.cn/api/auth/feishu/start'},
   requirements:{name:'需求平台',url:'https://fcncvoyreb8p.feishuapp.com/app/app_17b6pxwde0x'},
@@ -48,6 +48,13 @@ export function openUnifiedIdentity({directory,auth,access,directoryProvider,now
   }
   return {
     async session(header){return {...await profile(auth.session(header).key),csrf:auth.session(header).csrf};},
+    async continuation(header,csrf,{audience,redirectUri,state,challenge}){
+      if(!opaque(state)||!opaque(challenge)||!identityRedirect(audience,redirectUri,knowledgeCallback))throw new MailAuthError(400,'连接请求无效');
+      const s=auth.session(header);auth.csrf(s,csrf);await profile(s.key);
+      // A loopback port alone cannot prove a desktop client's identity. Existing
+      // clients reuse their saved grant; new bindings retain explicit consent.
+      return {automatic:audience==='knowledge'};
+    },
     logout(header,csrf){const session=auth.session(header);auth.csrf(session,csrf);db.prepare('DELETE FROM identity_grants WHERE session_key=?').run(session.key);db.prepare('DELETE FROM identity_codes WHERE session_key=?').run(session.key);return auth.logout(session);},
     start(header,next,ip){if(!allowedNext(next))throw new MailAuthError(400,'返回地址无效');budget('login:'+ip,10);const result=auth.start(header,{ip});db.prepare('INSERT INTO identity_logins VALUES(?,?,?)').run(hash(result.state),next,now()+5*60000);return result;},
     finish(state,pending,res){const flow=db.prepare('DELETE FROM identity_logins WHERE flow=? AND expires>? RETURNING *').get(hash(state),now());if(!flow)return false;
@@ -62,7 +69,8 @@ export function openUnifiedIdentity({directory,auth,access,directoryProvider,now
       if(!opaque(code)||!opaque(state)||typeof verifier!=='string'||!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)||!identityRedirect(audience,redirectUri,knowledgeCallback))throw new MailAuthError(401,'连接凭证无效');
       const row=db.prepare('DELETE FROM identity_codes WHERE code=? AND audience=? AND redirect=? AND state=? AND challenge=? AND expires>? RETURNING *').get(hash(code),audience,redirectUri,state,createHash('sha256').update(verifier).digest('base64url'),now());
       if(!row)throw new MailAuthError(401,'连接已过期或已使用');
-      const p=await profile(row.session_key),token=nonce();db.prepare('INSERT INTO identity_grants VALUES(?,?,?,?)').run(hash(token),row.session_key,audience,Date.parse(p.expiresAt));return {...p,audience,token};
+      const p=await profile(row.session_key),token=nonce();db.prepare('INSERT INTO identity_grants VALUES(?,?,?,?)').run(hash(token),row.session_key,audience,Date.parse(p.expiresAt));
+      return {...p,audience,token};
     },
     async inspect({audience,token}){if(!opaque(token)||!['knowledge','requirements'].includes(audience))throw new MailAuthError(401,'连接凭证无效');
       const row=db.prepare('SELECT * FROM identity_grants WHERE token=? AND audience=? AND expires>?').get(hash(token),audience,now());if(!row)throw new MailAuthError(401,'连接已失效');return {...await profile(row.session_key),audience};},

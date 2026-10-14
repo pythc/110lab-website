@@ -1,0 +1,617 @@
+[
+  {
+    "name": "requirement_operation_get",
+    "title": "查询需求修改结果",
+    "description": "根据修改返回的jobId查询最终结果。已接受不代表已落地；unknown时不得盲目重试或重复通知。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": [
+        "operationId"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "my_requirement_todos",
+    "title": "读取我的需求待办",
+    "description": "与工作台待我推进一致：当前处理人为已认证用户，排除已发布、已关闭。只读，返回紧凑列表和分页游标；restartRequired 时从第一页重新读取。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "limit": {
+          "default": 100,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": "string",
+          "maxLength": 80
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "requirements_list",
+    "title": "查询需求列表",
+    "description": "按标题、编号、状态、项目或迭代筛选需求，返回后续工具需要的记录 ID。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "description": "标题或需求编号关键词",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "iteration": {
+          "description": "迭代名称或记录 ID",
+          "type": "string"
+        },
+        "limit": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "requirement_release_readiness",
+    "title": "检查需求发布就绪状态",
+    "description": "只读检查需求进入待发布或已发布前的验收项、自测、人员、Git 分支、合并请求、检查与评审门禁。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "需求记录 ID、需求编号或完整标题"
+        },
+        "targetStatus": {
+          "default": "待发布",
+          "type": "string",
+          "enum": [
+            "待发布",
+            "已发布"
+          ]
+        }
+      },
+      "required": [
+        "requirement"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "requirement_get",
+    "title": "读取需求",
+    "description": "按记录 ID、需求编号或完整标题读取需求全部结构化字段。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "需求记录 ID、需求编号或完整标题"
+        }
+      },
+      "required": [
+        "requirement"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "requirement_trigger_review",
+    "title": "触发需求 AI 评审",
+    "description": "手动触发或重新触发一项需求的指定 AI 评审。需求清晰度依赖需求介绍和验收标准；技术与交付评审依赖对应研发资料。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "需求记录 ID、需求编号或完整标题"
+        },
+        "reviewType": {
+          "type": "string",
+          "enum": [
+            "clarity",
+            "technical_stability",
+            "delivery_readiness"
+          ]
+        }
+      },
+      "required": [
+        "requirement",
+        "reviewType"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "iteration_trigger_available_reviews",
+    "title": "按迭代补跑需求 AI 评审",
+    "description": "对指定迭代的全部非缺陷需求补跑当前资料可支持的评审；资料不足的评审会跳过并返回原因，不会发送飞书通知。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "iteration": {
+          "type": "string",
+          "minLength": 1,
+          "description": "迭代名称或记录 ID"
+        }
+      },
+      "required": [
+        "iteration"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "requirement_update_fields",
+    "title": "修改需求字段",
+    "description": "修改需求的基础字段、排期、介绍、验收标准、进展或阻塞信息；只提交明确提供的字段。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "需求记录 ID、需求编号或完整标题"
+        },
+        "clientMutationId": {
+          "description": "建议每次新修改生成唯一键；同一次请求重试必须复用此键和原参数。返回 jobId 后查询最终结果，unknown 不得重放。",
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{8,128}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "introduction": {
+          "type": "string"
+        },
+        "acceptanceCriteria": {
+          "type": "string"
+        },
+        "selfTestReport": {
+          "type": "string"
+        },
+        "defectCause": {
+          "type": "string"
+        },
+        "gitBranchName": {
+          "type": "string"
+        },
+        "githubPullRequestUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "type": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "iterationIds": {
+          "maxItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "所属迭代，最多一个 ID；空数组表示清空，不得同时关联多个迭代"
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestProgress": {
+          "type": "string"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "blocker": {
+          "type": "string"
+        },
+        "startAt": {
+          "description": "毫秒时间戳、YYYY-MM-DD/ISO 8601 字符串或 null",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "developmentStartAt": {
+          "description": "毫秒时间戳、YYYY-MM-DD/ISO 8601 字符串或 null",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "developmentEndAt": {
+          "description": "毫秒时间戳、YYYY-MM-DD/ISO 8601 字符串或 null",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "testingAt": {
+          "description": "毫秒时间戳、YYYY-MM-DD/ISO 8601 字符串或 null",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deadlineAt": {
+          "description": "毫秒时间戳、YYYY-MM-DD/ISO 8601 字符串或 null",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "requirement"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "requirement_update_personnel",
+    "title": "修改需求人员",
+    "description": "支持按角色 add 增加、remove 移除或 replace 调整为目标名单。userIds 使用飞书 user_id；replace 空数组移除读取时的成员，但保留其后的并发新增。优先使用明确增删。同次重试须复用 clientMutationId。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "需求记录 ID、需求编号或完整标题"
+        },
+        "clientMutationId": {
+          "description": "建议每次新修改生成唯一键；同一次请求重试必须复用此键和原参数。返回 jobId 后查询最终结果，unknown 不得重放。",
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{8,128}$"
+        },
+        "mode": {
+          "default": "replace",
+          "type": "string",
+          "enum": [
+            "replace",
+            "add",
+            "remove"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "handlers",
+            "productOwners",
+            "developers",
+            "testers",
+            "foOwners",
+            "releaseOwners",
+            "proposers",
+            "followers"
+          ]
+        },
+        "userIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "飞书 user_id 列表"
+        }
+      },
+      "required": [
+        "requirement",
+        "role",
+        "userIds"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "requirement_transition_status",
+    "title": "流转需求状态",
+    "description": "按需求工作流流转状态，并执行处理人、角色与交付物校验。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "需求记录 ID、需求编号或完整标题"
+        },
+        "clientMutationId": {
+          "description": "建议每次新修改生成唯一键；同一次请求重试必须复用此键和原参数。返回 jobId 后查询最终结果，unknown 不得重放。",
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{8,128}$"
+        },
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handlerUserIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selfTestReport": {
+          "type": "string"
+        },
+        "defectCause": {
+          "type": "string"
+        },
+        "githubPullRequestUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "latestProgress": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requirement",
+        "status"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "pull_requests_list",
+    "title": "查询合并请求列表",
+    "description": "查询当前仓库的 GitHub 合并请求、关联需求和迭代、检查状态及 GitHub 待评审人。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "query": {
+          "description": "PR 编号、标题、分支或关联需求编号关键词",
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "OPEN",
+            "MERGED",
+            "CLOSED"
+          ]
+        },
+        "iteration": {
+          "description": "迭代名称或记录 ID",
+          "type": "string"
+        },
+        "reviewerLogin": {
+          "description": "GitHub 待评审人的 login",
+          "type": "string"
+        },
+        "limit": {
+          "default": 30,
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      }
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "pull_request_get",
+    "title": "读取合并请求详情",
+    "description": "读取一个合并请求的 GitHub 评论、评审、行内讨论、检查结果、关联需求和 GitHub 待评审人。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pullNumber": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "GitHub PR 编号"
+        }
+      },
+      "required": [
+        "pullNumber"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "pull_request_set_reviewers",
+    "title": "设置 GitHub 评审人",
+    "description": "完整替换 GitHub 合并请求的待评审人。使用拥有仓库写权限的 GitHub login；首次使用某账号时通过 reviewerBindings 绑定飞书 user_id。新增评审人会收到 GitHub 原生通知和周催办飞书私聊。传空数组表示清空。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "pullNumber": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "description": "GitHub PR 编号"
+        },
+        "reviewerLogins": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "GitHub login 列表"
+        },
+        "reviewerBindings": {
+          "description": "首次绑定或修改映射时提供；已绑定账号可省略",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "login": {
+                "type": "string",
+                "minLength": 1,
+                "description": "GitHub login"
+              },
+              "feishuEmployeeId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "对应飞书成员的 user_id"
+              }
+            },
+            "required": [
+              "login",
+              "feishuEmployeeId"
+            ]
+          }
+        }
+      },
+      "required": [
+        "pullNumber",
+        "reviewerLogins"
+      ]
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "pull_requests_refresh",
+    "title": "刷新合并请求",
+    "description": "立即从 GitHub 刷新当前仓库的合并请求缓存。",
+    "inputSchema": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {}
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  }
+]

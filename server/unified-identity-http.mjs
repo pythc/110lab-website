@@ -46,7 +46,8 @@ export async function createUnifiedIdentityHttp(options){
       const input=await read(req);
       if(path==='/api/identity/login'){if(Object.keys(input).some(k=>k!=='next'))throw new MailAuthError(400,'请求无效');const result=store.start(req.headers.cookie,input.next,options.trustedProxies?.includes(req.socket.remoteAddress)&&isIP(String(req.headers['x-forwarded-for']||'').split(',')[0].trim())?String(req.headers['x-forwarded-for']).split(',')[0].trim():req.socket.remoteAddress);res.setHeader('Set-Cookie',result.cookie);json(res,200,{launchUrl:result.launchUrl});return true;}
       if(path==='/api/identity/logout'){if(Object.keys(input).length)throw new MailAuthError(400,'请求无效');res.setHeader('Set-Cookie',store.logout(req.headers.cookie,req.headers['x-csrf-token']));json(res,200,{loggedOut:true});return true;}
-      if(path==='/api/identity/authorize'){if(Object.keys(input).some(k=>!['audience','redirectUri','state','challenge'].includes(k)))throw new MailAuthError(400,'请求无效');json(res,200,await store.authorize(req.headers.cookie,req.headers['x-csrf-token'],input));return true;}
+      const action=['authorize','continuation'].find(v=>path==='/api/identity/'+v);
+      if(action){if(Object.keys(input).some(k=>!['audience','redirectUri','state','challenge'].includes(k)))throw new MailAuthError(400,'请求无效');json(res,200,await store[action](req.headers.cookie,req.headers['x-csrf-token'],input));return true;}
       throw new MailAuthError(404,'页面不存在');
     }catch(e){req.resume();if(!res.headersSent)json(res,e instanceof MailAuthError?e.status:503,{error:e instanceof MailAuthError?e.message:'暂时无法完成登录'});return true;}
   }};

@@ -6,6 +6,7 @@
       "args": [
         "${PLUGIN_ROOT}/mcp/portal-bridge.mjs"
       ],
+      "env": {},
       "cwd": "${PLUGIN_ROOT}"
     },
     "110lab_requirements": {
@@ -14,6 +15,19 @@
       "args": [
         "${PLUGIN_ROOT}/mcp/requirements-bridge.mjs"
       ],
+      "env": {},
+      "cwd": "${PLUGIN_ROOT}"
+    },
+    "110lab_knowledge": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/knowledge-bridge.mjs"
+      ],
+      "env": {
+        "NODE_USE_SYSTEM_CA": "1",
+        "KNOWLEDGE_URL": "https://knowledge.110-lab.cn/mcp"
+      },
       "cwd": "${PLUGIN_ROOT}"
     }
   }

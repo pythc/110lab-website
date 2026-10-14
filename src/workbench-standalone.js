@@ -2,6 +2,7 @@ import {initWorkbench} from './workbench.js';
 import config from './projects.json';
 import {initWorkspace} from './workspace.js';
 import {EMBEDDED_APPS} from './embedded-workspace.js';
+import {updateOutcome} from './plugin-release.js';
 const embedded=['/workbench/embedded','/projects/embedded'].includes(location.pathname);
 const projectPage=['/projects','/projects/','/projects/embedded'].includes(location.pathname);
 if(projectPage){
@@ -15,6 +16,7 @@ if(projectPage){
 }
 
 const portal=initWorkbench(config,{embeddedIds:embedded?Object.keys(EMBEDDED_APPS):[]});
+portal.setUpdater(async()=>{const response=await fetch('/api/plugin/release',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();const value=await response.json();updateOutcome(value.release);portal.refreshApps(value.apps);return '工作台已刷新 · 最新插件 v'+value.release.version;});
 if(embedded&&window.parent!==window){
   portal.setExternalOpener(url=>window.parent.postMessage({type:'110lab-workspace-open-link',url},'*'));
   document.addEventListener('click',event=>{

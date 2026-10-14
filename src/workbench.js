@@ -10,7 +10,9 @@ const runtime = {
   apps: [],
   listening: false,
   messageTimer: 0,
-  attempt: 0
+  attempt: 0,
+  updater: null,
+  updating: false
 };
 let embeddedIds = new Set();
 
@@ -235,6 +237,16 @@ function renderApps(query) {
 function bindChrome() {
   if (runtime.listening) return;
   runtime.listening = true;
+  document.querySelector('#plugin-update')?.addEventListener('click',async()=>{
+    if(runtime.updating||!runtime.updater)return;
+    const button=document.querySelector('#plugin-update'),status=document.querySelector('#plugin-update-status');
+    document.querySelector('#plugin-update-popover').hidden=false;document.querySelector('#plugin-update-install').hidden=true;
+    runtime.updating=true;button.disabled=true;button.setAttribute('aria-busy','true');status.textContent='正在检查…';
+    try{const message=await runtime.updater();status.textContent=message||'工作台已刷新';const install=document.querySelector('#plugin-update-install');if(install)install.hidden=false;}
+    catch{status.textContent='更新未完成，请重试';}
+    finally{runtime.updating=false;button.disabled=!runtime.updater;button.removeAttribute('aria-busy');}
+  });
+  document.addEventListener('click',event=>{if(event.target instanceof Element&&!event.target.closest('.update-control')){const popover=document.querySelector('#plugin-update-popover');if(popover)popover.hidden=true;}});
   document.addEventListener('click', onExternalClick);
   const form = document.querySelector('#app-search-form');
   const input = document.querySelector('#app-search');
@@ -261,6 +273,8 @@ export function initWorkbench(config, options = {}) {
   const input = document.querySelector('#app-search');
   renderApps(input?.value || '');
   return {
+    refreshApps(apps){if(!Array.isArray(apps))throw new Error('应用信息无效');runtime.apps=apps;renderApps(document.querySelector('#app-search')?.value||'');},
+    setUpdater(fn){runtime.updater=typeof fn==='function'?fn:null;const button=document.querySelector('#plugin-update');if(button)button.disabled=!runtime.updater;},
     setExternalOpener(fn) {
       runtime.opener = typeof fn === 'function' ? fn : null;
     }

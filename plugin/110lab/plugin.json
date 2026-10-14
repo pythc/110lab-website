@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "110lab",
-  "version": "0.15.1",
-  "description": "110 实验室工作台：项目、荣誉、招新、公共邮箱和官网动态的业务 MCP。",
+  "version": "0.19.0",
+  "description": "110 实验室工作台：项目、荣誉、招新、公共邮箱和官网动态的业务 MCP。 知识库支持飞书 OAuth 与文档 API/MCP。",
   "author": {
     "name": "110 实验室"
   },
@@ -11,7 +11,7 @@
       "interface": {
         "displayName": "110lab",
         "shortDescription": "110 实验室的应用工作台",
-        "longDescription": "从侧边栏使用考核、需求平台、招新管理和公共邮箱。成员登记奖项、上传证书，由实验室管理员审核后内部展示。个人需求与 PR 待办通过本机已有连接只读同步。内网应用需要校园网络或 VPN。",
+        "longDescription": "从侧边栏使用考核、需求平台、招新管理和公共邮箱。成员登记奖项、上传证书，由实验室管理员审核后内部展示。个人需求与 PR 待办通过本机已有连接只读同步。内网应用需要校园网络或 VPN。 知识库支持飞书授权和文档操作。",
         "developerName": "110 实验室",
         "category": "Productivity",
         "capabilities": [

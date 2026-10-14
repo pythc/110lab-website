@@ -20,6 +20,9 @@ test('real HTTP central login binds the originating browser, issues audience-spe
     const launch=await call('/mail/auth/launch?state='+state);const callback=await call('/mail/auth/callback?state='+state+'&code=fixture',{jar:cookie(launch)});assert.equal(callback.status,303);assert.equal(callback.headers.location,'/auth?service=knowledge');
     const jar=cookie(callback),session=await call('/api/identity/session',{jar});assert.equal(session.value.subject,fixtureIdentity.subject);const verifier=randomBytes(32).toString('base64url'),v={audience:'knowledge',state:randomBytes(32).toString('base64url'),redirectUri:'http://127.0.0.1:5840/api/auth/identity/callback',challenge:createHash('sha256').update(verifier).digest('base64url')};
     assert.equal((await call('/api/identity/authorize',{data:v,jar})).status,403);assert.equal((await call('/api/identity/authorize',{data:v,jar,csrf:session.value.csrf,origin:'https://attacker.example'})).status,403);
+    assert.equal((await call('/api/identity/continuation',{data:v,jar})).status,403);
+    assert.equal((await call('/api/identity/continuation',{data:v,jar,csrf:session.value.csrf,origin:'https://attacker.example'})).status,403);
+    assert.equal((await call('/api/identity/continuation',{data:v,jar,csrf:session.value.csrf})).value.automatic,true);
     const grant=await call('/api/identity/authorize',{data:v,jar,csrf:session.value.csrf});assert.equal(grant.status,200);const code=new URL(grant.value.redirectUrl).searchParams.get('code');
     assert.equal((await call('/api/identity/exchange',{data:{...v,code,verifier},origin:base})).status,403);
     const token=await call('/api/identity/exchange',{data:{audience:v.audience,state:v.state,redirectUri:v.redirectUri,code,verifier},origin:''});assert.equal(token.status,200);
