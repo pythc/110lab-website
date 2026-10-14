@@ -3,6 +3,7 @@ import {openWorkspaceStore,WorkspaceError} from './workspace-store.mjs';
 import {openWorkspaceRecruitment} from './workspace-recruitment.mjs';
 import {MailAuthError} from './mail-auth.mjs';
 import {MailAccessError} from './mail-access-store.mjs';
+import {projectSyncWorker} from './project-sync-worker.mjs';
 
 const messages={unauthenticated:'请先通过飞书登录',forbidden:'没有此操作的权限',not_found:'项目或里程碑不存在',revision_conflict:'内容已被更新 请重新加载后再操作',pending_locked:'项目正在审批 暂时不能修改',invalid_phase:'项目状态已改变 请重新加载',archived:'项目已归档 请先恢复',member_has_open_milestones:'请先处理该成员尚未完成的里程碑',milestone_quota:'单个项目最多可添加 100 个里程碑',owner_quota:'已达到个人项目数量上限',project_quota:'已达到实验室项目数量上限',invalid_note:'退回时请填写原因',invalid_due:'请选择有效的截止日期',assignee_out_of_scope:'负责人必须是项目成员',invalid_input:'请检查填写的内容',no_change:'状态已更新 请刷新',store_unavailable:'工作台暂时不可用',store_corrupt:'工作台暂时不可用'};
 const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex'});res.end(JSON.stringify(value));};
@@ -21,10 +22,11 @@ async function body(req){
   try{return JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new WorkspaceError(400,'请求格式无效');}
 }
 
-export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTest=false,now=Date.now,directory=mail?.workspaceDirectory}={}){
+export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTest=false,now=Date.now,directory=mail?.workspaceDirectory,projectSyncEnabled=process.env.PORTAL_PROJECT_SYNC_ENABLED==='true',projectSyncClient}={}){
   const enabled=!!mail?.enabled&&!!directory;
-  const store=enabled?openWorkspaceStore({directory,now}):null;
+  const store=enabled?openWorkspaceStore({directory,now,syncProjects:projectSyncEnabled}):null;
   let inbox;try{inbox=enabled?openWorkspaceRecruitment({directory,source:()=>recruitment.labInbox(),canManage:a=>recruitment.store?.canManage?.(a)||['admin','super_admin'].includes(a.role),now}):null;}catch(e){store?.close();throw e;}
+  const projectSync=store?projectSyncWorker({store,mail,client:projectSyncClient,enabled:projectSyncEnabled}):null;
   const writes=new Map();
   function throttle(actor){const time=now(),old=writes.get(actor.subject),v=old&&time-old.at<60000?old:{at:time,count:0};
     if(++v.count>60)throw new WorkspaceError(429,'操作频繁 请稍后再试');
@@ -40,7 +42,7 @@ export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTe
     for(const member of existing)if(!directory.has(member.subject))directory.set(member.subject,member);
     return {...input,members:input.members.map(value=>{const member=directory.get(value?.subject);if(!member)throw new WorkspaceError(400,'请选择列表中的实验室成员');return member;})};
   }
-  return {enabled,store,canonicalMembers,projects:actor=>store?.list(actor).projects||[],close(){inbox?.close();store?.close();},async handle(req,res,path,host){
+  return {enabled,store,canonicalMembers,projects:actor=>store?.list(actor).projects||[],close(){if(!projectSync){inbox?.close();store?.close();return Promise.resolve();}return projectSync.close().finally(()=>{inbox?.close();store?.close();});},async handle(req,res,path,host){
     if(!path.startsWith('/api/workspace/'))return false;
     try{
       if(host!=='internal.110-lab.cn'&&!(localTest&&['localhost','127.0.0.1'].includes(host)))throw new WorkspaceError(404,'Not found');
@@ -62,9 +64,24 @@ export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTe
           json(res,200,match[2]?{events:store.audit(actor,match[1])}:store.get(actor,match[1]));}
       }else{
         throttle(actor);const input=await body(req);
-        if(route==='projects'){const canonical=await canonicalMembers(actor,input);actor=mail.identity(req,{embedded,write:true});json(res,201,store.create(actor,canonical));return true;}
+        if(route==='projects'){
+          if(!input||typeof input!=='object'||Array.isArray(input))throw new WorkspaceError(400,'invalid_input');
+          const {requestId,...fields}=input;
+          if(requestId!==undefined&&!z.uuid().safeParse(requestId).success)throw new WorkspaceError(400,'invalid_input');
+          const canonical=await canonicalMembers(actor,fields);actor=mail.identity(req,{embedded,write:true});
+          const value=requestId?store.durable(actor,requestId,'web_project_create',fields,()=>store.create(actor,canonical)):store.create(actor,canonical);
+          // A replay returns the same project but its latest synchronization state.
+          json(res,201,store.get(actor,value.id));return true;
+        }
         const handled=/^recruitment\/([\w-]+)\/handled$/.exec(route);
         if(handled){json(res,200,inbox.handle(actor,handled[1],input));return true;}
+        const retry=/^projects\/([\w-]+)\/requirements-sync\/retry$/.exec(route);
+        if(retry){
+          if(!projectSyncEnabled)throw new WorkspaceError(503,'需求平台连接尚未启用');
+          z.object({}).strict().parse(input);
+          const p=store.get(actor,retry[1]);if(p.archived||p.ownerSubject!==actor.subject&&!['admin','super_admin'].includes(actor.role))throw new WorkspaceError(403,'forbidden');
+          store.requirementsSync.retry(p.id);json(res,200,store.get(actor,p.id));return true;
+        }
         const m=/^projects\/([\w-]+)\/(update|apply|review|archive|milestones)(?:\/([\w-]+))?$/.exec(route);
         if(!m||m[3]&&m[2]!=='milestones')throw new WorkspaceError(404,'Not found');
         const [,id,action,mid]=m;
@@ -76,7 +93,8 @@ export function createWorkspaceHttp({mail,recruitment,honorsTodos=()=>[],localTe
       }
     }catch(e){
       req.resume();if(res.headersSent||res.destroyed)return true;
-      if(e instanceof WorkspaceError||e instanceof MailAuthError)json(res,e.status,{error:messages[e.message]||(/^[a-z_]+$/.test(e.message)?'操作未完成 请检查内容后重试':e.message)});
+      if(e?.code==='REQUEST_CONFLICT'&&e.status===409)json(res,409,{error:'这次创建请求的内容已改变，请重新打开新建项目后提交'});
+      else if(e instanceof WorkspaceError||e instanceof MailAuthError)json(res,e.status,{error:messages[e.message]||(/^[a-z_]+$/.test(e.message)?'操作未完成 请检查内容后重试':e.message)});
       else if(e instanceof MailAccessError)json(res,e.status,{error:'实验室身份或权限已变更 请重新登录'});
       else if(e instanceof z.ZodError)json(res,400,{error:'请检查填写的内容'});
       else{console.error('Workspace request failed',e.code||e.name);json(res,503,{error:'工作台暂时不可用 请稍后重试'});}

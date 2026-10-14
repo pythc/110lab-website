@@ -9,6 +9,7 @@
 // role is always what the live role store (upstream) said at request time.
 
 import {commandJournal} from './durable-command.mjs';
+import {projectSyncStore} from './project-sync-store.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {
   lstatSync,
@@ -335,7 +336,7 @@ function tightenSidecars(path) {
 
 // ---------- Public factory ----------
 
-export function openWorkspaceStore({directory, now = Date.now}) {
+export function openWorkspaceStore({directory, now = Date.now, syncProjects = false}) {
   if (typeof directory !== 'string' || directory.length === 0)
     throw new WorkspaceError(500, 'invalid_directory');
   if (typeof now !== 'function')
@@ -486,6 +487,8 @@ export function openWorkspaceStore({directory, now = Date.now}) {
     return new Date(t).toISOString();
   }
 
+  const requirementsSync = projectSyncStore(db, {enabled:syncProjects,now});
+
   function rowToProject(row, actor) {
     let members, links;
     try {
@@ -528,6 +531,7 @@ export function openWorkspaceStore({directory, now = Date.now}) {
       canEdit,
       canApply,
       canReview,
+      requirementsSync: requirementsSync.get(row.id),
     };
   }
 
@@ -655,6 +659,7 @@ export function openWorkspaceStore({directory, now = Date.now}) {
         ts,
       );
       insertAudit.run(id, 'create', actor.subject, actor.name.trim(), ts, '');
+      requirementsSync.enqueue(id,data.name.trim(),data.summary);
       const row = selectProject.get(id);
       return rowToProject(row, actor);
     });
@@ -974,6 +979,7 @@ export function openWorkspaceStore({directory, now = Date.now}) {
 
   return {
     durable: commandJournal(db),
+    requirementsSync,
     list: wrapInternal(list),
     get: wrapInternal(get),
     create: wrapInternal(create),

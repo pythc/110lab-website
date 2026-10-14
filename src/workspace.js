@@ -454,8 +454,33 @@ function renderProjectSide() {
     }
     side.append(ul);
   }
+  renderProjectSync(side, project);
   renderMilestones(side, project);
   renderProjectActions(side, project);
+}
+
+function renderProjectSync(side, project) {
+  const sync = project.requirementsSync;
+  if (!sync) return;
+  const labels = { queued: '等待同步', syncing: '正在同步', retrying: '同步暂未完成，将自动重试', blocked: '同步未完成', synced: '已关联需求平台' };
+  side.append(sideRow('需求平台', labels[sync.state] || '同步未完成'));
+  if (sync.state === 'synced' && sync.url && sync.url !== project.links?.requirements && isSafeHttpsUrl(sync.url)) {
+    const a = el('a', 'ws-btn ws-btn-ghost', '查看项目需求');
+    a.href = sync.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.onclick = e => { if (EMBEDDED) { e.preventDefault(); openExternal(sync.url); } };
+    side.append(a);
+  }
+  if (['retrying','blocked'].includes(sync.state) && !project.archived && (sameUser(project.ownerSubject) || isAdminLike())) {
+    const button = el('button', 'ws-btn ws-btn-ghost', '重新同步'); button.type = 'button'; button.disabled = state.busy;
+    button.onclick = async () => {
+      if (state.busy) return;
+      state.busy = true; button.disabled = true;
+      try { await api('projects/' + project.id + '/requirements-sync/retry', { method: 'POST', data: {} }); await loadProjects(); }
+      catch (e) { toastError(e); }
+      finally { state.busy = false; renderProjectSide(); }
+    };
+    side.append(button);
+  }
 }
 
 function renderMilestones(side, project) {
@@ -666,7 +691,7 @@ function openProjectDialog(project) {
   $('ws-field-link-req').value = links.requirements || '';
   $('ws-field-link-docs').value = links.docs || '';
   $('ws-field-link-demo').value = links.demo || '';
-  openDialog('ws-dialog-project', { project });
+  openDialog('ws-dialog-project', { project, requestId: project ? null : crypto.randomUUID() });
   const fields = dlg.querySelector('.ws-project-fields');
   if (fields) fields.scrollTop = 0;
   $('ws-field-name').focus({ preventScroll: true });
@@ -745,10 +770,10 @@ async function runSubmit(dlgId, formId, buildRequest, onSuccess) {
   if (req.error) { setFormError(dlg, req.error); return; }
   state.busy = true; setFormBusy(form, true); setFormError(dlg, '');
   try {
-    await api(req.path, { method: 'POST', data: req.data });
+    const result = await api(req.path, { method: 'POST', data: req.data });
     closeDialog(dlg);
-    if (req.status) setStatus(req.status, 'ok');
-    if (typeof onSuccess === 'function') await onSuccess();
+    if (req.status) setStatus(typeof req.status === 'function' ? req.status(result) : req.status, 'ok');
+    if (typeof onSuccess === 'function') await onSuccess(result);
   } catch (err) {
     setFormError(dlg, err.message || '操作失败');
     if (err.status === 401 || err.status === 403) toastError(err);
@@ -763,7 +788,7 @@ function submitProjectForm(e) {
     const parsed = collectProjectForm();
     if (parsed.error) return parsed;
     if (ctx.project) return { path: 'projects/' + encodeURIComponent(ctx.project.id) + '/update', data: { revision: ctx.project.revision, ...parsed }, status: '项目已更新' };
-    return { path: 'projects', data: parsed, status: '项目已创建' };
+    return { path: 'projects', data: { ...parsed, requestId: ctx.requestId }, status: result => result.requirementsSync ? '项目已创建，正在同步需求平台' : '项目已创建' };
   }, () => loadProjects());
 }
 
@@ -1100,6 +1125,12 @@ function bindEvents() {
       if (document.hidden || state.busy || state.dialogOpen || !state.profile) return;
       void loadSession();
     }, 60000);
+    let syncing = false;
+    setInterval(async () => {
+      if (syncing || document.hidden || state.busy || state.dialogOpen || !state.profile || !state.projects.some(p => ['queued', 'syncing', 'retrying'].includes(p.requirementsSync?.state))) return;
+      syncing = true;
+      try { await loadProjects(); } finally { syncing = false; }
+    }, 5000);
   }
 }
 

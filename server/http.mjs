@@ -46,9 +46,9 @@ export async function createHttpServer(options={}){
   let admin;try{admin=await createAdminHttp({...options.admin,updates,mail});}catch(e){mail.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   let recruitmentWorkflow;try{recruitmentWorkflow=createRecruitmentWorkflowHttp({mail,legacyReceipt:recruitment.legacyReceipt,...options.recruitmentWorkflow});}catch(e){mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   let honors;let workspace;try{workspace=createWorkspaceHttp({mail,honorsTodos:a=>honors?.todos(a).items||[],recruitment:recruitmentWorkflow.enabled?recruitmentWorkflow:recruitment,...options.workspace});}catch(e){await recruitmentWorkflow.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
-  try{honors=createHonorsHttp({mail,projects:a=>workspace.projects(a),...options.honors});}catch(e){await recruitmentWorkflow.close();workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
-  let recruitmentTest;try{recruitmentTest=createRecruitmentTestHttp({mail,...options.recruitmentTest});}catch(e){honors.close();await recruitmentWorkflow.close();workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
-  let business;try{business=await createBusinessHttp({mail,workspace,honors,recruitment:recruitmentWorkflow,updates,updatesEnabled:admin.enabled,...options.business});}catch(e){recruitmentTest.close();honors.close();workspace.close();await recruitmentWorkflow.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
+  try{honors=createHonorsHttp({mail,projects:a=>workspace.projects(a),...options.honors});}catch(e){await recruitmentWorkflow.close();await workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
+  let recruitmentTest;try{recruitmentTest=createRecruitmentTestHttp({mail,...options.recruitmentTest});}catch(e){honors.close();await recruitmentWorkflow.close();await workspace.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
+  let business;try{business=await createBusinessHttp({mail,workspace,honors,recruitment:recruitmentWorkflow,updates,updatesEnabled:admin.enabled,...options.business});}catch(e){recruitmentTest.close();honors.close();await workspace.close();await recruitmentWorkflow.close();mail.close();admin.close();recruitment.close();if(!options.updatesStore)updates.close();throw e;}
   const server=createServer(async(req,res)=>{
     for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
     const host=(req.headers.host||'').toLowerCase().replace(/:\d+$/,'');
@@ -128,8 +128,7 @@ export async function createHttpServer(options={}){
   });
   server.once('close',()=>recruitment.close());
   server.once('close',()=>admin.close());
-  server.once('close',()=>{server.workflowClosed=business.close().then(()=>recruitmentWorkflow.close()).finally(()=>{if(!options.updatesStore)updates.close();mail.close();});});
-  server.once('close',()=>workspace.close());
+  server.once('close',()=>{server.workflowClosed=business.close().then(()=>workspace.close()).then(()=>recruitmentWorkflow.close()).finally(()=>{if(!options.updatesStore)updates.close();mail.close();});});
   server.once('close',()=>honors.close());
   server.once('close',()=>recruitmentTest.close());
   server.requestTimeout=180000;server.headersTimeout=15000;
